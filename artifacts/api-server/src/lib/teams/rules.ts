@@ -34,6 +34,7 @@ export const TEAM_MESSAGES = {
   skillNodeOnly: (code: string) => `la skill ${code} gira solo sul nodo locale`,
   toolNotUsable: (name: string) => `lo strumento ${name} non può essere usato da una squadra`,
   nodeRoleHasModel: "un ruolo sul nodo non ha un modello cloud",
+  leadOnNode: "il capo gira in cloud: scegli «cloud» e un modello cloud per il capo",
   codeUnavailable: "l'app di riferimento non ha il codice collegato tramite l'App GitHub",
   nodeCodeRead: "un ruolo node non usa la lettura del codice: scegli Nessuno o Scrittura",
   nodeCodeMerge: "un ruolo sul nodo non può unire le PR: usa un ruolo cloud o il capo",
@@ -89,6 +90,8 @@ export async function validateRoles(input: ValidateRolesInput): Promise<void> {
 
   // Struttura: capo, numero di ruoli, chiavi e nomi unici, numero di skill
   if (roles.filter((r) => r.isLead).length !== 1) fail(TEAM_MESSAGES.oneLead);
+  // I turni del capo girano solo nell'API: un capo sul nodo non lavorerebbe mai
+  if (roles.some((r) => r.isLead && r.runsOn === "node")) fail(TEAM_MESSAGES.leadOnNode);
   if (roles.length < 1 || roles.length > MAX_ROLES) fail(TEAM_MESSAGES.tooManyRoles);
   if (new Set(roles.map((r) => r.key)).size !== roles.length) fail(TEAM_MESSAGES.duplicateKey);
   if (new Set(roles.map((r) => r.name)).size !== roles.length) fail(TEAM_MESSAGES.duplicateName);

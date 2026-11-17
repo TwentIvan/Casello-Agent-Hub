@@ -239,4 +239,15 @@ export const agentSubject: SubjectHandler = {
     if (!row) return { defaultAppId: null, available: false };
     return { defaultAppId: row.app.id, available: (await codeAvailability(userId, row.app)).ok };
   },
+  architectureApp: async (_userId, subjectId) => {
+    const id = idFromSubject(subjectId);
+    if (id === null) return null;
+    const [row] = await db
+      .select({ app: appsTable })
+      .from(agentsTable)
+      .innerJoin(appsTable, eq(appsTable.id, agentsTable.appId))
+      .where(eq(agentsTable.id, id))
+      .limit(1);
+    return row?.app ?? null;
+  },
 };

@@ -3,11 +3,14 @@
 // messaggio `user` delimitato da <dati_del_piano>, dichiarato dato non attendibile. Non importa `architect/prompts.ts`: sarà quello
 // a importare `itemTitle` da qui.
 
+import { withPersonalInstructions } from "../characters/personal-instructions";
+import { INSTRUCTION_PROPOSAL_RULE, instructionProposalTag } from "../characters/instruction-proposals";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { estimateTokens } from "../architect/phase-loop";
 import { sliceChars } from "../architect/text";
 import { CODE_INSTRUCTIONS } from "../code-reader/messages";
 import { WEB_INSTRUCTIONS } from "../web-reader/tool";
+import { BEST_PRACTICE_INSTRUCTIONS } from "../best-practice/instructions";
 
 export type PlanChapter = "endpoint" | "completion" | "evolution";
 export const PLAN_CHAPTERS: PlanChapter[] = ["endpoint", "completion", "evolution"];
@@ -41,6 +44,8 @@ export interface HistoryMessage {
   role: "user" | "assistant";
   content: string;
   proposals: HistoryProposal[];
+  /** Stati delle schede di istruzioni personali proposte in questo messaggio */
+  instructionProposals?: string[];
 }
 
 export interface PlanContextInput {
@@ -56,8 +61,12 @@ export interface PlanContextInput {
   history: HistoryMessage[];
   /** Blocco di memoria di Lucius (appunti e conversazioni recenti); vuoto se non c'è nulla. */
   memory: string;
+  /** Blocco delle istruzioni personali dell'utente, in fondo al messaggio `system`; vuoto = nessuno */
+  personalInstructions?: string;
   /** Lettura del codice dell'app: disponibile (repo e branch) oppure il motivo per cui manca. */
   code: { available: true; repo: string; branch: string | null } | { available: false; reason: string };
+  /** Best practice accese nella conversazione: istruzioni nel prompt e `data` (sintesi dell'App e fonti curate) nei dati. */
+  bestPractice?: { data: string };
 }
 
 export const PLAN_CONTEXT_MAX_TOKENS = 30_000;
@@ -72,7 +81,7 @@ export const DATA_OPEN = "<dati_del_piano>";
 export const DATA_CLOSE = "</dati_del_piano>";
 
 /** Prompt di sistema: la frase sul codice dipende dalla possibilità di leggerlo. */
-export function planSystemPrompt(opts: { code: boolean; reason?: string }): string {
+export function planSystemPrompt(opts: { code: boolean; reason?: string; bestPractice?: boolean }): string {
   const codeLine = opts.code
     ? CODE_INSTRUCTIONS
     : `Non puoi leggere il codice di questa app (${clean(opts.reason ?? "non disponibile")}): se serve un dettaglio che nei dati non c'è, dillo.`;
@@ -88,6 +97,9 @@ export function planSystemPrompt(opts: { code: boolean; reason?: string }): stri
   "Per un'integrazione tra due app proponi una voce per ciascuna app, e ognuna cita l'altra.",
   "Le voci riguardano solo i capitoli endpoint, completion ed evolution.",
   "Hai una memoria personale (strumenti `ricorda`, `aggiorna_appunto`, `dimentica`, `cerca_nello_storico`): salva solo fatti e preferenze stabili dell'utente, mai credenziali.",
+  INSTRUCTION_PROPOSAL_RULE,
+  // Best practice: solo a interruttore acceso
+  ...(opts.bestPractice ? [BEST_PRACTICE_INSTRUCTIONS] : []),
   ].join("\n");
 }
 
@@ -123,6 +135,9 @@ function renderHistory(history: HistoryMessage[], maxChars: number): ChatComplet
     if (m.role === "assistant" && m.proposals.length > 0) {
       content +=
         "\n" + m.proposals.map((p) => `[proposta ${p.kind} «${p.title}»: ${p.status}]`).join("\n");
+    }
+    if (m.role === "assistant" && m.instructionProposals && m.instructionProposals.length > 0) {
+      content += "\n" + m.instructionProposals.map(instructionProposalTag).join("\n");
     }
     return { role: m.role, content };
   });
@@ -191,6 +206,8 @@ function dataBlock(input: PlanContextInput, opts: { includeOthers: boolean; titl
   }
   const memory = input.memory.split(DATA_OPEN).join("").split(DATA_CLOSE).join("").trim();
   if (memory) lines.push("", "## Memoria di Lucius (appunti e conversazioni recenti)", memory);
+  const bp = (input.bestPractice?.data ?? "").split(DATA_OPEN).join("").split(DATA_CLOSE).join("").trim();
+  if (bp) lines.push("", "## Per le best practice: architettura dell'app e fonti curate", bp);
   lines.push(DATA_CLOSE);
   return lines.join("\n");
 }
@@ -200,9 +217,12 @@ function dataBlock(input: PlanContextInput, opts: { includeOthers: boolean; titl
  * cronologia più vecchia (l'ultimo messaggio resta), le altre app, i titoli del piano a 60 caratteri.
  */
 export function buildPlanMessages(input: PlanContextInput): ChatCompletionMessageParam[] {
-  const systemPrompt = planSystemPrompt(input.code.available ? { code: true } : { code: false, reason: input.code.reason });
+  const bestPractice = input.bestPractice !== undefined;
+  const systemPrompt = planSystemPrompt(
+    input.code.available ? { code: true, bestPractice } : { code: false, reason: input.code.reason, bestPractice },
+  );
   const build = (historyChars: number, includeOthers: boolean, titleMax: number | null) => [
-    { role: "system" as const, content: systemPrompt },
+    { role: "system" as const, content: withPersonalInstructions(systemPrompt, input.personalInstructions ?? "") },
     { role: "user" as const, content: dataBlock(input, { includeOthers, titleMax }) },
     ...renderHistory(input.history, historyChars),
   ];

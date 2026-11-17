@@ -79,6 +79,9 @@ app.use(cors(corsOptions));
 // 20 000 caratteri tutti da escapare supera i 100 KB e verrebbe perso.
 const jsonParser = express.json();
 const nodeJsonParser = express.json({ limit: "256kb" });
+// Segnalazioni dei bug dal plugin (pubbliche): corpo al più 32 KB, oltre 413.
+const bugJsonParser = express.json({ limit: "32kb" });
+const EMBED_BUGS_PATH = /^\/api\/embed\/bugs(?:\/|$)/i;
 const NODE_PROTOCOL_PATH = /^\/api\/node(?:\/|$)/i;
 const formParser = express.urlencoded({ extended: true });
 const isAttachmentUpload = (req: express.Request): boolean => req.method === "POST" && ATTACHMENT_UPLOAD_PATH.test(req.originalUrl.split("?")[0]!);
@@ -87,7 +90,8 @@ const HOOKS_PATH = /^\/api\/hooks(?:\/|$)/i;
 const skipGlobalParsers = (req: express.Request): boolean => isAttachmentUpload(req) || HOOKS_PATH.test(req.originalUrl.split("?")[0]!);
 app.use((req, res, next) => {
   if (skipGlobalParsers(req)) return next();
-  const parser = NODE_PROTOCOL_PATH.test(req.originalUrl.split("?")[0]!) ? nodeJsonParser : jsonParser;
+  const path = req.originalUrl.split("?")[0]!;
+  const parser = NODE_PROTOCOL_PATH.test(path) ? nodeJsonParser : EMBED_BUGS_PATH.test(path) ? bugJsonParser : jsonParser;
   return parser(req, res, next);
 });
 app.use((req, res, next) => (skipGlobalParsers(req) ? next() : formParser(req, res, next)));

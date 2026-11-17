@@ -1,7 +1,6 @@
 import {
   db,
   agentsTable,
-  aiAccountsTable,
   aiModelsTable,
   appArchitectureTable,
   appsTable,
@@ -12,6 +11,7 @@ import {
   type Agent,
   type App,
   type AppArchitecture,
+  type BugReportRow,
   type Run,
 } from "@workspace/db";
 import { and, eq, inArray, sql } from "drizzle-orm";
@@ -31,12 +31,14 @@ import {
   type StepRecord,
 } from "./agent-loop";
 import { resolveModel, type ResolvedModel } from "./ai/executor";
+import { aiModelOwner } from "./ai/model-owner";
 import { runBudgetBlock } from "./budget";
 import { delegateTurn } from "./node-turns/delegate";
 import { logger } from "./logger";
 import { loopModelCallError, modelChatDeps, newUsage, stepWriter, type LoopUsage } from "./loop-wiring";
 import { ARCHITECTURE_TOOL_NAME, architecturePromptBlock, architectureTool, handleReadArchitecture } from "./architecture/tool";
 import { ESCALATION_TOOL_NAME, escalationTool, handleEscalation, productLead } from "./escalation";
+import { handleTriageTool, isTriageToolName, triageReportForRun, triageTools } from "./bugs/triage-tools";
 import { isInternalTool, roleFunctionTools } from "./teams/role-tools";
 import { loadAgentTools, loadAppConnection } from "./tools/catalog";
 import { effectiveLevel } from "./tools/levels";
@@ -147,6 +149,8 @@ interface RunContext {
   /** Tool caricati dell'agente, prima di `withConfirmedWrites` e degli strumenti interni (per `proponi`). */
   baseTools: CatalogTool[];
   conn: AppConnection;
+  /** Segnalazione vagliata da questa run (strumenti di vaglio), null nelle altre run. */
+  bugReport?: BugReportRow | null;
 }
 
 /**
@@ -235,6 +239,14 @@ async function loadContext(run: Run): Promise<RunContext & { app: App }> {
   if (!agent) throw new Error(`agente ${run.agentId} non trovato`);
   const [app] = await db.select().from(appsTable).where(eq(appsTable.id, agent.appId)).limit(1);
   if (!app) throw new Error(`app ${agent.appId} non trovata`);
+  // Run di vaglio di una segnalazione: il testo arriva da un visitatore anonimo e domanda e messaggio_utente tornano a
+  // lui. Solo gli strumenti di vaglio e `leggi_architettura` limitata all'App della run: niente tool dell'App, niente
+  // `proponi` né segnalazione (vale anche sul nodo, che usa gli stessi strumenti)
+  const bugReport = agent.role === "general" ? await triageReportForRun(run.id) : null;
+  if (bugReport) {
+    const conn = await loadAppConnection(app.id);
+    return { run, agent, app, tools: [...triageTools(), architectureTool()], baseTools: [], conn, bugReport };
+  }
   const [loaded, conn] = await Promise.all([
     loadAgentTools(agent.id, { includeUi: run.clientTools }),
     loadAppConnection(app.id),
@@ -257,7 +269,7 @@ async function loadContext(run: Run): Promise<RunContext & { app: App }> {
   if (agent.role === "general") {
     tools = [...tools.filter((t) => t.name !== ARCHITECTURE_TOOL_NAME), architectureTool()];
   }
-  return { run, agent, app, tools, baseTools: loaded, conn };
+  return { run, agent, app, tools, baseTools: loaded, conn, bugReport: null };
 }
 
 async function nextPosition(runId: number): Promise<number> {
@@ -389,7 +401,7 @@ function runToolDeps(
   const runId = ctx.run.id;
   let owner: Promise<number | null> | null = null;
   const ownerOf = async (): Promise<number | null> => {
-    owner ??= modelOwner(aiModelId);
+    owner ??= aiModelOwner(aiModelId);
     try {
       return await owner;
     } catch (err) {
@@ -434,7 +446,10 @@ function runToolDeps(
           args,
         );
       }
-      if (tool.name === ARCHITECTURE_TOOL_NAME) return handleReadArchitecture(ctx.app, args);
+      if (tool.name === ARCHITECTURE_TOOL_NAME) {
+        return handleReadArchitecture(ctx.app, args, { onlyOwnApp: Boolean(ctx.bugReport) });
+      }
+      if (isTriageToolName(tool.name) && ctx.bugReport) return handleTriageTool(ctx.run, ctx.bugReport, tool.name, args);
       return handleEscalation(ctx.run, ctx.agent, args);
     },
     queueAction,
@@ -779,17 +794,6 @@ export async function startRun(runId: number, opts: RunOptions = {}): Promise<vo
   } finally {
     untrackRun(runId, abort);
   }
-}
-
-/** Utente che possiede l'account AI del modello; null se il modello o l'account non ci sono più. */
-async function modelOwner(aiModelId: number): Promise<number | null> {
-  const [row] = await db
-    .select({ userId: aiAccountsTable.userId })
-    .from(aiModelsTable)
-    .innerJoin(aiAccountsTable, eq(aiModelsTable.accountId, aiAccountsTable.id))
-    .where(eq(aiModelsTable.id, aiModelId))
-    .limit(1);
-  return row?.userId ?? null;
 }
 
 /**

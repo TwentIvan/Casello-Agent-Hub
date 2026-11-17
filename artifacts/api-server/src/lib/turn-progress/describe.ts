@@ -46,6 +46,8 @@ const readSkill: Describer = (a) => {
 };
 
 const DESCRIBERS: Record<string, Describer> = {
+  // Mai la domanda: potrebbe contenere dettagli dell'App.
+  cerca_best_practice: fixed("Cerca le best practice"),
   // Solo l'host dell'indirizzo: percorso e query possono contenere token.
   leggi_pagina_web: (a) => {
     const raw = typeof a.url === "string" ? a.url : "";
@@ -84,6 +86,7 @@ const DESCRIBERS: Record<string, Describer> = {
     return slug ? `Legge l'app ${slug}` : "Legge un'app";
   },
   propose: fixed("Prepara una scheda"),
+  proponi_istruzioni_personali: fixed("Propone una modifica alle sue istruzioni"),
   leggi_squadra: fixed("Legge la squadra"),
   leggi_skill: readSkill,
   leggi_versione_skill: readSkill,
@@ -114,6 +117,8 @@ const DESCRIBERS: Record<string, Describer> = {
     return app ? `Chiede al Responsabile di ${app}` : "Chiede al Responsabile di prodotto";
   },
   leggi_run: fixed("Legge l'esito di una run"),
+  elenca_segnalazioni: fixed("Elenca le segnalazioni"),
+  esito_vaglio: fixed("Registra l'esito del vaglio"),
   leggi_architettura: (a) => {
     const slug = text(a, "app");
     return slug ? `Legge l'architettura di ${slug}` : "Legge l'architettura dell'app";

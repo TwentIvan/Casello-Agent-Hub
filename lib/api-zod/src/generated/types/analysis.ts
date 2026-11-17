@@ -28,6 +28,13 @@ export interface Analysis {
      * @nullable
      */
   costUsd: number | null;
+  /** Verifica delle best practice per app simili prima della fase di completamento */
+  bestPractice: boolean;
+  /**
+     * Note della verifica (per domanda sintesi e fonti; «Best practice non verificate: …» se non è riuscita); null se non eseguita (anche nelle analisi locali, dove cerca l'agente)
+     * @nullable
+     */
+  bestPracticeNotes: string | null;
   /**
      * Fase corrente
      * @nullable

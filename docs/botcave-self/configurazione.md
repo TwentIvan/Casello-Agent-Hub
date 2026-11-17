@@ -381,3 +381,22 @@ for (const name of ["create_plan_issues", "create_team_template", "update_team_t
 ```
 
 Se il repository è privato, il catalogo si incolla al posto della `fetch`.
+
+## 8. Aggiornamento del 17 novembre 2026: il capo è sempre cloud
+
+Le proposte n. 21 e n. 22 del Responsabile (squadra «Sviluppo Thu Hub Up» con i ruoli sul nodo) sono fallite con un 400 all'approvazione: la n. 21
+aveva un ruolo cloud senza modello, la n. 22 dava il modello cloud anche ai ruoli `node`. Inoltre metteva il capo sul nodo, che il server
+accettava ma i cui turni falliscono sempre. Ora il server rifiuta il capo `node` («il capo gira in cloud: scegli «cloud» e un modello cloud per
+il capo») e i quattro tool dei ruoli dicono le regole nella descrizione e nei campi `isLead`, `runsOn`, `aiModelId` e `code` (con `merge`).
+
+Per allineare la produzione, dopo il deploy, si aggiornano descrizione e `paramsSchema` dei quattro tool (funzione `api` del passo 0):
+
+```js
+const catalogo = await (await fetch("https://raw.githubusercontent.com/TwentIvan/Casello-Agent-Hub/main/docs/botcave-self/catalogo-tool.json")).json();
+const tools = await api("GET", "/api/apps/4/tools");
+for (const name of ["create_team_template", "update_team_template", "create_team_instance", "update_team_instance"]) {
+  const tool = tools.find((t) => t.name === name);
+  const voce = catalogo.find((t) => t.name === name);
+  await api("PATCH", `/api/apps/4/tools/${tool.id}`, { description: voce.description, paramsSchema: voce.paramsSchema });
+}
+```

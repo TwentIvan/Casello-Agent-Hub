@@ -10,6 +10,8 @@ import type { MemoryCharacter } from './memoryCharacter';
 import type { PlanTurnStatus } from './planTurnStatus';
 
 export interface CharacterConversation {
+  /** Lucius cerca le best practice prima di proporre */
+  bestPractice: boolean;
   id: number;
   character: MemoryCharacter;
   subjectType: CharacterSubjectType;

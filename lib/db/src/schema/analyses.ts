@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, timestamp, pgEnum, jsonb, uniqueIndex, numeric } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, pgEnum, jsonb, uniqueIndex, numeric, boolean } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { appsTable } from "./apps";
 import { aiModelsTable } from "./ai-models";
@@ -41,6 +41,9 @@ export const analysesTable = pgTable(
     cachedTokens: integer("cached_tokens").notNull().default(0),
     // Costo in USD, null se un prezzo del modello manca
     costUsd: numeric("cost_usd", { precision: 12, scale: 6 }),
+    // Verifica delle best practice: acceso all'avvio; le note restano null finché il passo non è eseguito
+    bestPractice: boolean("best_practice").notNull().default(false),
+    bestPracticeNotes: text("best_practice_notes"),
     // Fase corrente
     phase: text("phase"),
     // Al massimo 500 voci

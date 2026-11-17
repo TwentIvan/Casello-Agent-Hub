@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
-import { appsTable, db, pool, teamCodeTasksTable, teamEventsTable, teamInstancesTable, teamTasksTable, teamTurnsTable, usersTable } from "@workspace/db";
+import { appsTable, bugReportsTable, db, pool, teamCodeTasksTable, teamEventsTable, teamInstancesTable, teamTasksTable, teamTurnsTable, usersTable } from "@workspace/db";
 import { startFakeGithub, type FakeGithub } from "../../../test/fake-github";
 import { clearInstallationTokenCache } from "../github/app";
 import { resetGithubConfigForTests } from "../github/config";
@@ -150,6 +150,32 @@ describe("sorveglianza della CI", () => {
     expect(ev[0]).toMatchObject({ type: "compito_finito", bulletin: "Compito t1: PR #5 unita" });
     expect(await reasons()).toEqual([{ type: "pr_closed", taskCodeId: codeId, merged: true }]);
     expect((await row()).prState).toBe("merged");
+  });
+
+  it("squadra per i bug: PR unita chiude la segnalazione, PR chiusa senza merge no", async () => {
+    await db.update(teamInstancesTable).set({ bugTeam: true }).where(eq(teamInstancesTable.id, instanceId));
+    await writePlanVersion(
+      instanceId,
+      { objective: "o", constraints: [], openPoints: [], manualActions: [], tasks: [{ id: "t1", title: "T", roleKey: "dev", instructions: "", status: "done", outcome: "ok", issue: 12 }] },
+      "approved",
+    );
+    const [app] = await db.select().from(appsTable);
+    const [bug] = await db
+      .insert(bugReportsTable)
+      .values({ appId: app!.id, number: 1, reporterKind: "browser", browserKeyHash: "h", title: "t", description: "d", status: "in_progress", teamInstanceId: instanceId, issueNumber: 12 })
+      .returning();
+    gh.pulls.get(REPO)![0]!.state = "closed";
+    gh.pulls.get(REPO)![0]!.merged = false;
+    await watchCodeTasksOnce(at(60_000));
+    expect((await db.select().from(bugReportsTable).where(eq(bugReportsTable.id, bug!.id)))[0]!.status).toBe("in_progress");
+
+    await db.update(teamCodeTasksTable).set({ prState: "open" }).where(eq(teamCodeTasksTable.id, codeId));
+    gh.pulls.get(REPO)![0]!.merged = true;
+    await watchCodeTasksOnce(at(120_000));
+    await watchCodeTasksOnce(at(180_000));
+    const after = (await db.select().from(bugReportsTable).where(eq(bugReportsTable.id, bug!.id)))[0]!;
+    expect(after.status).toBe("fixed");
+    expect(after.prUrl).toBe("u");
   });
 
   it("PR chiusa senza merge", async () => {

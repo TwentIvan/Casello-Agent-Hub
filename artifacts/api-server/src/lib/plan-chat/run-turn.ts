@@ -36,6 +36,13 @@ import { loadPlanItems, planItemRef } from "./plan-items";
 
 export { latestCompletedAnalysisId, loadPlanItems, planItemRef } from "./plan-items";
 import { memoryContextBlock } from "../memory/context";
+import { personalInstructionsBlock } from "../characters/personal-instructions";
+import {
+  INSTRUCTION_PROPOSAL_TOOL,
+  InstructionProposer,
+  isInstructionProposalTool,
+  loadInstructionProposalStatuses,
+} from "../characters/instruction-proposals";
 import { MEMORY_TOOLS } from "../memory/tools";
 import { PLAN_TOOLS, PlanToolRunner, type PlanToolItem } from "./tools";
 import { runChatTurn } from "../node-turns/chat-turn";
@@ -46,6 +53,9 @@ import { drainQueued, isTurnOpen } from "../chat-turns/control";
 import { turnTotals } from "../chat-turns/totals";
 import type { ChatKindSpec } from "../chat-turns/spec";
 import { WEB_TOOLS, WebPageReader, isWebTool } from "../web-reader/tool";
+import { ARCHITECTURE_CHAT_TOOL, isArchitectureTool, runArchitectureChatTool } from "../architecture/tool";
+import { BEST_PRACTICE_TOOLS, BestPracticeSearcher, isBestPracticeTool } from "../best-practice/tool";
+import { bestPracticeData, parseToolArgs } from "../best-practice/context";
 
 export const PLAN_MESSAGE_MAX_CHARS = 8_000;
 export const INTERRUPTED_TURN_MESSAGE = "Turno interrotto dal riavvio di Botcave: riscrivi il messaggio.";
@@ -156,6 +166,7 @@ async function loadHistory(conversationId: number, assistantMessageId: number): 
     .from(planProposalsTable)
     .where(eq(planProposalsTable.conversationId, conversationId))
     .orderBy(asc(planProposalsTable.id));
+  const instructionStatuses = await loadInstructionProposalStatuses("plan_chat", conversationId);
   const targetIds = proposals.filter((p) => p.payload === null && p.targetItemId !== null).map((p) => p.targetItemId!);
   const targets = targetIds.length > 0 ? await db.select().from(analysisItemsTable).where(inArray(analysisItemsTable.id, targetIds)) : [];
   const targetById = new Map(targets.map((t) => [t.id, t]));
@@ -175,6 +186,7 @@ async function loadHistory(conversationId: number, assistantMessageId: number): 
       proposals: proposals
         .filter((p) => p.messageId === m.id)
         .map((p): HistoryProposal => ({ kind: p.kind, title: titleOf(p), status: p.status })),
+      instructionProposals: instructionStatuses.get(m.id) ?? [],
     }));
 }
 
@@ -264,7 +276,10 @@ async function executePlanTurnInner(conversationId: number, assistantMessageId: 
         otherApps,
         history: await loadHistory(conversationId, assistantMessageId),
         memory: await memoryContextBlock(conv.userId, "lucius"),
+        personalInstructions: await personalInstructionsBlock(conv.userId, "lucius"),
         code: codeInfo.ok ? { available: true, repo: codeInfo.repo, branch: codeInfo.branch } : { available: false, reason: codeInfo.reason },
+        // Il valore dell'interruttore si legge all'inizio del turno
+        ...(conv.bestPractice ? { bestPractice: { data: await bestPracticeData(conv.userId, app.id) } } : {}),
       });
 
       const resolved = await resolveModel(conv.aiModelId, { userId: conv.userId, mustOwn: true });
@@ -296,6 +311,16 @@ async function executePlanTurnInner(conversationId: number, assistantMessageId: 
       const codeRunner = codeInfo.ok ? new CodeToolRunner(conv.userId, app.id) : null;
       // Un solo lettore di pagine web per turno (sempre offerto)
       const webReader = new WebPageReader(conv.userId);
+      // Una sola ricerca delle best practice per turno (con l'interruttore acceso)
+      const searcher = conv.bestPractice ? new BestPracticeSearcher(conv.userId) : null;
+      // Una proposta di istruzioni personali di Lucius per turno
+      const proposer = new InstructionProposer({
+        userId: conv.userId,
+        character: "lucius",
+        conversationKind: "plan_chat",
+        conversationId,
+        messageId: assistantMessageId,
+      });
       const outcome = await runChatTurn({
         resolved,
         userId: conv.userId,
@@ -303,10 +328,28 @@ async function executePlanTurnInner(conversationId: number, assistantMessageId: 
         refId: conversationId,
         messageId: assistantMessageId,
         messages,
-        tools: codeRunner ? [...PLAN_TOOLS, ...MEMORY_TOOLS, ...CODE_TOOLS, ...WEB_TOOLS] : [...PLAN_TOOLS, ...MEMORY_TOOLS, ...WEB_TOOLS],
+        tools: [
+          ...PLAN_TOOLS,
+          ...MEMORY_TOOLS,
+          INSTRUCTION_PROPOSAL_TOOL,
+          ...(codeRunner ? CODE_TOOLS : []),
+          ...WEB_TOOLS,
+          ARCHITECTURE_CHAT_TOOL,
+          ...(searcher ? BEST_PRACTICE_TOOLS : []),
+        ],
         ...(codeRunner ? { limits: CODE_TURN_LIMITS } : {}),
         runTool: (call) =>
-          codeRunner && isCodeTool(call.name) ? codeRunner.run(call) : isWebTool(call.name) ? webReader.run(call) : runner.run(call),
+          isInstructionProposalTool(call.name)
+            ? proposer.run(call.arguments)
+            : codeRunner && isCodeTool(call.name)
+              ? codeRunner.run(call)
+              : isWebTool(call.name)
+                ? webReader.run(call)
+                : isArchitectureTool(call.name)
+                  ? runArchitectureChatTool(app, call.arguments)
+                  : searcher && isBestPracticeTool(call.name)
+                    ? searcher.run(parseToolArgs(call.arguments))
+                    : runner.run(call),
         caller: "plan-chat",
         budgetCheck: (aiModelId) => characterBudgetBlock(conv.userId, "lucius", aiModelId),
         signal,

@@ -45,6 +45,9 @@ export const INTERNAL_TOOL_NAMES = [
   "consegna_sintesi",
   // Lettura dell'architettura di un'App da parte dei Responsabili (architecture/tool.ts)
   "leggi_architettura",
+  // Vaglio delle segnalazioni dei bug da parte del Responsabile (bugs/triage-tools.ts)
+  "elenca_segnalazioni",
+  "esito_vaglio",
 ] as const;
 
 export type InternalToolName = (typeof INTERNAL_TOOL_NAMES)[number];

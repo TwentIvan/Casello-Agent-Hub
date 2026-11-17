@@ -32,6 +32,7 @@ import {
   useStopPlanTurn,
   useStopTeamChatTurn,
   useUpdatePlanConversation,
+  useUpdateTeamChatConversation,
 } from "@workspace/api-client-react";
 import { ProposalCard } from "@/components/plan/proposal-card";
 import { RoleInstructionsCard } from "@/components/teams/role-instructions-card";
@@ -52,6 +53,7 @@ function mapCommon(d: AnyDetail, readOnlyReason: string | null): Omit<ConvDetail
     turnStatus: d.turnStatus,
     queuedMessage: d.queuedMessage ? { id: d.queuedMessage.id, content: d.queuedMessage.content } : null,
     progress: d.progress ?? null,
+    bestPractice: d.bestPractice,
     readOnlyReason,
     subjectId: null,
     messages: d.messages.map((m) => ({ id: m.id, role: m.role, content: m.content, error: m.error })),
@@ -83,6 +85,7 @@ export function usePlanChatAdapter(appId: number): ChatAdapter {
 
   return {
     character: "lucius",
+    instructionProposalsKind: "plan_chat",
     subjectLabel: app.data ? `Piano · ${app.data.name}` : "Piano dell'app",
     emptyHint: "Scrivi a Lucius per chiedere integrazioni, correzioni o nuove idee per il piano.",
     deleteNote: "I messaggi e le proposte non decise vanno persi; le voci già accettate restano nel piano.",
@@ -168,6 +171,16 @@ export function usePlanChatAdapter(appId: number): ChatAdapter {
         refreshList();
       }
     },
+    bestPractice: {
+      get: (conv) => conv.bestPractice,
+      set: async (id, value) => {
+        try {
+          await update.mutateAsync({ id, data: { bestPractice: value } });
+        } finally {
+          refreshConv(id);
+        }
+      },
+    },
     decide: async (proposalId, action) => {
       try {
         await decide.mutateAsync({ id: proposalId, data: { action } });
@@ -200,6 +213,7 @@ export function useTeamChatAdapter(instanceId: number, closed: boolean): ChatAda
   const send = useSendTeamChatMessage();
   const stop = useStopTeamChatTurn();
   const cancelQueued = useCancelQueuedTeamChatMessage();
+  const updateTeam = useUpdateTeamChatConversation();
   const decide = useDecideTeamChatProposal();
   const remove = useDeleteTeamChatConversation();
 
@@ -215,6 +229,7 @@ export function useTeamChatAdapter(instanceId: number, closed: boolean): ChatAda
 
   return {
     character: "lucius",
+    instructionProposalsKind: "team_chat",
     subjectLabel: team.data ? `Squadra · ${team.data.name}` : "Squadra",
     closedReason,
     emptyHint: "Scrivi a Lucius per chiedere un'identità o istruzioni migliori per un ruolo.",
@@ -272,6 +287,16 @@ export function useTeamChatAdapter(instanceId: number, closed: boolean): ChatAda
       } finally {
         refreshConv(id);
       }
+    },
+    bestPractice: {
+      get: (conv) => conv.bestPractice,
+      set: async (id, value) => {
+        try {
+          await updateTeam.mutateAsync({ id, data: { bestPractice: value } });
+        } finally {
+          refreshConv(id);
+        }
+      },
     },
     decide: async (proposalId, action) => {
       try {

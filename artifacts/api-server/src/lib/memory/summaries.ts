@@ -2,6 +2,7 @@
 // ripiego cloud del suo account, altrimenti nessun riassunto), 30 s, 1 000 token.
 // Nei log solo id e conteggi: mai il contenuto delle conversazioni.
 
+import { pruneBestPracticeSearches } from "../best-practice/store";
 import { and, asc, eq, isNull, lt, or, sql } from "drizzle-orm";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import {
@@ -223,6 +224,7 @@ export function startMemorySweeper(): () => void {
     if (inFlight) return;
     inFlight = true;
     void sweepSummaries()
+      .then(() => pruneBestPracticeSearches())
       .catch((err: unknown) =>
         logger.error({ errName: err instanceof Error ? err.name : "Error" }, "Riassunti della memoria non riusciti"),
       )

@@ -2,6 +2,7 @@ import { and, asc, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
 import { appsTable, db, teamCodeTasksTable, teamInstancesTable, teamTasksTable, type TeamCodeTaskRow } from "@workspace/db";
 import { githubConfig } from "../github/config";
 import { logger } from "../logger";
+import { closeBugsForMergedPull } from "../bugs/closure";
 import { emitEvent } from "../teams/events";
 import { patchPlan } from "../teams/plan";
 import { enqueueTurnReason, notifyTurnQueued } from "../teams/turn-queue";
@@ -69,6 +70,8 @@ async function watchRow(code: TeamCodeTaskRow, r: RepoRef, now: Date): Promise<v
         tx,
       );
       await enqueueTurnReason(code.instanceId, { type: "pr_closed", taskCodeId: code.id, merged }, tx);
+      // Squadra per i bug: le segnalazioni del compito diventano «corrette» (una volta sola, nella transazione vinta)
+      if (merged) await closeBugsForMergedPull(tx, { instanceId: code.instanceId, planTaskId: code.planTaskId, prUrl: code.prUrl });
       return true;
     });
     if (won) notifyTurnQueued(code.instanceId);

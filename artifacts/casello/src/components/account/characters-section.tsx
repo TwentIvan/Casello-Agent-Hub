@@ -12,17 +12,21 @@ import {
   useSetAlfredSettings,
   useUpdateCharacterSettings,
 } from "@workspace/api-client-react";
+import { BarbaraInstructionsBlock } from "@/components/account/barbara-instructions-block";
+import { PersonalInstructionsBlock } from "@/components/account/personal-instructions-block";
 import { ModelPicker } from "@/components/ai/model-picker";
 import { CapForm, ratio, SpendLine, WARN_RATIO } from "@/components/budget/budget";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { formatUsd } from "@/lib/format";
+import { MAX_CURATED_SOURCES, validateCuratedSources, type CuratedSourceRow } from "@/lib/curated-sources";
 
 const VOICES = ["Kore", "Charon", "Aoede", "Puck", "Fenrir", "Leda", "Orus", "Zephyr"];
 
@@ -218,6 +222,139 @@ function WrittenBlock({
   );
 }
 
+const NO_MODEL = "none";
+
+/** Best practice di Lucius: quando cercarle, modello Gemini della ricerca e fonti curate. */
+function BestPracticeBlock({
+  settings,
+  save,
+  pending,
+}: {
+  settings: CharacterSettingsView;
+  save: SaveSettings;
+  pending: boolean;
+}) {
+  const [mode, setMode] = useState<"always" | "on_request" | undefined>(undefined);
+  const [searchModel, setSearchModel] = useState<number | null | undefined>(undefined);
+  const [sources, setSources] = useState<CuratedSourceRow[] | undefined>(undefined);
+  const modeValue = mode ?? settings.luciusBestPractice;
+  const modelValue = searchModel !== undefined ? searchModel : settings.luciusSearchAiModelId;
+  const sourcesValue = sources ?? settings.luciusSources;
+  const sourcesError = sources ? validateCuratedSources(sources) : null;
+  const dirty =
+    modeValue !== settings.luciusBestPractice ||
+    modelValue !== settings.luciusSearchAiModelId ||
+    (sources !== undefined && JSON.stringify(sources) !== JSON.stringify(settings.luciusSources));
+
+  const setRow = (i: number, patch: Partial<CuratedSourceRow>) =>
+    setSources(sourcesValue.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h3 className="text-label">Best practice</h3>
+        <p className="text-sm text-muted-foreground">
+          Prima di proporre, Lucius cerca le best practice per app simili. Ricerca Google tramite Gemini: 5 000 ricerche
+          gratuite al mese con i modelli Gemini 3, poi circa 0,014 $ l'una.
+        </p>
+      </div>
+      <div className="grid max-w-md gap-2">
+        <Label htmlFor="lucius-bp-mode">Best practice</Label>
+        <Select value={modeValue} onValueChange={(v) => setMode(v as "always" | "on_request")} disabled={pending}>
+          <SelectTrigger id="lucius-bp-mode">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="always">Sempre</SelectItem>
+            <SelectItem value="on_request">Su richiesta</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      <div className="grid max-w-md gap-2">
+        <Label htmlFor="lucius-bp-model">Modello per la ricerca</Label>
+        <Select
+          value={modelValue === null ? NO_MODEL : String(modelValue)}
+          onValueChange={(v) => setSearchModel(v === NO_MODEL ? null : Number(v))}
+          disabled={pending}
+        >
+          <SelectTrigger id="lucius-bp-model">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NO_MODEL}>Nessuno</SelectItem>
+            {settings.searchModels.map((m) => (
+              <SelectItem key={m.id} value={String(m.id)}>
+                {m.name} · {m.accountName}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        {settings.searchModels.length === 0 && (
+          <p className="text-sm text-muted-foreground">Aggiungi un account Gemini per cercare le best practice.</p>
+        )}
+      </div>
+      <div className="space-y-2">
+        <p className="text-label">Fonti curate</p>
+        <p className="text-sm text-muted-foreground">
+          Pagine https che Lucius può leggere insieme alla ricerca (al più {MAX_CURATED_SOURCES}).
+        </p>
+        {sourcesValue.map((row, i) => (
+          <div key={i} className="flex min-w-0 flex-wrap items-center gap-2">
+            <Input
+              aria-label={`Etichetta della fonte ${i + 1}`}
+              placeholder="Etichetta"
+              className="w-full max-w-[12rem]"
+              value={row.label}
+              disabled={pending}
+              onChange={(e) => setRow(i, { label: e.target.value })}
+            />
+            <Input
+              aria-label={`Indirizzo della fonte ${i + 1}`}
+              placeholder="https://…"
+              className="min-w-0 flex-1 basis-48"
+              value={row.url}
+              disabled={pending}
+              onChange={(e) => setRow(i, { url: e.target.value })}
+            />
+            <Button variant="ghost" size="sm" disabled={pending} onClick={() => setSources(sourcesValue.filter((_, j) => j !== i))}>
+              Togli
+            </Button>
+          </div>
+        ))}
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={pending || sourcesValue.length >= MAX_CURATED_SOURCES}
+          onClick={() => setSources([...sourcesValue, { label: "", url: "" }])}
+        >
+          Aggiungi
+        </Button>
+        {sourcesError && <p className="text-sm text-destructive">{sourcesError}</p>}
+      </div>
+      <Button
+        disabled={!dirty || pending || sourcesError !== null}
+        onClick={() =>
+          save(
+            {
+              luciusBestPractice: modeValue,
+              luciusSearchAiModelId: modelValue,
+              luciusSources: sourcesValue.map((r) => ({ label: r.label.trim(), url: r.url.trim() })),
+            },
+            "Lucius",
+            () => {
+              setMode(undefined);
+              setSearchModel(undefined);
+              setSources(undefined);
+            },
+          )
+        }
+      >
+        {pending ? "Salvataggio…" : "Salva le best practice"}
+      </Button>
+    </div>
+  );
+}
+
 /** Account → Personaggi: Alfred (voce, modello scritto, tetto) e Lucius (modello, tetto). */
 export function CharactersSection() {
   const queryClient = useQueryClient();
@@ -278,6 +415,7 @@ export function CharactersSection() {
           ) : (
             <WrittenBlock character="alfred" settings={settings.data} save={save} pending={update.isPending} />
           )}
+          <PersonalInstructionsBlock character="alfred" />
         </section>
         {settings.data && (
           <section className="space-y-6" aria-labelledby="characters-lucius">
@@ -285,8 +423,16 @@ export function CharactersSection() {
               Lucius
             </h2>
             <WrittenBlock character="lucius" settings={settings.data} save={save} pending={update.isPending} />
+            <BestPracticeBlock settings={settings.data} save={save} pending={update.isPending} />
+            <PersonalInstructionsBlock character="lucius" />
           </section>
         )}
+        <section className="space-y-6" aria-labelledby="characters-barbara">
+          <h2 id="characters-barbara" className="text-h2">
+            Barbara
+          </h2>
+          <BarbaraInstructionsBlock />
+        </section>
       </CardContent>
     </Card>
   );

@@ -36,6 +36,7 @@ import { ModelChoiceError, chooseCloudModel, type ModelChoice } from "../lib/ai/
 import { resolveAgentModel } from "../lib/ai/default-model";
 import { isUniqueViolation } from "../lib/pg-errors";
 import { userBudgetBlock } from "../lib/budget";
+import { luciusBestPracticeDefault } from "../lib/characters/settings";
 import { ANALYSIS_DEFAULT_MAX_TOKENS, CHOOSE_MODEL, startAnalysis } from "../lib/architect/run-analysis";
 import { ApplyError, applyItem } from "../lib/architect/apply";
 import { exportAll, exportChapter } from "../lib/architect/issues";
@@ -107,12 +108,13 @@ async function rejectOverBudget(res: Response, choice: ModelChoice): Promise<boo
  * Crea l'analisi `queued` e la avvia in background. `startAnalysis` non lancia mai: registra da sé
  * ogni errore sulla riga dell'analisi. Lo zip resta solo in memoria (mai su disco né nei log).
  */
-async function createAndStart(app: App, choice: ModelChoice, maxTokens: number | undefined, zip?: Uint8Array) {
+async function createAndStart(app: App, choice: ModelChoice, maxTokens: number | undefined, bestPractice: boolean, zip?: Uint8Array) {
   const row = await insertAnalysis({
     appId: app.id,
     model: choice.model,
     aiModelId: choice.aiModelId,
     maxTokens: maxTokens ?? ANALYSIS_DEFAULT_MAX_TOKENS,
+    bestPractice,
     // Valore iniziale: l'orchestratore lo sovrascrive con le sorgenti usate davvero
     sources: { code: zip ? "zip" : app.sourceType, openapi: false, mcp: false, description: !!app.functionalDescription?.trim() },
   });
@@ -124,13 +126,14 @@ async function createAndStart(app: App, choice: ModelChoice, maxTokens: number |
  * Analisi `queued` per un agente locale: nessun modello di Casello (`ai_model_id` nullo, nessun costo)
  * e niente `startAnalysis`, la prende l'agente via MCP.
  */
-function createLocal(app: App, maxTokens: number | undefined) {
+function createLocal(app: App, maxTokens: number | undefined, bestPractice: boolean) {
   return insertAnalysis({
     appId: app.id,
     model: LOCAL_MODEL,
     aiModelId: null,
     executor: "local",
     maxTokens: maxTokens ?? ANALYSIS_DEFAULT_MAX_TOKENS,
+    bestPractice,
     sources: { code: app.sourceType, openapi: false, mcp: false, description: !!app.functionalDescription?.trim() },
   });
 }
@@ -138,6 +141,11 @@ function createLocal(app: App, maxTokens: number | undefined) {
 const LOCAL_NO_MODEL = "con l'agente locale non si sceglie il modello: togli aiModelId";
 const LOCAL_NO_ZIP = "con l'agente locale lo zip non serve";
 const NOT_OPEN_LOCAL = "Solo un'analisi locale in coda o in corso si può rilasciare o annullare";
+
+/** Verifica delle best practice: il valore della richiesta, altrimenti il default di Lucius dell'utente. */
+async function bestPracticeFor(requested: boolean | undefined, userId: number): Promise<boolean> {
+  return requested ?? (await luciusBestPracticeDefault(userId));
+}
 
 const BUSY_MESSAGE = "C'è già un'analisi in corso per questa app: attendi che finisca";
 
@@ -187,7 +195,7 @@ export function createAnalysesRouter(opts: { zipLimitBytes?: number } = {}): IRo
   // Avvio con le sorgenti configurate sull'app (GitHub, OpenAPI, descrizione funzionale)
   router.post("/apps/:id/analyses", runRateLimit, async (req, res) => {
     const { id } = parseRequest(StartAnalysisParams, req.params);
-    const { aiModelId, maxTokens, executor = "cloud" } = parseRequest(StartAnalysisBody, req.body);
+    const { aiModelId, maxTokens, executor = "cloud", bestPractice } = parseRequest(StartAnalysisBody, req.body);
     const app = await findApp(id);
     if (!app) {
       res.status(404).json({ error: "App non trovata" });
@@ -200,7 +208,7 @@ export function createAnalysesRouter(opts: { zipLimitBytes?: number } = {}): IRo
         return;
       }
       try {
-        const analysis = await createLocal(app, maxTokens);
+        const analysis = await createLocal(app, maxTokens, await bestPracticeFor(bestPractice, currentUserId(req)));
         res.status(202).json(StartAnalysisResponse.parse(toPublicAnalysis(analysis)));
       } catch (err) {
         if (!(err instanceof AnalysisBusyError)) throw err;
@@ -239,7 +247,7 @@ export function createAnalysesRouter(opts: { zipLimitBytes?: number } = {}): IRo
     }
     if (await rejectOverBudget(res, choice)) return;
     try {
-      const analysis = await createAndStart(app, choice, maxTokens);
+      const analysis = await createAndStart(app, choice, maxTokens, await bestPracticeFor(bestPractice, currentUserId(req)));
       res.status(202).json(StartAnalysisResponse.parse(toPublicAnalysis(analysis)));
     } catch (err) {
       if (!(err instanceof AnalysisBusyError)) throw err;
@@ -254,7 +262,7 @@ export function createAnalysesRouter(opts: { zipLimitBytes?: number } = {}): IRo
     zipUpload(opts.zipLimitBytes),
     async (req, res) => {
       const { id } = parseRequest(StartZipAnalysisParams, req.params);
-      const { aiModelId, maxTokens, executor } = parseRequest(StartZipAnalysisQueryParams, req.query);
+      const { aiModelId, maxTokens, executor, bestPractice } = parseRequest(StartZipAnalysisQueryParams, req.query);
       if (executor === "local") {
         res.status(400).json({ error: LOCAL_NO_ZIP });
         return;
@@ -280,7 +288,8 @@ export function createAnalysesRouter(opts: { zipLimitBytes?: number } = {}): IRo
       if (await rejectOverBudget(res, choice)) return;
       try {
         const zip = new Uint8Array(body.buffer, body.byteOffset, body.length);
-        const analysis = await createAndStart(app, choice, maxTokens, zip);
+        const requested = bestPractice === undefined ? undefined : bestPractice === "true";
+        const analysis = await createAndStart(app, choice, maxTokens, await bestPracticeFor(requested, currentUserId(req)), zip);
         res.status(202).json(StartZipAnalysisResponse.parse(toPublicAnalysis(analysis)));
       } catch (err) {
         if (!(err instanceof AnalysisBusyError)) throw err;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { alfredPageContext, badgeIntervalMs, cleanAppSlug, consoleUrl, findAppBySlug, isPanelOpen, nextBadge } from "./panel-helpers";
+import { alfredPageContext, badgeIntervalMs, cleanAppSlug, consoleUrl, findAppBySlug, isPanelOpen, nextBadge, VISITOR_BADGE_CLOSED_MS, VISITOR_BADGE_OPEN_MS } from "./panel-helpers";
 
 describe("alfredPageContext", () => {
   it("senza contesto della pagina ospite: console", () => {
@@ -78,5 +78,12 @@ describe("cleanAppSlug", () => {
     expect(cleanAppSlug("-hub")).toBe("");
     expect(cleanAppSlug("Hub")).toBe("");
     expect(cleanAppSlug(null)).toBe("");
+  });
+});
+
+describe("intervalli del contatore del visitatore", () => {
+  it("10 s a pannello aperto, 60 s chiuso", () => {
+    expect(VISITOR_BADGE_OPEN_MS).toBe(10_000);
+    expect(VISITOR_BADGE_CLOSED_MS).toBe(60_000);
   });
 });

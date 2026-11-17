@@ -27,6 +27,8 @@ export const teamChatConversationsTable = pgTable(
     // null = costo parziale (prezzo mancante)
     costUsd: numeric("cost_usd", { precision: 12, scale: 6 }),
     turnStatus: planTurnStatusEnum("turn_status").notNull().default("idle"),
+    // Interruttore «Best practice» di Lucius, letto all'inizio di ogni turno
+    bestPractice: boolean("best_practice").notNull().default(false),
     // Ultimo riassunto nello storico di Lucius
     summarizedAt: timestamp("summarized_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),

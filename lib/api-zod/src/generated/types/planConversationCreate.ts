@@ -14,4 +14,6 @@ export interface PlanConversationCreate {
   aiModelId?: number | null;
   /** Analisi di riferimento (default l'ultima completata dell'app) */
   analysisId?: number;
+  /** Vince sul default dell'utente (Account → Personaggi); per Alfred è ignorato */
+  bestPractice?: boolean;
 }

@@ -10,4 +10,7 @@ export {
   DeleteMemoryHistoryEntryParams,
   GetAlfredNotificationsParams,
   GetAppEvolutionConsentTextParams,
+  GetEmbedBugParams,
+  AddEmbedBugMessageParams,
+  ListAppBugsParams,
 } from "./generated/api";

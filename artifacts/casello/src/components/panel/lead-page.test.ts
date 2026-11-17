@@ -42,8 +42,11 @@ describe("schede per ambiente", () => {
     expect(CHARACTER_TEXT.responsabile).toEqual({ name: "Barbara", placeholder: "Scrivi a Barbara…", send: "Scrivi a Barbara" });
   });
 
-  it("la scheda di Barbara c'è solo nella console", () => {
-    expect(tabOrder("embed")).toEqual(["alfred", "pending", "bulletin", "lucius"]);
+  it("la scheda di Barbara c'è solo nella console, quella delle segnalazioni solo nell'embed", () => {
+    expect(tabOrder("embed")).toEqual(["alfred", "pending", "bulletin", "lucius", "bugs"]);
+    expect(tabOrder("embed").at(-1)).toBe("bugs");
+    expect(tabOrder("console")).not.toContain("bugs");
+    expect(TAB_LABELS.bugs).toBe("Segnalazioni");
     expect(tabOrder("console")).toEqual(["alfred", "pending", "bulletin", "lucius", "lead"]);
   });
 

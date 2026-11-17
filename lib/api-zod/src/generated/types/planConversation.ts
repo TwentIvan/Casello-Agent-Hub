@@ -8,6 +8,8 @@
 import type { PlanTurnStatus } from './planTurnStatus';
 
 export interface PlanConversation {
+  /** Lucius cerca le best practice prima di proporre */
+  bestPractice: boolean;
   id: number;
   appId: number;
   analysisId: number;

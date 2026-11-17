@@ -231,6 +231,9 @@ export const AGENT_DENIED_ROUTES: ReadonlyArray<{ method: "POST" | "PUT" | "PATC
   // Ciclo di evoluzione: lo configura, lo ferma e lo fa girare solo l'utente (DELETE è già negato)
   { method: "PUT", path: /^\/apps\/[^/]+\/evolution\/?$/i },
   { method: "POST", path: /^\/apps\/[^/]+\/evolution\/(stop|resume|run-now)\/?$/i },
+  // Segnalazioni dei bug: l'agente le legge ma non le chiude, non scrive al segnalante né cambia le impostazioni
+  { method: "POST", path: /^\/apps\/[^/]+\/bugs\/[^/]+\/(close|messages)\/?$/i },
+  { method: "PATCH", path: /^\/apps\/[^/]+\/bug-settings\/?$/i },
   { method: "DELETE", path: /^\// },
 ];
 

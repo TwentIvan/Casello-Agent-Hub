@@ -6,6 +6,7 @@ import { SUBJECT_LABELS, targetKey } from "./targets";
 import { useLeadChatAdapter } from "./lead-adapter";
 import { usePlanChatAdapter, useTeamChatAdapter } from "./plan-team-adapters";
 import type { SendMode } from "./chat-send";
+import type { InstructionConversationKind } from "./use-instruction-proposals";
 
 // Un solo pannello (`CharacterChat`) per le conversazioni di Alfred e Lucius: ogni backend (conversazioni dei personaggi,
 // chat del piano, chat di squadra) ha un adattatore che porta i suoi dati a una forma comune.
@@ -73,6 +74,8 @@ export interface ConvDetail {
   turnStatus: "idle" | "running";
   /** Messaggio in coda: parte da solo a fine turno (null = nessuno). */
   queuedMessage: { id: number; content: string } | null;
+  /** Best practice di Lucius accese per la conversazione (false dove non esistono). */
+  bestPractice: boolean;
   /** Motivo della sola lettura (archiviata, argomento eliminato, squadra chiusa), null = si scrive. */
   readOnlyReason: string | null;
   /** Oggetto della conversazione (solo conversazioni dei personaggi), per le anteprime delle schede. */
@@ -112,6 +115,10 @@ export interface ChatAdapter {
   decide(proposalId: number, decision: "accept" | "reject"): Promise<void>;
   /** Schede dei backend di oggi (piano e squadra); senza, le schede dei personaggi. */
   renderProposal?(p: ProposalLike, ctx: ProposalRenderContext): ReactNode;
+  /** Solo gli adattatori di Lucius: interruttore «Best practice» per conversazione. */
+  bestPractice?: { get(conv: ConvDetail): boolean; set(id: number, value: boolean): Promise<void> };
+  /** Tipo di conversazione per le schede delle istruzioni personali; assente (Responsabile di Botcave) = nessuna scheda. */
+  instructionProposalsKind?: InstructionConversationKind;
   /** Testo quando la conversazione è vuota. */
   emptyHint: string;
   /** Cosa resta dopo l'eliminazione, per il dialogo di conferma. */

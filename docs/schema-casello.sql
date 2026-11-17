@@ -629,7 +629,7 @@ DO $$ BEGIN
     CREATE TYPE "public"."team_event_type" AS ENUM('piano_proposto', 'compito_finito', 'bloccato', 'decisione_richiesta', 'azione_manuale_richiesta', 'lavoro_finito', 'interrotto', 'risposta_capo');
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'pending_action_kind') THEN
-    CREATE TYPE "public"."pending_action_kind" AS ENUM('action', 'plan', 'plan_change', 'proposal', 'merge');
+    CREATE TYPE "public"."pending_action_kind" AS ENUM('action', 'plan', 'plan_change', 'proposal', 'merge', 'bug');
   END IF;
 END $$;
 
@@ -1413,6 +1413,218 @@ CREATE TABLE IF NOT EXISTS "app_architecture_runs" (
 	CONSTRAINT "app_architecture_runs_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action
 );
 CREATE INDEX IF NOT EXISTS "app_architecture_runs_app_created_idx" ON "app_architecture_runs" USING btree ("app_id", "created_at" DESC);
+
+DO $$ BEGIN
+  CREATE TYPE "public"."best_practice_mode" AS ENUM('always', 'on_request');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "lucius_best_practice" "best_practice_mode" DEFAULT 'on_request' NOT NULL;
+ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "lucius_search_ai_model_id" integer;
+ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "lucius_sources" jsonb DEFAULT '[]'::jsonb NOT NULL;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'users_lucius_search_ai_model_id_ai_models_id_fk') THEN
+    ALTER TABLE "users" ADD CONSTRAINT "users_lucius_search_ai_model_id_ai_models_id_fk" FOREIGN KEY ("lucius_search_ai_model_id") REFERENCES "public"."ai_models"("id") ON DELETE set null ON UPDATE no action;
+  END IF;
+END $$;
+
+ALTER TABLE "plan_conversations" ADD COLUMN IF NOT EXISTS "best_practice" boolean DEFAULT false NOT NULL;
+ALTER TABLE "character_conversations" ADD COLUMN IF NOT EXISTS "best_practice" boolean DEFAULT false NOT NULL;
+ALTER TABLE "team_chat_conversations" ADD COLUMN IF NOT EXISTS "best_practice" boolean DEFAULT false NOT NULL;
+ALTER TABLE "analyses" ADD COLUMN IF NOT EXISTS "best_practice" boolean DEFAULT false NOT NULL;
+ALTER TABLE "analyses" ADD COLUMN IF NOT EXISTS "best_practice_notes" text;
+
+CREATE TABLE IF NOT EXISTS "best_practice_searches" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"user_id" integer NOT NULL,
+	"analysis_id" integer,
+	"query_hash" text NOT NULL,
+	"query" text NOT NULL,
+	"answer" text NOT NULL,
+	"sources" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	"ai_model_id" integer,
+	"prompt_tokens" integer,
+	"completion_tokens" integer,
+	"search_queries" integer DEFAULT 0 NOT NULL,
+	"cost_usd" numeric(12, 6),
+	"cached_from" integer,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "best_practice_searches_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action,
+	CONSTRAINT "best_practice_searches_analysis_id_analyses_id_fk" FOREIGN KEY ("analysis_id") REFERENCES "public"."analyses"("id") ON DELETE cascade ON UPDATE no action,
+	CONSTRAINT "best_practice_searches_ai_model_id_ai_models_id_fk" FOREIGN KEY ("ai_model_id") REFERENCES "public"."ai_models"("id") ON DELETE set null ON UPDATE no action,
+	CONSTRAINT "best_practice_searches_cached_from_best_practice_searches_id_fk" FOREIGN KEY ("cached_from") REFERENCES "public"."best_practice_searches"("id") ON DELETE set null ON UPDATE no action
+);
+CREATE INDEX IF NOT EXISTS "best_practice_searches_lookup_idx" ON "best_practice_searches" USING btree ("user_id", "query_hash", "created_at");
+
+DO $$ BEGIN
+  CREATE TYPE "public"."character_instruction_source" AS ENUM('manual', 'proposal', 'restore');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE TYPE "public"."instruction_conversation_kind" AS ENUM('character', 'plan_chat', 'team_chat');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE TYPE "public"."instruction_proposal_status" AS ENUM('pending', 'accepted', 'rejected', 'stale');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+CREATE TABLE IF NOT EXISTS "character_instruction_proposals" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"user_id" integer NOT NULL,
+	"character" "character" NOT NULL,
+	"conversation_kind" "instruction_conversation_kind" NOT NULL,
+	"conversation_id" integer NOT NULL,
+	"message_id" integer,
+	"base_version" integer NOT NULL,
+	"content" text NOT NULL,
+	"reason" text NOT NULL,
+	"status" "instruction_proposal_status" DEFAULT 'pending' NOT NULL,
+	"decided_at" timestamp,
+	"created_at" timestamp DEFAULT now() NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS "character_instructions" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"user_id" integer NOT NULL,
+	"character" "character" NOT NULL,
+	"version" integer NOT NULL,
+	"content" text NOT NULL,
+	"source" "character_instruction_source" NOT NULL,
+	"proposal_id" integer,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "character_instructions_version_check" CHECK ("version" >= 1)
+);
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'character_instruction_proposals_user_id_users_id_fk') THEN
+    ALTER TABLE "character_instruction_proposals" ADD CONSTRAINT "character_instruction_proposals_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'character_instructions_user_id_users_id_fk') THEN
+    ALTER TABLE "character_instructions" ADD CONSTRAINT "character_instructions_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'character_instructions_proposal_id_character_instruction_proposals_id_fk') THEN
+    ALTER TABLE "character_instructions" ADD CONSTRAINT "character_instructions_proposal_id_character_instruction_proposals_id_fk" FOREIGN KEY ("proposal_id") REFERENCES "public"."character_instruction_proposals"("id") ON DELETE set null ON UPDATE no action;
+  END IF;
+END $$;
+
+CREATE UNIQUE INDEX IF NOT EXISTS "character_instructions_user_char_version_uniq" ON "character_instructions" USING btree ("user_id", "character", "version");
+CREATE INDEX IF NOT EXISTS "character_instruction_proposals_conv_idx" ON "character_instruction_proposals" USING btree ("conversation_kind", "conversation_id");
+
+-- Segnalazione dei bug (docs/migrations/2026-11-17-segnalazione-bug.sql): valore 'bug' di pending_action_kind (sopra)
+DO $$ BEGIN
+  CREATE TYPE "public"."bug_report_status" AS ENUM('received', 'triage', 'needs_info', 'pending_approval', 'in_progress', 'fixed', 'not_a_bug', 'duplicate', 'rejected');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE TYPE "public"."bug_reporter_kind" AS ENUM('identity', 'browser');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  CREATE TYPE "public"."bug_message_author" AS ENUM('reporter', 'lead', 'owner');
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+ALTER TABLE "apps" ADD COLUMN IF NOT EXISTS "bug_reports_enabled" boolean DEFAULT false NOT NULL;
+ALTER TABLE "apps" ADD COLUMN IF NOT EXISTS "bug_reports_daily_limit" integer DEFAULT 20 NOT NULL;
+ALTER TABLE "apps" ADD COLUMN IF NOT EXISTS "identity_secret_enc" text;
+ALTER TABLE "apps" ADD COLUMN IF NOT EXISTS "identity_secret_set_at" timestamp;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'apps_bug_reports_daily_limit_check') THEN
+    ALTER TABLE "apps" ADD CONSTRAINT "apps_bug_reports_daily_limit_check" CHECK ("bug_reports_daily_limit" BETWEEN 1 AND 500);
+  END IF;
+END $$;
+
+ALTER TABLE "team_instances" ADD COLUMN IF NOT EXISTS "bug_team" boolean DEFAULT false NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS "team_instances_bug_team_uidx" ON "team_instances" USING btree ("ref_app_id") WHERE "bug_team" AND "status" <> 'closed';
+
+CREATE TABLE IF NOT EXISTS "bug_reports" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"app_id" integer NOT NULL,
+	"number" integer NOT NULL,
+	"reporter_kind" "bug_reporter_kind" NOT NULL,
+	"reporter_sub" text,
+	"reporter_name" text,
+	"reporter_email" text,
+	"browser_key_hash" text,
+	"ip_prefix" text,
+	"title" text NOT NULL,
+	"description" text NOT NULL,
+	"steps" text,
+	"expected" text,
+	"page_context" jsonb,
+	"status" "bug_report_status" DEFAULT 'received' NOT NULL,
+	"public_message" text,
+	"triage" jsonb,
+	"triage_run_id" integer,
+	"pending_action_id" integer,
+	"team_instance_id" integer,
+	"issue_number" integer,
+	"issue_url" text,
+	"pr_url" text,
+	"reporter_seen_at" timestamp,
+	"status_changed_at" timestamp DEFAULT now() NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL,
+	"updated_at" timestamp DEFAULT now() NOT NULL,
+	CONSTRAINT "bug_reports_app_number_uniq" UNIQUE("app_id", "number")
+);
+
+CREATE TABLE IF NOT EXISTS "bug_report_messages" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"report_id" integer NOT NULL,
+	"author" "bug_message_author" NOT NULL,
+	"content" text NOT NULL,
+	"created_at" timestamp DEFAULT now() NOT NULL
+);
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'bug_reports_app_id_apps_id_fk') THEN
+    ALTER TABLE "bug_reports" ADD CONSTRAINT "bug_reports_app_id_apps_id_fk" FOREIGN KEY ("app_id") REFERENCES "public"."apps"("id") ON DELETE cascade ON UPDATE no action;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'bug_reports_triage_run_id_runs_id_fk') THEN
+    ALTER TABLE "bug_reports" ADD CONSTRAINT "bug_reports_triage_run_id_runs_id_fk" FOREIGN KEY ("triage_run_id") REFERENCES "public"."runs"("id") ON DELETE set null ON UPDATE no action;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'bug_reports_pending_action_id_pending_actions_id_fk') THEN
+    ALTER TABLE "bug_reports" ADD CONSTRAINT "bug_reports_pending_action_id_pending_actions_id_fk" FOREIGN KEY ("pending_action_id") REFERENCES "public"."pending_actions"("id") ON DELETE set null ON UPDATE no action;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'bug_reports_team_instance_id_team_instances_id_fk') THEN
+    ALTER TABLE "bug_reports" ADD CONSTRAINT "bug_reports_team_instance_id_team_instances_id_fk" FOREIGN KEY ("team_instance_id") REFERENCES "public"."team_instances"("id") ON DELETE set null ON UPDATE no action;
+  END IF;
+END $$;
+
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'bug_report_messages_report_id_bug_reports_id_fk') THEN
+    ALTER TABLE "bug_report_messages" ADD CONSTRAINT "bug_report_messages_report_id_bug_reports_id_fk" FOREIGN KEY ("report_id") REFERENCES "public"."bug_reports"("id") ON DELETE cascade ON UPDATE no action;
+  END IF;
+END $$;
+
+CREATE INDEX IF NOT EXISTS "bug_reports_app_status_idx" ON "bug_reports" USING btree ("app_id", "status");
+CREATE INDEX IF NOT EXISTS "bug_reports_app_sub_idx" ON "bug_reports" USING btree ("app_id", "reporter_sub");
+CREATE INDEX IF NOT EXISTS "bug_reports_app_key_idx" ON "bug_reports" USING btree ("app_id", "browser_key_hash");
+CREATE INDEX IF NOT EXISTS "bug_reports_triage_run_idx" ON "bug_reports" USING btree ("triage_run_id");
+CREATE INDEX IF NOT EXISTS "bug_report_messages_report_idx" ON "bug_report_messages" USING btree ("report_id", "created_at");
 
 -- Ciclo di evoluzione automatica (Botcave, 3a): ciclo per App, giri, modalità delle analisi e traccia delle approvazioni automatiche.
 -- Additiva e idempotente, niente `-post`: la applica il deploy.

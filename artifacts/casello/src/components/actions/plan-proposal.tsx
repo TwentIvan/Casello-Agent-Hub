@@ -6,6 +6,7 @@ export const ACTION_KIND_LABELS: Record<QueuedActionKind, string> = {
   plan_change: "Modifica del piano",
   proposal: "Proposta",
   merge: "Merge",
+  bug: "Bug",
 };
 
 export function isPlanItem(action: Pick<QueuedAction, "kind">): boolean {

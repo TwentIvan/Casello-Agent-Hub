@@ -1,6 +1,7 @@
 // Tipi, errori e messaggi condivisi di Alfred e Lucius nelle aree (motore delle conversazioni dei personaggi)
 
 import type { ChatCompletionFunctionTool } from "openai/resources/chat/completions";
+import type { App } from "@workspace/db";
 import type { ChatToolCall } from "../ai/chat-types";
 import type { Character } from "../memory/types";
 
@@ -66,6 +67,11 @@ export interface SubjectHandler {
    * se almeno un'app ha il codice leggibile. Senza questo metodo l'argomento non offre strumenti del codice.
    */
   codeApp?(userId: number, subjectId: string | null): Promise<{ defaultAppId: number | null; available: boolean }>;
+  /**
+   * App di partenza di `leggi_architettura` e della sintesi per le best practice (solo Lucius). Senza questo metodo, o con
+   * null, `leggi_architettura` vuole `app` e nel contesto non entra nessuna sintesi.
+   */
+  architectureApp?(userId: number, subjectId: string | null): Promise<App | null>;
 }
 
 export const CHARACTER_MESSAGE_MAX_CHARS = 8_000;
@@ -74,6 +80,7 @@ export const RATIONALE_MAX = 1_000;
 
 export const CHARACTER_MESSAGES = {
   modelUnavailable: "modello non disponibile",
+  bestPracticeOnlyLucius: "le best practice valgono solo per Lucius",
   notFound: "conversazione non trovata",
   subjectNotFound: "argomento non trovato",
   subjectGone: "argomento eliminato",

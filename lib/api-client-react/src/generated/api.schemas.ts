@@ -5,7 +5,232 @@
  * Casello — hub per agentificare applicazioni
  * OpenAPI spec version: 0.1.0
  */
+export type EmbedBugCreatePageContext = {
+  /** @maxLength 1000 */
+  page?: string;
+  /** @maxLength 1000 */
+  id?: string;
+  /** @maxLength 1000 */
+  title?: string;
+  /** @maxLength 5000 */
+  url?: string;
+};
+
+export interface EmbedBugCreate {
+  /** @maxLength 1000 */
+  title: string;
+  /** @maxLength 10000 */
+  description: string;
+  /** @maxLength 10000 */
+  steps?: string;
+  /** @maxLength 10000 */
+  expected?: string;
+  pageContext?: EmbedBugCreatePageContext;
+}
+
+export type EmbedBugStatus = typeof EmbedBugStatus[keyof typeof EmbedBugStatus];
+
+
+export const EmbedBugStatus = {
+  received: 'received',
+  triage: 'triage',
+  needs_info: 'needs_info',
+  pending_approval: 'pending_approval',
+  in_progress: 'in_progress',
+  fixed: 'fixed',
+  not_a_bug: 'not_a_bug',
+  duplicate: 'duplicate',
+  rejected: 'rejected',
+} as const;
+
+export interface EmbedBugCreated {
+  id: number;
+  number: number;
+  status: EmbedBugStatus;
+}
+
+export interface EmbedBugSummary {
+  id: number;
+  number: number;
+  title: string;
+  status: EmbedBugStatus;
+  statusLabel: string;
+  publicMessage: string | null;
+  unseen: boolean;
+  createdAt: string;
+  statusChangedAt: string;
+}
+
+export type EmbedBugMessageViewAuthor = typeof EmbedBugMessageViewAuthor[keyof typeof EmbedBugMessageViewAuthor];
+
+
+export const EmbedBugMessageViewAuthor = {
+  reporter: 'reporter',
+  lead: 'lead',
+  owner: 'owner',
+} as const;
+
+export interface EmbedBugMessageView {
+  author: EmbedBugMessageViewAuthor;
+  content: string;
+  createdAt: string;
+}
+
+export type EmbedBugDetail = EmbedBugSummary & ({
+  description: string;
+  steps: string | null;
+  expected: string | null;
+  messages: EmbedBugMessageView[];
+});
+
+export interface EmbedBugMessage {
+  /** @maxLength 10000 */
+  content: string;
+}
+
+export interface EmbedBugSeen {
+  /** @maxItems 50 */
+  ids: number[];
+}
+
+export interface EmbedBugSeenResult {
+  updated: number;
+}
+
+export type BugSettingsBugTeam = {
+  id: number;
+  name: string;
+  status: string;
+} | null;
+
+export interface BugSettings {
+  enabled: boolean;
+  dailyLimit: number;
+  identitySecretSet: boolean;
+  identitySecretSetAt: string | null;
+  bugTeam: BugSettingsBugTeam;
+  /** Qualcuno può approvare le segnalazioni (proprietario del modello del Responsabile o, senza, chi ha attivato la squadra designata) */
+  approverAvailable: boolean;
+  todayCount: number;
+}
+
+export interface BugSettingsUpdate {
+  enabled?: boolean;
+  /**
+     * @minimum 1
+     * @maximum 500
+     */
+  dailyLimit?: number;
+}
+
+export interface IdentitySecret {
+  secret: string;
+}
+
+export interface IdentityTest {
+  /** @maxLength 10000 */
+  token: string;
+}
+
+export type IdentityTestResultReason = typeof IdentityTestResultReason[keyof typeof IdentityTestResultReason] | null;
+
+
+export const IdentityTestResultReason = {
+  invalid: 'invalid',
+  expired: 'expired',
+  no_secret: 'no_secret',
+} as const;
+
+export interface IdentityTestResult {
+  valid: boolean;
+  reason: IdentityTestResultReason;
+  sub: string | null;
+  name: string | null;
+  email: string | null;
+  expiresAt: string | null;
+}
+
+export type AdminBugSummary = EmbedBugSummary & {
+  reporterLabel: string;
+};
+
+export type AdminBugMessageAuthor = typeof AdminBugMessageAuthor[keyof typeof AdminBugMessageAuthor];
+
+
+export const AdminBugMessageAuthor = {
+  reporter: 'reporter',
+  lead: 'lead',
+  owner: 'owner',
+} as const;
+
+export interface AdminBugMessage {
+  id: number;
+  author: AdminBugMessageAuthor;
+  content: string;
+  createdAt: string;
+}
+
+export type AdminBugDetailReporterKind = typeof AdminBugDetailReporterKind[keyof typeof AdminBugDetailReporterKind];
+
+
+export const AdminBugDetailReporterKind = {
+  identity: 'identity',
+  browser: 'browser',
+} as const;
+
+export type AdminBugDetailPageContext = {
+  page?: string;
+  id?: string;
+  title?: string;
+  url?: string;
+} | null;
+
+export type AdminBugDetailTriage = {
+  verdict: string;
+  summary: string;
+  question?: string;
+  duplicateOf?: number;
+  userMessage?: string;
+} | null;
+
+export type AdminBugDetail = AdminBugSummary & ({
+  description: string;
+  steps: string | null;
+  expected: string | null;
+  reporterKind: AdminBugDetailReporterKind;
+  reporterName: string | null;
+  reporterEmail: string | null;
+  pageContext: AdminBugDetailPageContext;
+  triage: AdminBugDetailTriage;
+  pendingActionNumber: number | null;
+  teamInstanceId: number | null;
+  issueNumber: number | null;
+  issueUrl: string | null;
+  prUrl: string | null;
+  messages: AdminBugMessage[];
+});
+
+export type AdminBugCloseStatus = typeof AdminBugCloseStatus[keyof typeof AdminBugCloseStatus];
+
+
+export const AdminBugCloseStatus = {
+  fixed: 'fixed',
+  not_a_bug: 'not_a_bug',
+} as const;
+
+export interface AdminBugClose {
+  status: AdminBugCloseStatus;
+  /** @maxLength 10000 */
+  message?: string;
+}
+
+export interface EmbedBugsConfig {
+  enabled: boolean;
+  identity: boolean;
+}
+
 export interface EmbedConfig {
+  bugs: EmbedBugsConfig;
   allowed: boolean;
   clientId: string | null;
   appName: string | null;
@@ -289,6 +514,115 @@ export interface CentralinoModel {
   aiModelId: number | null;
 }
 
+export interface CharacterInstructions {
+  character: string;
+  version: number;
+  content: string;
+  /** @nullable */
+  updatedAt: string | null;
+}
+
+export interface CharacterInstructionsUpdate {
+  content: string;
+  /** @minimum 0 */
+  baseVersion: number;
+}
+
+export interface CharacterInstructionsRestore {
+  /** @minimum 1 */
+  version: number;
+  /** @minimum 0 */
+  baseVersion: number;
+}
+
+export type CharacterInstructionVersionSummarySource = typeof CharacterInstructionVersionSummarySource[keyof typeof CharacterInstructionVersionSummarySource];
+
+
+export const CharacterInstructionVersionSummarySource = {
+  manual: 'manual',
+  proposal: 'proposal',
+  restore: 'restore',
+} as const;
+
+export interface CharacterInstructionVersionSummary {
+  version: number;
+  source: CharacterInstructionVersionSummarySource;
+  createdAt: string;
+  length: number;
+}
+
+export type CharacterInstructionVersionSource = typeof CharacterInstructionVersionSource[keyof typeof CharacterInstructionVersionSource];
+
+
+export const CharacterInstructionVersionSource = {
+  manual: 'manual',
+  proposal: 'proposal',
+  restore: 'restore',
+} as const;
+
+export interface CharacterInstructionVersion {
+  version: number;
+  source: CharacterInstructionVersionSource;
+  content: string;
+  createdAt: string;
+}
+
+export type CharacterInstructionProposalCharacter = typeof CharacterInstructionProposalCharacter[keyof typeof CharacterInstructionProposalCharacter];
+
+
+export const CharacterInstructionProposalCharacter = {
+  alfred: 'alfred',
+  lucius: 'lucius',
+} as const;
+
+export type CharacterInstructionProposalStatus = typeof CharacterInstructionProposalStatus[keyof typeof CharacterInstructionProposalStatus];
+
+
+export const CharacterInstructionProposalStatus = {
+  pending: 'pending',
+  accepted: 'accepted',
+  rejected: 'rejected',
+  stale: 'stale',
+} as const;
+
+export interface CharacterInstructionProposal {
+  id: number;
+  character: CharacterInstructionProposalCharacter;
+  content: string;
+  reason: string;
+  status: CharacterInstructionProposalStatus;
+  baseVersion: number;
+  currentContent: string;
+  /** @nullable */
+  messageId: number | null;
+  createdAt: string;
+}
+
+export type CharacterInstructionProposalDecisionAction = typeof CharacterInstructionProposalDecisionAction[keyof typeof CharacterInstructionProposalDecisionAction];
+
+
+export const CharacterInstructionProposalDecisionAction = {
+  accept: 'accept',
+  reject: 'reject',
+} as const;
+
+export interface CharacterInstructionProposalDecision {
+  action: CharacterInstructionProposalDecisionAction;
+}
+
+export type CharacterSettingsLuciusBestPractice = typeof CharacterSettingsLuciusBestPractice[keyof typeof CharacterSettingsLuciusBestPractice];
+
+
+export const CharacterSettingsLuciusBestPractice = {
+  always: 'always',
+  on_request: 'on_request',
+} as const;
+
+export type CharacterSettingsLuciusSourcesItem = {
+  url: string;
+  label: string;
+};
+
 export interface CharacterSettings {
   /** @nullable */
   alfredChatAiModelId: number | null;
@@ -306,12 +640,41 @@ export interface CharacterSettings {
      * @nullable
      */
   luciusMonthlyBudgetUsd: number | null;
+  luciusBestPractice?: CharacterSettingsLuciusBestPractice;
+  /** @nullable */
+  luciusSearchAiModelId?: number | null;
+  /** @maxItems 30 */
+  luciusSources?: CharacterSettingsLuciusSourcesItem[];
 }
+
+export type CharacterSettingsViewLuciusBestPractice = typeof CharacterSettingsViewLuciusBestPractice[keyof typeof CharacterSettingsViewLuciusBestPractice];
+
+
+export const CharacterSettingsViewLuciusBestPractice = {
+  always: 'always',
+  on_request: 'on_request',
+} as const;
+
+export type CharacterSettingsViewLuciusSourcesItem = {
+  url: string;
+  label: string;
+};
+
+export type CharacterSettingsViewSearchModelsItem = {
+  id: number;
+  name: string;
+  accountName: string;
+};
 
 /**
  * Impostazioni dei personaggi più la spesa del mese (mese di calendario, ora italiana).
  */
-export type CharacterSettingsView = CharacterSettings & {
+export type CharacterSettingsView = CharacterSettings & ({
+  luciusBestPractice: CharacterSettingsViewLuciusBestPractice;
+  /** @nullable */
+  luciusSearchAiModelId: number | null;
+  luciusSources: CharacterSettingsViewLuciusSourcesItem[];
+  searchModels: CharacterSettingsViewSearchModelsItem[];
   /** @minimum 0 */
   alfredSpentUsd: number;
   /** @minimum 0 */
@@ -320,7 +683,7 @@ export type CharacterSettingsView = CharacterSettings & {
   alfredUnpricedCount: number;
   /** @minimum 0 */
   luciusUnpricedCount: number;
-};
+});
 
 export type AlfredSettingsModelsItem = {
   id: number;
@@ -1259,7 +1622,7 @@ export const QueuedActionStatus = {
 } as const;
 
 /**
- * Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima)
+ * Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima), oppure segnalazione di un bug da affidare alla squadra per i bug dell'App
  */
 export type QueuedActionKind = typeof QueuedActionKind[keyof typeof QueuedActionKind];
 
@@ -1270,6 +1633,7 @@ export const QueuedActionKind = {
   plan_change: 'plan_change',
   proposal: 'proposal',
   merge: 'merge',
+  bug: 'bug',
 } as const;
 
 /**
@@ -1354,7 +1718,7 @@ export interface QueuedProposal {
 export interface QueuedAction {
   number: number;
   status: QueuedActionStatus;
-  /** Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima) */
+  /** Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima), oppure segnalazione di un bug da affidare alla squadra per i bug dell'App */
   kind: QueuedActionKind;
   /** Passi della proposta; null per le voci che non sono una proposta */
   proposal: QueuedProposal | null;
@@ -1569,6 +1933,13 @@ export interface Analysis {
      * @nullable
      */
   costUsd: number | null;
+  /** Verifica delle best practice per app simili prima della fase di completamento */
+  bestPractice: boolean;
+  /**
+     * Note della verifica (per domanda sintesi e fonti; «Best practice non verificate: …» se non è riuscita); null se non eseguita (anche nelle analisi locali, dove cerca l'agente)
+     * @nullable
+     */
+  bestPracticeNotes: string | null;
   /**
      * Fase corrente
      * @nullable
@@ -1683,6 +2054,8 @@ export const PlanTurnStatus = {
 } as const;
 
 export interface PlanConversation {
+  /** Lucius cerca le best practice prima di proporre */
+  bestPractice: boolean;
   id: number;
   appId: number;
   analysisId: number;
@@ -1875,10 +2248,16 @@ export interface PlanConversationCreate {
   aiModelId?: number | null;
   /** Analisi di riferimento (default l'ultima completata dell'app) */
   analysisId?: number;
+  /** Vince sul default dell'utente (Account → Personaggi); per Alfred è ignorato */
+  bestPractice?: boolean;
 }
 
+/**
+ * Almeno un campo (altrimenti 400)
+ */
 export interface PlanConversationUpdate {
-  aiModelId: number;
+  aiModelId?: number;
+  bestPractice?: boolean;
 }
 
 export interface PlanMessageCreate {
@@ -1937,6 +2316,8 @@ export interface PlanIssuesResult {
 }
 
 export interface TeamChatConversation {
+  /** Lucius cerca le best practice prima di proporre */
+  bestPractice: boolean;
   id: number;
   teamInstanceId: number;
   /** @nullable */
@@ -2028,6 +2409,12 @@ export interface TeamChatConversationCreate {
      * @nullable
      */
   aiModelId?: number | null;
+  /** Vince sul default dell'utente (Account → Personaggi); per Alfred è ignorato */
+  bestPractice?: boolean;
+}
+
+export interface TeamChatConversationUpdate {
+  bestPractice: boolean;
 }
 
 export interface TeamChatMessageCreate {
@@ -2089,6 +2476,8 @@ export const MemoryCharacter = {
 } as const;
 
 export interface CharacterConversation {
+  /** Lucius cerca le best practice prima di proporre */
+  bestPractice: boolean;
   id: number;
   character: MemoryCharacter;
   subjectType: CharacterSubjectType;
@@ -2365,6 +2754,8 @@ export interface CharacterConversationCreate {
      * @nullable
      */
   subjectId?: string | null;
+  /** Vince sul default dell'utente (Account → Personaggi); per Alfred è ignorato */
+  bestPractice?: boolean;
 }
 
 export interface CharacterConversationUpdate {
@@ -2378,6 +2769,8 @@ export interface CharacterConversationUpdate {
      * @maxLength 80
      */
   title?: string;
+  /** Solo per le conversazioni di Lucius (Alfred → 400) */
+  bestPractice?: boolean;
 }
 
 export interface CharacterMessageCreate {
@@ -2485,6 +2878,8 @@ export interface AnalysisStart {
      * @maximum 2000000
      */
   maxTokens?: number;
+  /** Verifica le best practice per app simili prima della fase di completamento (default: true se le best practice di Lucius sono «Sempre» in Account → Personaggi) */
+  bestPractice?: boolean;
 }
 
 export type AnalysisItemUpdatePayload = { [key: string]: unknown };
@@ -4083,6 +4478,8 @@ export interface TeamInstanceSave {
      * @maxLength 300
      */
   nodeWorkspace?: string | null;
+  /** Squadra per i bug dell'App di riferimento: omesso = invariato. Un'altra squadra non chiusa già designata per la stessa App → 409 «l'App ha già una squadra per i bug: <nome>». */
+  bugTeam?: boolean;
 }
 
 export interface TeamAttachment {
@@ -4366,6 +4763,8 @@ export interface TeamInstance {
   lastTurnAt: string | null;
   /** Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato) */
   nodeWorkspace: string | null;
+  /** Squadra per i bug dell'App di riferimento (riceve le segnalazioni approvate) */
+  bugTeam: boolean;
 }
 
 export interface TeamMessageInput {
@@ -4608,10 +5007,89 @@ export type BadGatewayResponse = ErrorResponse;
  */
 export type PayloadTooLargeResponse = ErrorResponse;
 
+/**
+ * Slug dell'App ospite
+ */
+export type EmbedBugAppParameter = string;
+
+/**
+ * Origine della pagina ospite
+ */
+export type EmbedBugOriginParameter = string;
+
+/**
+ * 32 byte base64url generati dall'iframe e tenuti nel suo storage
+ */
+export type EmbedBrowserKeyParameter = string;
+
+/**
+ * Token d'identità firmato dall'app ospite
+ */
+export type EmbedIdentityParameter = string;
+
 export type CharacterQueryParameter = MemoryCharacter;
 
 export type GetEmbedConfigParams = {
 origin?: string;
+/**
+ * Slug dell'App ospite, per sapere se le segnalazioni dei bug sono attive.
+ */
+app?: string;
+};
+
+export type ListEmbedBugsParams = {
+/**
+ * Slug dell'App ospite
+ */
+app: EmbedBugAppParameter;
+/**
+ * Origine della pagina ospite
+ */
+origin: EmbedBugOriginParameter;
+};
+
+export type CreateEmbedBugParams = {
+/**
+ * Slug dell'App ospite
+ */
+app: EmbedBugAppParameter;
+/**
+ * Origine della pagina ospite
+ */
+origin: EmbedBugOriginParameter;
+};
+
+export type MarkEmbedBugsSeenParams = {
+/**
+ * Slug dell'App ospite
+ */
+app: EmbedBugAppParameter;
+/**
+ * Origine della pagina ospite
+ */
+origin: EmbedBugOriginParameter;
+};
+
+export type GetEmbedBugParams = {
+/**
+ * Slug dell'App ospite
+ */
+app: EmbedBugAppParameter;
+/**
+ * Origine della pagina ospite
+ */
+origin: EmbedBugOriginParameter;
+};
+
+export type AddEmbedBugMessageParams = {
+/**
+ * Slug dell'App ospite
+ */
+app: EmbedBugAppParameter;
+/**
+ * Origine della pagina ospite
+ */
+origin: EmbedBugOriginParameter;
 };
 
 export type GetAlfredNotificationsParams = {
@@ -4620,6 +5098,10 @@ after?: string;
 
 export type RefreshAppArchitecture202 = {
   queued: boolean;
+};
+
+export type ListAppBugsParams = {
+status?: EmbedBugStatus;
 };
 
 export type GetAppEvolutionConsentTextParams = {
@@ -4683,7 +5165,19 @@ maxTokens?: number;
  * Con local risponde 400 "con l'agente locale lo zip non serve"
  */
 executor?: AnalysisExecutor;
+/**
+ * Verifica delle best practice (default dalle impostazioni di Lucius)
+ */
+bestPractice?: StartZipAnalysisBestPractice;
 };
+
+export type StartZipAnalysisBestPractice = typeof StartZipAnalysisBestPractice[keyof typeof StartZipAnalysisBestPractice];
+
+
+export const StartZipAnalysisBestPractice = {
+  true: 'true',
+  false: 'false',
+} as const;
 
 export type ExportAnalysisIssuesParams = {
 chapter?: AnalysisChapter;
@@ -4854,6 +5348,23 @@ export type ListCatalogProvidersParams = {
 q?: string;
 status?: AiProviderStatus;
 };
+
+export type ListCharacterInstructionProposalsParams = {
+conversationKind: ListCharacterInstructionProposalsConversationKind;
+/**
+ * @minimum 1
+ */
+conversationId: number;
+};
+
+export type ListCharacterInstructionProposalsConversationKind = typeof ListCharacterInstructionProposalsConversationKind[keyof typeof ListCharacterInstructionProposalsConversationKind];
+
+
+export const ListCharacterInstructionProposalsConversationKind = {
+  character: 'character',
+  plan_chat: 'plan_chat',
+  team_chat: 'team_chat',
+} as const;
 
 export type ListCharacterConversationsParams = {
 character: MemoryCharacter;

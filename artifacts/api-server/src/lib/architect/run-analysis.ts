@@ -38,11 +38,13 @@ import { EVOLUTION_MESSAGES } from "../evolution/messages";
 import { itemTitle } from "../plan-chat/context";
 import { latestCompletedAnalysisId, loadPlanItems } from "../plan-chat/plan-items";
 import { registerAnalysisAbort, releaseAnalysisAbort } from "./abort";
+import { hasVerifiedNotes, runBestPracticeStep } from "../best-practice/analysis-step";
 import { loadMcpSource } from "./mcp-source";
 import { EVOLUTION_PHASE_SHARES, PHASE_TOKEN_SHARES, runPhase, type PhaseBudget } from "./phase-loop";
 import { existingToolsForPrompt, recordPhaseResult } from "./phase-record";
 import { chatPlannedItems } from "./planned";
 import { phasePrompt, SYSTEM_BASE } from "./prompts";
+import { personalInstructionsBlock, withPersonalInstructions } from "../characters/personal-instructions";
 import { buildRepoMap } from "./repo-map";
 import { PHASES, type CatalogResult, type PhaseName } from "./schemas";
 import { SourceTree, SourceTreeError } from "./source-tree";
@@ -250,6 +252,13 @@ export class CostTracker {
     } else {
       this.total += reply.costUsd;
     }
+  }
+
+  /** Costo già calcolato fuori da una chiamata al modello (es. ricerche web); null = prezzo mancante: costo parziale. */
+  addUsd(costUsd: number | null): void {
+    this.calls += 1;
+    if (costUsd === null) this.partial = true;
+    else this.total += costUsd;
   }
 
   /** Valore per la colonna numeric: null se parziale o senza chiamate. */
@@ -621,10 +630,29 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
     });
     const previous: Partial<Record<PhaseName, unknown>> = {};
     const alreadyPlanned = await chatPlannedItems(app.id, analysisId);
+    // Note del passo `best_practice` (eseguito una volta, prima di completion)
+    let bestPracticeNotes: string | null = null;
 
     for (const phase of PHASES_BY_MODE[analysis.mode]) {
       if (abortSignal.aborted) throw new AnalysisError(EVOLUTION_MESSAGES.analysisStopped);
       progress.phase = phase;
+      if (phase === "completion" && analysis.bestPractice) {
+        log("verifica delle best practice");
+        await progress.flush();
+        const notes = await runBestPracticeStep({
+          analysisId,
+          userId: resolved.ownerUserId,
+          resolved,
+          app,
+          mapResult: previous.map ?? null,
+          cost,
+          budget,
+          now,
+        });
+        log(hasVerifiedNotes(notes) ? "best practice verificate" : "best practice non verificate");
+        await progress.flush({ bestPracticeNotes: notes });
+        if (hasVerifiedNotes(notes)) bestPracticeNotes = notes;
+      }
       log(`inizio fase ${phase}`);
       await progress.flush();
 
@@ -640,13 +668,14 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
         alreadyPlanned,
         existingTools: phase === "catalog" ? await existingToolsForPrompt(app.id) : undefined,
         ...(evolution ? { architectureSummary, rejectedTitles, pendingTitles } : {}),
+        bestPracticeNotes,
       });
       // Quota morbida della fase: solo il sollecito a consegnare; il tetto rigido resta il totale
       const share = evolution ? (EVOLUTION_PHASE_SHARES as Partial<Record<PhaseName, number>>)[phase]! : PHASE_TOKEN_SHARES[phase];
       const phaseQuota = Math.floor(share * budget.maxTokens);
       const outcome = await runPhase({
         phase,
-        system: SYSTEM_BASE,
+        system: withPersonalInstructions(SYSTEM_BASE, await personalInstructionsBlock(resolved.ownerUserId, "lucius")),
         user,
         tree,
         openapi,

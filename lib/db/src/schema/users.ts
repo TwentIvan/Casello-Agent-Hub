@@ -1,5 +1,7 @@
-import { pgTable, serial, integer, text, timestamp, unique, numeric, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { pgTable, pgEnum, serial, integer, text, timestamp, unique, numeric, jsonb, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { aiModelsTable } from "./ai-models";
+
+export const bestPracticeModeEnum = pgEnum("best_practice_mode", ["always", "on_request"]);
 
 // Utenti di Casello. L'email è salvata sempre in minuscolo (il codice la normalizza prima di scrivere)
 export const usersTable = pgTable(
@@ -26,6 +28,10 @@ export const usersTable = pgTable(
     // Tetti di spesa mensili per personaggio in USD; null = nessun limite
     alfredMonthlyBudgetUsd: numeric("alfred_monthly_budget_usd", { precision: 12, scale: 2 }),
     luciusMonthlyBudgetUsd: numeric("lucius_monthly_budget_usd", { precision: 12, scale: 2 }),
+    // Best practice di Lucius: quando cercarle, modello Gemini per la ricerca e fonti curate [{url, label}]
+    luciusBestPractice: bestPracticeModeEnum("lucius_best_practice").notNull().default("on_request"),
+    luciusSearchAiModelId: integer("lucius_search_ai_model_id").references((): AnyPgColumn => aiModelsTable.id, { onDelete: "set null" }),
+    luciusSources: jsonb("lucius_sources").$type<{ url: string; label: string }[]>().notNull().default([]),
   },
   (table) => [unique("users_email_unique").on(table.email)],
 );

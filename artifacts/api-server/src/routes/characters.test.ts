@@ -567,3 +567,47 @@ describe("limite dei messaggi", () => {
     expect(statuses.every((s) => s === 202 || s === 429)).toBe(true);
   });
 });
+
+const setBestPracticeDefault = (mode: "always" | "on_request") =>
+  db.update(usersTable).set({ luciusBestPractice: mode }).where(eq(usersTable.id, userId));
+
+describe("interruttore delle best practice (personaggi)", () => {
+  afterEach(() => setBestPracticeDefault("on_request"));
+
+  it("Lucius segue il default e il corpo; Alfred resta sempre false", async () => {
+    await setBestPracticeDefault("always");
+    const on = await api("POST", "/character-conversations", { character: "lucius", subjectType: "area_agents" });
+    expect(on.json.bestPractice).toBe(true);
+    const off = await api("POST", "/character-conversations", { character: "lucius", subjectType: "area_agents", bestPractice: false });
+    expect(off.json.bestPractice).toBe(false);
+    const thread = await api("GET", "/characters/alfred/thread");
+    expect(thread.json.bestPractice).toBe(false);
+    await setBestPracticeDefault("on_request");
+    const forced = await api("POST", "/character-conversations", { character: "lucius", subjectType: "area_agents", bestPractice: true });
+    expect(forced.json.bestPractice).toBe(true);
+    expect((await api("GET", `/character-conversations/${forced.json.id}`)).json.bestPractice).toBe(true);
+  });
+
+  it("PATCH cambia bestPractice di Lucius; per Alfred → 400", async () => {
+    const { id } = await createConv();
+    const r = await api("PATCH", `/character-conversations/${id}`, { bestPractice: true });
+    expect(r.status, r.text).toBe(200);
+    expect(r.json.bestPractice).toBe(true);
+    const thread = (await api("GET", "/characters/alfred/thread")).json.id as number;
+    const bad = await api("PATCH", `/character-conversations/${thread}`, { bestPractice: true });
+    expect(bad.status).toBe(400);
+    expect(bad.json.error).toBe("le best practice valgono solo per Lucius");
+  });
+
+  it("PATCH solo bestPractice non tocca updatedAt (cambiando il titolo sì)", async () => {
+    const { id } = await createConv();
+    const old = new Date("2026-01-15T10:00:00Z");
+    await db.update(characterConversationsTable).set({ updatedAt: old }).where(eq(characterConversationsTable.id, id));
+    expect((await api("PATCH", `/character-conversations/${id}`, { bestPractice: true })).status).toBe(200);
+    const [row] = await db.select().from(characterConversationsTable).where(eq(characterConversationsTable.id, id));
+    expect(row!.updatedAt.getTime()).toBe(old.getTime());
+    expect((await api("PATCH", `/character-conversations/${id}`, { title: "Nuovo titolo" })).status).toBe(200);
+    const [after] = await db.select().from(characterConversationsTable).where(eq(characterConversationsTable.id, id));
+    expect(after!.updatedAt.getTime()).toBeGreaterThan(old.getTime());
+  });
+});

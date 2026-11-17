@@ -22,14 +22,212 @@ export const HealthCheckResponse = zod.object({
  * @summary Configurazione del plugin per un'origine ospite (pubblica)
  */
 export const GetEmbedConfigQueryParams = zod.object({
-  "origin": zod.coerce.string().optional()
+  "origin": zod.coerce.string().optional(),
+  "app": zod.coerce.string().optional().describe('Slug dell\'App ospite, per sapere se le segnalazioni dei bug sono attive.')
 })
 
 export const GetEmbedConfigResponse = zod.object({
+  "bugs": zod.object({
+  "enabled": zod.boolean(),
+  "identity": zod.boolean()
+}),
   "allowed": zod.boolean(),
   "clientId": zod.string().nullable(),
   "appName": zod.string().nullable()
 })
+
+
+/**
+ * Al più 50, le più recenti prima. Origine non ammessa o diversa da quella dell'App, App inesistente o con le segnalazioni spente: sempre 404 «segnalazioni non disponibili». 60 richieste al minuto per IP.
+ * @summary Le segnalazioni del visitatore in un'App (pubblica)
+ */
+export const ListEmbedBugsQueryParams = zod.object({
+  "app": zod.coerce.string().describe('Slug dell\'App ospite'),
+  "origin": zod.coerce.string().describe('Origine della pagina ospite')
+})
+
+export const ListEmbedBugsHeader = zod.object({
+  "X-Botcave-Browser-Key": zod.string().describe('32 byte base64url generati dall\'iframe e tenuti nel suo storage'),
+  "X-Botcave-Identity": zod.string().optional().describe('Token d\'identità firmato dall\'app ospite')
+})
+
+export const ListEmbedBugsResponseItem = zod.object({
+  "id": zod.number(),
+  "number": zod.number(),
+  "title": zod.string(),
+  "status": zod.enum(['received', 'triage', 'needs_info', 'pending_approval', 'in_progress', 'fixed', 'not_a_bug', 'duplicate', 'rejected']),
+  "statusLabel": zod.string(),
+  "publicMessage": zod.string().nullable(),
+  "unseen": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "statusChangedAt": zod.coerce.date()
+})
+export const ListEmbedBugsResponse = zod.array(ListEmbedBugsResponseItem)
+
+
+/**
+ * Limiti: segnalazioni per App al giorno, 5 al giorno per richiedente, 10 all'ora per IP. Corpo al più 32 KB.
+ * @summary Registra una segnalazione (pubblica)
+ */
+export const CreateEmbedBugQueryParams = zod.object({
+  "app": zod.coerce.string().describe('Slug dell\'App ospite'),
+  "origin": zod.coerce.string().describe('Origine della pagina ospite')
+})
+
+export const CreateEmbedBugHeader = zod.object({
+  "X-Botcave-Browser-Key": zod.string().describe('32 byte base64url generati dall\'iframe e tenuti nel suo storage'),
+  "X-Botcave-Identity": zod.string().optional().describe('Token d\'identità firmato dall\'app ospite')
+})
+
+export const createEmbedBugBodyTitleMax = 1000;
+
+export const createEmbedBugBodyDescriptionMax = 10000;
+
+export const createEmbedBugBodyStepsMax = 10000;
+
+export const createEmbedBugBodyExpectedMax = 10000;
+
+export const createEmbedBugBodyPageContextPageMax = 1000;
+
+export const createEmbedBugBodyPageContextIdMax = 1000;
+
+export const createEmbedBugBodyPageContextTitleMax = 1000;
+
+export const createEmbedBugBodyPageContextUrlMax = 5000;
+
+
+
+export const CreateEmbedBugBody = zod.object({
+  "title": zod.string().max(createEmbedBugBodyTitleMax),
+  "description": zod.string().max(createEmbedBugBodyDescriptionMax),
+  "steps": zod.string().max(createEmbedBugBodyStepsMax).optional(),
+  "expected": zod.string().max(createEmbedBugBodyExpectedMax).optional(),
+  "pageContext": zod.object({
+  "page": zod.string().max(createEmbedBugBodyPageContextPageMax).optional(),
+  "id": zod.string().max(createEmbedBugBodyPageContextIdMax).optional(),
+  "title": zod.string().max(createEmbedBugBodyPageContextTitleMax).optional(),
+  "url": zod.string().max(createEmbedBugBodyPageContextUrlMax).optional()
+}).optional()
+})
+
+export const CreateEmbedBugResponse = zod.object({
+  "id": zod.number(),
+  "number": zod.number(),
+  "status": zod.enum(['received', 'triage', 'needs_info', 'pending_approval', 'in_progress', 'fixed', 'not_a_bug', 'duplicate', 'rejected'])
+})
+
+
+/**
+ * @summary Segna come lette le segnalazioni del visitatore (pubblica)
+ */
+export const MarkEmbedBugsSeenQueryParams = zod.object({
+  "app": zod.coerce.string().describe('Slug dell\'App ospite'),
+  "origin": zod.coerce.string().describe('Origine della pagina ospite')
+})
+
+export const MarkEmbedBugsSeenHeader = zod.object({
+  "X-Botcave-Browser-Key": zod.string().describe('32 byte base64url generati dall\'iframe e tenuti nel suo storage'),
+  "X-Botcave-Identity": zod.string().optional().describe('Token d\'identità firmato dall\'app ospite')
+})
+
+export const markEmbedBugsSeenBodyIdsMax = 50;
+
+
+
+export const MarkEmbedBugsSeenBody = zod.object({
+  "ids": zod.array(zod.number()).max(markEmbedBugsSeenBodyIdsMax)
+})
+
+export const MarkEmbedBugsSeenResponse = zod.object({
+  "updated": zod.number()
+})
+
+
+/**
+ * @summary Dettaglio di una segnalazione del visitatore (pubblica)
+ */
+export const GetEmbedBugParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetEmbedBugQueryParams = zod.object({
+  "app": zod.coerce.string().describe('Slug dell\'App ospite'),
+  "origin": zod.coerce.string().describe('Origine della pagina ospite')
+})
+
+export const GetEmbedBugHeader = zod.object({
+  "X-Botcave-Browser-Key": zod.string().describe('32 byte base64url generati dall\'iframe e tenuti nel suo storage'),
+  "X-Botcave-Identity": zod.string().optional().describe('Token d\'identità firmato dall\'app ospite')
+})
+
+export const GetEmbedBugResponse = zod.object({
+  "id": zod.number(),
+  "number": zod.number(),
+  "title": zod.string(),
+  "status": zod.enum(['received', 'triage', 'needs_info', 'pending_approval', 'in_progress', 'fixed', 'not_a_bug', 'duplicate', 'rejected']),
+  "statusLabel": zod.string(),
+  "publicMessage": zod.string().nullable(),
+  "unseen": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "statusChangedAt": zod.coerce.date()
+}).and(zod.object({
+  "description": zod.string(),
+  "steps": zod.string().nullable(),
+  "expected": zod.string().nullable(),
+  "messages": zod.array(zod.object({
+  "author": zod.enum(['reporter', 'lead', 'owner']),
+  "content": zod.string(),
+  "createdAt": zod.coerce.date()
+}))
+}))
+
+
+/**
+ * Solo con la segnalazione in «Serve una tua risposta»; la rimette in esame. 20 messaggi all'ora per segnalazione.
+ * @summary Risposta del visitatore alla domanda del Responsabile (pubblica)
+ */
+export const AddEmbedBugMessageParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const AddEmbedBugMessageQueryParams = zod.object({
+  "app": zod.coerce.string().describe('Slug dell\'App ospite'),
+  "origin": zod.coerce.string().describe('Origine della pagina ospite')
+})
+
+export const AddEmbedBugMessageHeader = zod.object({
+  "X-Botcave-Browser-Key": zod.string().describe('32 byte base64url generati dall\'iframe e tenuti nel suo storage'),
+  "X-Botcave-Identity": zod.string().optional().describe('Token d\'identità firmato dall\'app ospite')
+})
+
+export const addEmbedBugMessageBodyContentMax = 10000;
+
+
+
+export const AddEmbedBugMessageBody = zod.object({
+  "content": zod.string().max(addEmbedBugMessageBodyContentMax)
+})
+
+export const AddEmbedBugMessageResponse = zod.object({
+  "id": zod.number(),
+  "number": zod.number(),
+  "title": zod.string(),
+  "status": zod.enum(['received', 'triage', 'needs_info', 'pending_approval', 'in_progress', 'fixed', 'not_a_bug', 'duplicate', 'rejected']),
+  "statusLabel": zod.string(),
+  "publicMessage": zod.string().nullable(),
+  "unseen": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "statusChangedAt": zod.coerce.date()
+}).and(zod.object({
+  "description": zod.string(),
+  "steps": zod.string().nullable(),
+  "expected": zod.string().nullable(),
+  "messages": zod.array(zod.object({
+  "author": zod.enum(['reporter', 'lead', 'owner']),
+  "content": zod.string(),
+  "createdAt": zod.coerce.date()
+}))
+}))
 
 
 /**
@@ -1158,6 +1356,8 @@ export const getCharacterSettingsResponseOneAlfredMonthlyBudgetUsdMax = 1000000;
 export const getCharacterSettingsResponseOneLuciusMonthlyBudgetUsdMin = 0;
 export const getCharacterSettingsResponseOneLuciusMonthlyBudgetUsdMax = 1000000;
 
+export const getCharacterSettingsResponseOneLuciusSourcesMax = 30;
+
 export const getCharacterSettingsResponseTwoAlfredSpentUsdMin = 0;
 
 export const getCharacterSettingsResponseTwoLuciusSpentUsdMin = 0;
@@ -1172,8 +1372,25 @@ export const GetCharacterSettingsResponse = zod.object({
   "alfredChatAiModelId": zod.number().nullable(),
   "luciusAiModelId": zod.number().nullable(),
   "alfredMonthlyBudgetUsd": zod.number().min(getCharacterSettingsResponseOneAlfredMonthlyBudgetUsdMin).max(getCharacterSettingsResponseOneAlfredMonthlyBudgetUsdMax).nullable(),
-  "luciusMonthlyBudgetUsd": zod.number().min(getCharacterSettingsResponseOneLuciusMonthlyBudgetUsdMin).max(getCharacterSettingsResponseOneLuciusMonthlyBudgetUsdMax).nullable()
+  "luciusMonthlyBudgetUsd": zod.number().min(getCharacterSettingsResponseOneLuciusMonthlyBudgetUsdMin).max(getCharacterSettingsResponseOneLuciusMonthlyBudgetUsdMax).nullable(),
+  "luciusBestPractice": zod.enum(['always', 'on_request']),
+  "luciusSearchAiModelId": zod.number().nullable(),
+  "luciusSources": zod.array(zod.object({
+  "url": zod.string(),
+  "label": zod.string()
+})).max(getCharacterSettingsResponseOneLuciusSourcesMax)
 }).and(zod.object({
+  "luciusBestPractice": zod.enum(['always', 'on_request']),
+  "luciusSearchAiModelId": zod.number().nullable(),
+  "luciusSources": zod.array(zod.object({
+  "url": zod.string(),
+  "label": zod.string()
+})),
+  "searchModels": zod.array(zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "accountName": zod.string()
+})),
   "alfredSpentUsd": zod.number().min(getCharacterSettingsResponseTwoAlfredSpentUsdMin),
   "luciusSpentUsd": zod.number().min(getCharacterSettingsResponseTwoLuciusSpentUsdMin),
   "alfredUnpricedCount": zod.number().min(getCharacterSettingsResponseTwoAlfredUnpricedCountMin),
@@ -1191,13 +1408,21 @@ export const updateCharacterSettingsBodyAlfredMonthlyBudgetUsdMax = 1000000;
 export const updateCharacterSettingsBodyLuciusMonthlyBudgetUsdMin = 0;
 export const updateCharacterSettingsBodyLuciusMonthlyBudgetUsdMax = 1000000;
 
+export const updateCharacterSettingsBodyLuciusSourcesMax = 30;
+
 
 
 export const UpdateCharacterSettingsBody = zod.object({
   "alfredChatAiModelId": zod.number().nullable(),
   "luciusAiModelId": zod.number().nullable(),
   "alfredMonthlyBudgetUsd": zod.number().min(updateCharacterSettingsBodyAlfredMonthlyBudgetUsdMin).max(updateCharacterSettingsBodyAlfredMonthlyBudgetUsdMax).nullable(),
-  "luciusMonthlyBudgetUsd": zod.number().min(updateCharacterSettingsBodyLuciusMonthlyBudgetUsdMin).max(updateCharacterSettingsBodyLuciusMonthlyBudgetUsdMax).nullable()
+  "luciusMonthlyBudgetUsd": zod.number().min(updateCharacterSettingsBodyLuciusMonthlyBudgetUsdMin).max(updateCharacterSettingsBodyLuciusMonthlyBudgetUsdMax).nullable(),
+  "luciusBestPractice": zod.enum(['always', 'on_request']).optional(),
+  "luciusSearchAiModelId": zod.number().nullish(),
+  "luciusSources": zod.array(zod.object({
+  "url": zod.string(),
+  "label": zod.string()
+})).max(updateCharacterSettingsBodyLuciusSourcesMax).optional()
 })
 
 export const updateCharacterSettingsResponseOneAlfredMonthlyBudgetUsdMin = 0;
@@ -1205,6 +1430,8 @@ export const updateCharacterSettingsResponseOneAlfredMonthlyBudgetUsdMax = 10000
 
 export const updateCharacterSettingsResponseOneLuciusMonthlyBudgetUsdMin = 0;
 export const updateCharacterSettingsResponseOneLuciusMonthlyBudgetUsdMax = 1000000;
+
+export const updateCharacterSettingsResponseOneLuciusSourcesMax = 30;
 
 export const updateCharacterSettingsResponseTwoAlfredSpentUsdMin = 0;
 
@@ -1220,8 +1447,25 @@ export const UpdateCharacterSettingsResponse = zod.object({
   "alfredChatAiModelId": zod.number().nullable(),
   "luciusAiModelId": zod.number().nullable(),
   "alfredMonthlyBudgetUsd": zod.number().min(updateCharacterSettingsResponseOneAlfredMonthlyBudgetUsdMin).max(updateCharacterSettingsResponseOneAlfredMonthlyBudgetUsdMax).nullable(),
-  "luciusMonthlyBudgetUsd": zod.number().min(updateCharacterSettingsResponseOneLuciusMonthlyBudgetUsdMin).max(updateCharacterSettingsResponseOneLuciusMonthlyBudgetUsdMax).nullable()
+  "luciusMonthlyBudgetUsd": zod.number().min(updateCharacterSettingsResponseOneLuciusMonthlyBudgetUsdMin).max(updateCharacterSettingsResponseOneLuciusMonthlyBudgetUsdMax).nullable(),
+  "luciusBestPractice": zod.enum(['always', 'on_request']),
+  "luciusSearchAiModelId": zod.number().nullable(),
+  "luciusSources": zod.array(zod.object({
+  "url": zod.string(),
+  "label": zod.string()
+})).max(updateCharacterSettingsResponseOneLuciusSourcesMax)
 }).and(zod.object({
+  "luciusBestPractice": zod.enum(['always', 'on_request']),
+  "luciusSearchAiModelId": zod.number().nullable(),
+  "luciusSources": zod.array(zod.object({
+  "url": zod.string(),
+  "label": zod.string()
+})),
+  "searchModels": zod.array(zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "accountName": zod.string()
+})),
   "alfredSpentUsd": zod.number().min(updateCharacterSettingsResponseTwoAlfredSpentUsdMin),
   "luciusSpentUsd": zod.number().min(updateCharacterSettingsResponseTwoLuciusSpentUsdMin),
   "alfredUnpricedCount": zod.number().min(updateCharacterSettingsResponseTwoAlfredUnpricedCountMin),
@@ -1730,6 +1974,277 @@ export const RefreshAppArchitectureParams = zod.object({
 export const RefreshAppArchitectureResponse = zod.object({
   "queued": zod.boolean()
 })
+
+
+/**
+ * @summary Impostazioni delle segnalazioni dei bug dell'App
+ */
+export const GetBugSettingsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetBugSettingsResponse = zod.object({
+  "enabled": zod.boolean(),
+  "dailyLimit": zod.number(),
+  "identitySecretSet": zod.boolean(),
+  "identitySecretSetAt": zod.coerce.date().nullable(),
+  "bugTeam": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "status": zod.string()
+}).nullable(),
+  "approverAvailable": zod.boolean().describe('Qualcuno può approvare le segnalazioni (proprietario del modello del Responsabile o, senza, chi ha attivato la squadra designata)'),
+  "todayCount": zod.number()
+})
+
+
+/**
+ * @summary Accende o spegne le segnalazioni e cambia il limite giornaliero
+ */
+export const UpdateBugSettingsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const updateBugSettingsBodyDailyLimitMax = 500;
+
+
+
+export const UpdateBugSettingsBody = zod.object({
+  "enabled": zod.boolean().optional(),
+  "dailyLimit": zod.number().min(1).max(updateBugSettingsBodyDailyLimitMax).optional()
+})
+
+export const UpdateBugSettingsResponse = zod.object({
+  "enabled": zod.boolean(),
+  "dailyLimit": zod.number(),
+  "identitySecretSet": zod.boolean(),
+  "identitySecretSetAt": zod.coerce.date().nullable(),
+  "bugTeam": zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "status": zod.string()
+}).nullable(),
+  "approverAvailable": zod.boolean().describe('Qualcuno può approvare le segnalazioni (proprietario del modello del Responsabile o, senza, chi ha attivato la squadra designata)'),
+  "todayCount": zod.number()
+})
+
+
+/**
+ * Il segreto esce una sola volta; rigenerarlo invalida i token firmati con il precedente.
+ * @summary Genera o rigenera il segreto d'identità (solo con il login)
+ */
+export const CreateIdentitySecretParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const CreateIdentitySecretResponse = zod.object({
+  "secret": zod.string()
+})
+
+
+/**
+ * @summary Toglie il segreto d'identità (solo con il login)
+ */
+export const DeleteIdentitySecretParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeleteIdentitySecretResponse = zod.void()
+
+
+/**
+ * Non salva nulla.
+ * @summary Verifica un token d'identità con il segreto dell'App
+ */
+export const TestIdentityParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const testIdentityBodyTokenMax = 10000;
+
+
+
+export const TestIdentityBody = zod.object({
+  "token": zod.string().max(testIdentityBodyTokenMax)
+})
+
+export const TestIdentityResponse = zod.object({
+  "valid": zod.boolean(),
+  "reason": zod.enum(['invalid', 'expired', 'no_secret']).nullable(),
+  "sub": zod.string().nullable(),
+  "name": zod.string().nullable(),
+  "email": zod.string().nullable(),
+  "expiresAt": zod.coerce.date().nullable()
+})
+
+
+/**
+ * Al più 200, le più recenti prima.
+ * @summary Segnalazioni dei bug dell'App
+ */
+export const ListAppBugsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListAppBugsQueryParams = zod.object({
+  "status": zod.enum(['received', 'triage', 'needs_info', 'pending_approval', 'in_progress', 'fixed', 'not_a_bug', 'duplicate', 'rejected']).optional()
+})
+
+export const ListAppBugsResponseItem = zod.object({
+  "id": zod.number(),
+  "number": zod.number(),
+  "title": zod.string(),
+  "status": zod.enum(['received', 'triage', 'needs_info', 'pending_approval', 'in_progress', 'fixed', 'not_a_bug', 'duplicate', 'rejected']),
+  "statusLabel": zod.string(),
+  "publicMessage": zod.string().nullable(),
+  "unseen": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "statusChangedAt": zod.coerce.date()
+}).and(zod.object({
+  "reporterLabel": zod.string()
+}))
+export const ListAppBugsResponse = zod.array(ListAppBugsResponseItem)
+
+
+/**
+ * @summary Dettaglio di una segnalazione
+ */
+export const GetAppBugParams = zod.object({
+  "id": zod.coerce.number(),
+  "number": zod.coerce.number()
+})
+
+export const GetAppBugResponse = zod.object({
+  "id": zod.number(),
+  "number": zod.number(),
+  "title": zod.string(),
+  "status": zod.enum(['received', 'triage', 'needs_info', 'pending_approval', 'in_progress', 'fixed', 'not_a_bug', 'duplicate', 'rejected']),
+  "statusLabel": zod.string(),
+  "publicMessage": zod.string().nullable(),
+  "unseen": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "statusChangedAt": zod.coerce.date()
+}).and(zod.object({
+  "reporterLabel": zod.string()
+})).and(zod.object({
+  "description": zod.string(),
+  "steps": zod.string().nullable(),
+  "expected": zod.string().nullable(),
+  "reporterKind": zod.enum(['identity', 'browser']),
+  "reporterName": zod.string().nullable(),
+  "reporterEmail": zod.string().nullable(),
+  "pageContext": zod.object({
+  "page": zod.string().optional(),
+  "id": zod.string().optional(),
+  "title": zod.string().optional(),
+  "url": zod.string().optional()
+}).nullable(),
+  "triage": zod.object({
+  "verdict": zod.string(),
+  "summary": zod.string(),
+  "question": zod.string().optional(),
+  "duplicateOf": zod.number().optional(),
+  "userMessage": zod.string().optional()
+}).nullable(),
+  "pendingActionNumber": zod.number().nullable(),
+  "teamInstanceId": zod.number().nullable(),
+  "issueNumber": zod.number().nullable(),
+  "issueUrl": zod.string().nullable(),
+  "prUrl": zod.string().nullable(),
+  "messages": zod.array(zod.object({
+  "id": zod.number(),
+  "author": zod.enum(['reporter', 'lead', 'owner']),
+  "content": zod.string(),
+  "createdAt": zod.coerce.date()
+}))
+}))
+
+
+/**
+ * @summary Messaggio dell'amministratore al segnalante
+ */
+export const AddAppBugMessageParams = zod.object({
+  "id": zod.coerce.number(),
+  "number": zod.coerce.number()
+})
+
+export const addAppBugMessageBodyContentMax = 10000;
+
+
+
+export const AddAppBugMessageBody = zod.object({
+  "content": zod.string().max(addAppBugMessageBodyContentMax)
+})
+
+export const AddAppBugMessageResponse = zod.object({
+  "author": zod.enum(['reporter', 'lead', 'owner']),
+  "content": zod.string(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * Vale dagli stati non finali. Una voce «Da confermare» ancora in attesa della segnalazione si rifiuta con la nota «chiusa dall'amministratore».
+ * @summary Chiude una segnalazione come corretta o non un problema
+ */
+export const CloseAppBugParams = zod.object({
+  "id": zod.coerce.number(),
+  "number": zod.coerce.number()
+})
+
+export const closeAppBugBodyMessageMax = 10000;
+
+
+
+export const CloseAppBugBody = zod.object({
+  "status": zod.enum(['fixed', 'not_a_bug']),
+  "message": zod.string().max(closeAppBugBodyMessageMax).optional()
+})
+
+export const CloseAppBugResponse = zod.object({
+  "id": zod.number(),
+  "number": zod.number(),
+  "title": zod.string(),
+  "status": zod.enum(['received', 'triage', 'needs_info', 'pending_approval', 'in_progress', 'fixed', 'not_a_bug', 'duplicate', 'rejected']),
+  "statusLabel": zod.string(),
+  "publicMessage": zod.string().nullable(),
+  "unseen": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "statusChangedAt": zod.coerce.date()
+}).and(zod.object({
+  "reporterLabel": zod.string()
+})).and(zod.object({
+  "description": zod.string(),
+  "steps": zod.string().nullable(),
+  "expected": zod.string().nullable(),
+  "reporterKind": zod.enum(['identity', 'browser']),
+  "reporterName": zod.string().nullable(),
+  "reporterEmail": zod.string().nullable(),
+  "pageContext": zod.object({
+  "page": zod.string().optional(),
+  "id": zod.string().optional(),
+  "title": zod.string().optional(),
+  "url": zod.string().optional()
+}).nullable(),
+  "triage": zod.object({
+  "verdict": zod.string(),
+  "summary": zod.string(),
+  "question": zod.string().optional(),
+  "duplicateOf": zod.number().optional(),
+  "userMessage": zod.string().optional()
+}).nullable(),
+  "pendingActionNumber": zod.number().nullable(),
+  "teamInstanceId": zod.number().nullable(),
+  "issueNumber": zod.number().nullable(),
+  "issueUrl": zod.string().nullable(),
+  "prUrl": zod.string().nullable(),
+  "messages": zod.array(zod.object({
+  "id": zod.number(),
+  "author": zod.enum(['reporter', 'lead', 'owner']),
+  "content": zod.string(),
+  "createdAt": zod.coerce.date()
+}))
+}))
 
 
 /**
@@ -3044,6 +3559,8 @@ export const ListAnalysesResponseItem = zod.object({
   "tokensUsed": zod.number().describe('Token usati pesati per il budget (quelli letti dalla cache contano al 10%)'),
   "cachedTokens": zod.number().describe('Token di prompt letti dalla cache del provider, per intero'),
   "costUsd": zod.number().nullable().describe('Costo in USD; null se un prezzo manca o l\'analisi usa il vecchio gateway (costo parziale)'),
+  "bestPractice": zod.boolean().describe('Verifica delle best practice per app simili prima della fase di completamento'),
+  "bestPracticeNotes": zod.string().nullable().describe('Note della verifica (per domanda sintesi e fonti; «Best practice non verificate: …» se non è riuscita); null se non eseguita (anche nelle analisi locali, dove cerca l\'agente)'),
   "phase": zod.string().nullable().describe('Fase corrente'),
   "error": zod.string().nullable(),
   "leaseLabel": zod.string().nullable().describe('Etichetta dell\'agente locale che ha l\'analisi in carico (solo con lease attiva)'),
@@ -3070,7 +3587,8 @@ export const startAnalysisBodyMaxTokensMax = 2000000;
 export const StartAnalysisBody = zod.object({
   "executor": zod.enum(['cloud', 'local']).optional().describe('Chi esegue l\'analisi, il cloud di Casello o un agente locale via MCP'),
   "aiModelId": zod.number().optional().describe('Modello di un account AI dell\'utente'),
-  "maxTokens": zod.number().min(startAnalysisBodyMaxTokensMin).max(startAnalysisBodyMaxTokensMax).optional().describe('Tetto di token per l\'analisi (default 1000000)')
+  "maxTokens": zod.number().min(startAnalysisBodyMaxTokensMin).max(startAnalysisBodyMaxTokensMax).optional().describe('Tetto di token per l\'analisi (default 1000000)'),
+  "bestPractice": zod.boolean().optional().describe('Verifica le best practice per app simili prima della fase di completamento (default: true se le best practice di Lucius sono «Sempre» in Account → Personaggi)')
 }).describe('Con executor cloud (default) aiModelId è obbligatorio (altrimenti 400 \"scegli un modello\"); con executor local non si indica.')
 
 export const StartAnalysisResponse = zod.object({
@@ -3090,6 +3608,8 @@ export const StartAnalysisResponse = zod.object({
   "tokensUsed": zod.number().describe('Token usati pesati per il budget (quelli letti dalla cache contano al 10%)'),
   "cachedTokens": zod.number().describe('Token di prompt letti dalla cache del provider, per intero'),
   "costUsd": zod.number().nullable().describe('Costo in USD; null se un prezzo manca o l\'analisi usa il vecchio gateway (costo parziale)'),
+  "bestPractice": zod.boolean().describe('Verifica delle best practice per app simili prima della fase di completamento'),
+  "bestPracticeNotes": zod.string().nullable().describe('Note della verifica (per domanda sintesi e fonti; «Best practice non verificate: …» se non è riuscita); null se non eseguita (anche nelle analisi locali, dove cerca l\'agente)'),
   "phase": zod.string().nullable().describe('Fase corrente'),
   "error": zod.string().nullable(),
   "leaseLabel": zod.string().nullable().describe('Etichetta dell\'agente locale che ha l\'analisi in carico (solo con lease attiva)'),
@@ -3115,7 +3635,8 @@ export const startZipAnalysisQueryMaxTokensMax = 2000000;
 export const StartZipAnalysisQueryParams = zod.object({
   "aiModelId": zod.coerce.number().optional().describe('Modello di un account AI (obbligatorio, altrimenti 400 \"scegli un modello\")'),
   "maxTokens": zod.coerce.number().min(startZipAnalysisQueryMaxTokensMin).max(startZipAnalysisQueryMaxTokensMax).optional().describe('Tetto di token per l\'analisi (default 1000000)'),
-  "executor": zod.enum(['cloud', 'local']).optional().describe('Con local risponde 400 \"con l\'agente locale lo zip non serve\"')
+  "executor": zod.enum(['cloud', 'local']).optional().describe('Con local risponde 400 \"con l\'agente locale lo zip non serve\"'),
+  "bestPractice": zod.enum(['true', 'false']).optional().describe('Verifica delle best practice (default dalle impostazioni di Lucius)')
 })
 
 export const StartZipAnalysisResponse = zod.object({
@@ -3135,6 +3656,8 @@ export const StartZipAnalysisResponse = zod.object({
   "tokensUsed": zod.number().describe('Token usati pesati per il budget (quelli letti dalla cache contano al 10%)'),
   "cachedTokens": zod.number().describe('Token di prompt letti dalla cache del provider, per intero'),
   "costUsd": zod.number().nullable().describe('Costo in USD; null se un prezzo manca o l\'analisi usa il vecchio gateway (costo parziale)'),
+  "bestPractice": zod.boolean().describe('Verifica delle best practice per app simili prima della fase di completamento'),
+  "bestPracticeNotes": zod.string().nullable().describe('Note della verifica (per domanda sintesi e fonti; «Best practice non verificate: …» se non è riuscita); null se non eseguita (anche nelle analisi locali, dove cerca l\'agente)'),
   "phase": zod.string().nullable().describe('Fase corrente'),
   "error": zod.string().nullable(),
   "leaseLabel": zod.string().nullable().describe('Etichetta dell\'agente locale che ha l\'analisi in carico (solo con lease attiva)'),
@@ -3168,6 +3691,8 @@ export const GetAnalysisResponse = zod.object({
   "tokensUsed": zod.number().describe('Token usati pesati per il budget (quelli letti dalla cache contano al 10%)'),
   "cachedTokens": zod.number().describe('Token di prompt letti dalla cache del provider, per intero'),
   "costUsd": zod.number().nullable().describe('Costo in USD; null se un prezzo manca o l\'analisi usa il vecchio gateway (costo parziale)'),
+  "bestPractice": zod.boolean().describe('Verifica delle best practice per app simili prima della fase di completamento'),
+  "bestPracticeNotes": zod.string().nullable().describe('Note della verifica (per domanda sintesi e fonti; «Best practice non verificate: …» se non è riuscita); null se non eseguita (anche nelle analisi locali, dove cerca l\'agente)'),
   "phase": zod.string().nullable().describe('Fase corrente'),
   "error": zod.string().nullable(),
   "leaseLabel": zod.string().nullable().describe('Etichetta dell\'agente locale che ha l\'analisi in carico (solo con lease attiva)'),
@@ -3240,6 +3765,8 @@ export const ReleaseAnalysisResponse = zod.object({
   "tokensUsed": zod.number().describe('Token usati pesati per il budget (quelli letti dalla cache contano al 10%)'),
   "cachedTokens": zod.number().describe('Token di prompt letti dalla cache del provider, per intero'),
   "costUsd": zod.number().nullable().describe('Costo in USD; null se un prezzo manca o l\'analisi usa il vecchio gateway (costo parziale)'),
+  "bestPractice": zod.boolean().describe('Verifica delle best practice per app simili prima della fase di completamento'),
+  "bestPracticeNotes": zod.string().nullable().describe('Note della verifica (per domanda sintesi e fonti; «Best practice non verificate: …» se non è riuscita); null se non eseguita (anche nelle analisi locali, dove cerca l\'agente)'),
   "phase": zod.string().nullable().describe('Fase corrente'),
   "error": zod.string().nullable(),
   "leaseLabel": zod.string().nullable().describe('Etichetta dell\'agente locale che ha l\'analisi in carico (solo con lease attiva)'),
@@ -3274,6 +3801,8 @@ export const CancelAnalysisResponse = zod.object({
   "tokensUsed": zod.number().describe('Token usati pesati per il budget (quelli letti dalla cache contano al 10%)'),
   "cachedTokens": zod.number().describe('Token di prompt letti dalla cache del provider, per intero'),
   "costUsd": zod.number().nullable().describe('Costo in USD; null se un prezzo manca o l\'analisi usa il vecchio gateway (costo parziale)'),
+  "bestPractice": zod.boolean().describe('Verifica delle best practice per app simili prima della fase di completamento'),
+  "bestPracticeNotes": zod.string().nullable().describe('Note della verifica (per domanda sintesi e fonti; «Best practice non verificate: …» se non è riuscita); null se non eseguita (anche nelle analisi locali, dove cerca l\'agente)'),
   "phase": zod.string().nullable().describe('Fase corrente'),
   "error": zod.string().nullable(),
   "leaseLabel": zod.string().nullable().describe('Etichetta dell\'agente locale che ha l\'analisi in carico (solo con lease attiva)'),
@@ -4092,7 +4621,8 @@ export const ListTeamInstancesResponseItem = zod.object({
   "activatedBy": zod.number().nullable().describe('Utente che ha attivato la squadra (riceve le voci in coda)'),
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto mensile in USD di turni e compiti (null = nessun tetto)'),
   "lastTurnAt": zod.coerce.date().nullable(),
-  "nodeWorkspace": zod.string().nullable().describe('Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)')
+  "nodeWorkspace": zod.string().nullable().describe('Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)'),
+  "bugTeam": zod.boolean().describe('Squadra per i bug dell\'App di riferimento (riceve le segnalazioni approvate)')
 })
 export const ListTeamInstancesResponse = zod.array(ListTeamInstancesResponseItem)
 
@@ -4204,7 +4734,8 @@ export const CreateTeamInstanceResponse = zod.object({
   "activatedBy": zod.number().nullable().describe('Utente che ha attivato la squadra (riceve le voci in coda)'),
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto mensile in USD di turni e compiti (null = nessun tetto)'),
   "lastTurnAt": zod.coerce.date().nullable(),
-  "nodeWorkspace": zod.string().nullable().describe('Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)')
+  "nodeWorkspace": zod.string().nullable().describe('Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)'),
+  "bugTeam": zod.boolean().describe('Squadra per i bug dell\'App di riferimento (riceve le segnalazioni approvate)')
 })
 
 
@@ -4274,7 +4805,8 @@ export const GetTeamInstanceResponse = zod.object({
   "activatedBy": zod.number().nullable().describe('Utente che ha attivato la squadra (riceve le voci in coda)'),
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto mensile in USD di turni e compiti (null = nessun tetto)'),
   "lastTurnAt": zod.coerce.date().nullable(),
-  "nodeWorkspace": zod.string().nullable().describe('Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)')
+  "nodeWorkspace": zod.string().nullable().describe('Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)'),
+  "bugTeam": zod.boolean().describe('Squadra per i bug dell\'App di riferimento (riceve le segnalazioni approvate)')
 })
 
 
@@ -4332,7 +4864,8 @@ export const SaveTeamInstanceBody = zod.object({
   "toolHints": zod.array(zod.string()).optional()
 }).describe('Skill specializzata di una sola squadra')),
   "status": zod.enum(['draft', 'active']).optional().describe('Facoltativo e solo uguale allo stato attuale: si attiva con `POST \/team-instances\/{id}\/activate` e una squadra attiva non torna in bozza.'),
-  "nodeWorkspace": zod.string().max(saveTeamInstanceBodyNodeWorkspaceMax).nullish().describe('Spazio di lavoro sul nodo: percorso relativo, solo lettere, cifre, `._ -` e `\/`, senza `\/` iniziale né `..` (altrimenti 400 «spazio di lavoro non valido»). Omesso = invariato, null = tolto.')
+  "nodeWorkspace": zod.string().max(saveTeamInstanceBodyNodeWorkspaceMax).nullish().describe('Spazio di lavoro sul nodo: percorso relativo, solo lettere, cifre, `._ -` e `\/`, senza `\/` iniziale né `..` (altrimenti 400 «spazio di lavoro non valido»). Omesso = invariato, null = tolto.'),
+  "bugTeam": zod.boolean().optional().describe('Squadra per i bug dell\'App di riferimento: omesso = invariato. Un\'altra squadra non chiusa già designata per la stessa App → 409 «l\'App ha già una squadra per i bug: <nome>».')
 })
 
 export const saveTeamInstanceResponseRolesItemCodeDefault = `none`;
@@ -4394,7 +4927,8 @@ export const SaveTeamInstanceResponse = zod.object({
   "activatedBy": zod.number().nullable().describe('Utente che ha attivato la squadra (riceve le voci in coda)'),
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto mensile in USD di turni e compiti (null = nessun tetto)'),
   "lastTurnAt": zod.coerce.date().nullable(),
-  "nodeWorkspace": zod.string().nullable().describe('Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)')
+  "nodeWorkspace": zod.string().nullable().describe('Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)'),
+  "bugTeam": zod.boolean().describe('Squadra per i bug dell\'App di riferimento (riceve le segnalazioni approvate)')
 })
 
 
@@ -4528,7 +5062,8 @@ export const CloseTeamInstanceResponse = zod.object({
   "activatedBy": zod.number().nullable().describe('Utente che ha attivato la squadra (riceve le voci in coda)'),
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto mensile in USD di turni e compiti (null = nessun tetto)'),
   "lastTurnAt": zod.coerce.date().nullable(),
-  "nodeWorkspace": zod.string().nullable().describe('Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)')
+  "nodeWorkspace": zod.string().nullable().describe('Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)'),
+  "bugTeam": zod.boolean().describe('Squadra per i bug dell\'App di riferimento (riceve le segnalazioni approvate)')
 })
 
 
@@ -4655,7 +5190,8 @@ export const ApplyTeamInstanceUpdatesResponse = zod.object({
   "activatedBy": zod.number().nullable().describe('Utente che ha attivato la squadra (riceve le voci in coda)'),
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto mensile in USD di turni e compiti (null = nessun tetto)'),
   "lastTurnAt": zod.coerce.date().nullable(),
-  "nodeWorkspace": zod.string().nullable().describe('Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)')
+  "nodeWorkspace": zod.string().nullable().describe('Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)'),
+  "bugTeam": zod.boolean().describe('Squadra per i bug dell\'App di riferimento (riceve le segnalazioni approvate)')
 })
 
 
@@ -5039,7 +5575,8 @@ export const ActivateTeamInstanceResponse = zod.object({
   "activatedBy": zod.number().nullable().describe('Utente che ha attivato la squadra (riceve le voci in coda)'),
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto mensile in USD di turni e compiti (null = nessun tetto)'),
   "lastTurnAt": zod.coerce.date().nullable(),
-  "nodeWorkspace": zod.string().nullable().describe('Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)')
+  "nodeWorkspace": zod.string().nullable().describe('Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)'),
+  "bugTeam": zod.boolean().describe('Squadra per i bug dell\'App di riferimento (riceve le segnalazioni approvate)')
 })
 
 
@@ -5140,7 +5677,8 @@ export const SetTeamBudgetResponse = zod.object({
   "activatedBy": zod.number().nullable().describe('Utente che ha attivato la squadra (riceve le voci in coda)'),
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto mensile in USD di turni e compiti (null = nessun tetto)'),
   "lastTurnAt": zod.coerce.date().nullable(),
-  "nodeWorkspace": zod.string().nullable().describe('Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)')
+  "nodeWorkspace": zod.string().nullable().describe('Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)'),
+  "bugTeam": zod.boolean().describe('Squadra per i bug dell\'App di riferimento (riceve le segnalazioni approvate)')
 })
 
 
@@ -6234,6 +6772,7 @@ export const ListPlanConversationsParams = zod.object({
 })
 
 export const ListPlanConversationsResponseItem = zod.object({
+  "bestPractice": zod.boolean().describe('Lucius cerca le best practice prima di proporre'),
   "id": zod.number(),
   "appId": zod.number(),
   "analysisId": zod.number(),
@@ -6258,10 +6797,12 @@ export const CreatePlanConversationParams = zod.object({
 
 export const CreatePlanConversationBody = zod.object({
   "aiModelId": zod.number().nullish().describe('Modello di un account AI dell\'utente; null o assente = modello di Lucius (o predefinito)'),
-  "analysisId": zod.number().optional().describe('Analisi di riferimento (default l\'ultima completata dell\'app)')
+  "analysisId": zod.number().optional().describe('Analisi di riferimento (default l\'ultima completata dell\'app)'),
+  "bestPractice": zod.boolean().optional().describe('Vince sul default dell\'utente (Account → Personaggi); per Alfred è ignorato')
 })
 
 export const CreatePlanConversationResponse = zod.object({
+  "bestPractice": zod.boolean().describe('Lucius cerca le best practice prima di proporre'),
   "id": zod.number(),
   "appId": zod.number(),
   "analysisId": zod.number(),
@@ -6283,6 +6824,7 @@ export const GetPlanConversationParams = zod.object({
 })
 
 export const GetPlanConversationResponse = zod.object({
+  "bestPractice": zod.boolean().describe('Lucius cerca le best practice prima di proporre'),
   "id": zod.number(),
   "appId": zod.number(),
   "analysisId": zod.number(),
@@ -6333,18 +6875,20 @@ export const GetPlanConversationResponse = zod.object({
 
 
 /**
- * Solo con nessun turno in corso (altrimenti 409).
- * @summary Cambia il modello della conversazione
+ * Il modello solo con nessun turno in corso (altrimenti 409); `bestPractice` vale dal turno successivo. Almeno un campo (altrimenti 400).
+ * @summary Cambia il modello o le best practice della conversazione
  */
 export const UpdatePlanConversationParams = zod.object({
   "id": zod.coerce.number()
 })
 
 export const UpdatePlanConversationBody = zod.object({
-  "aiModelId": zod.number()
-})
+  "aiModelId": zod.number().optional(),
+  "bestPractice": zod.boolean().optional()
+}).describe('Almeno un campo (altrimenti 400)')
 
 export const UpdatePlanConversationResponse = zod.object({
+  "bestPractice": zod.boolean().describe('Lucius cerca le best practice prima di proporre'),
   "id": zod.number(),
   "appId": zod.number(),
   "analysisId": zod.number(),
@@ -6483,6 +7027,7 @@ export const ListTeamChatConversationsParams = zod.object({
 })
 
 export const ListTeamChatConversationsResponseItem = zod.object({
+  "bestPractice": zod.boolean().describe('Lucius cerca le best practice prima di proporre'),
   "id": zod.number(),
   "teamInstanceId": zod.number(),
   "aiModelId": zod.number().nullable(),
@@ -6505,10 +7050,12 @@ export const CreateTeamChatConversationParams = zod.object({
 })
 
 export const CreateTeamChatConversationBody = zod.object({
-  "aiModelId": zod.number().nullish().describe('Modello di un account AI dell\'utente; null o assente = modello predefinito')
+  "aiModelId": zod.number().nullish().describe('Modello di un account AI dell\'utente; null o assente = modello predefinito'),
+  "bestPractice": zod.boolean().optional().describe('Vince sul default dell\'utente (Account → Personaggi); per Alfred è ignorato')
 })
 
 export const CreateTeamChatConversationResponse = zod.object({
+  "bestPractice": zod.boolean().describe('Lucius cerca le best practice prima di proporre'),
   "id": zod.number(),
   "teamInstanceId": zod.number(),
   "aiModelId": zod.number().nullable(),
@@ -6529,6 +7076,7 @@ export const GetTeamChatConversationParams = zod.object({
 })
 
 export const GetTeamChatConversationResponse = zod.object({
+  "bestPractice": zod.boolean().describe('Lucius cerca le best practice prima di proporre'),
   "id": zod.number(),
   "teamInstanceId": zod.number(),
   "aiModelId": zod.number().nullable(),
@@ -6572,6 +7120,31 @@ export const GetTeamChatConversationResponse = zod.object({
   "createdAt": zod.coerce.date()
 }),zod.null()]).describe('Messaggio in coda che parte alla fine del turno in corso, altrimenti null')
 }))
+
+
+/**
+ * @summary Attiva o disattiva le best practice di Lucius
+ */
+export const UpdateTeamChatConversationParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateTeamChatConversationBody = zod.object({
+  "bestPractice": zod.boolean()
+})
+
+export const UpdateTeamChatConversationResponse = zod.object({
+  "bestPractice": zod.boolean().describe('Lucius cerca le best practice prima di proporre'),
+  "id": zod.number(),
+  "teamInstanceId": zod.number(),
+  "aiModelId": zod.number().nullable(),
+  "title": zod.string(),
+  "tokensUsed": zod.number(),
+  "costUsd": zod.number().nullable().describe('null = costo parziale (prezzo mancante)'),
+  "turnStatus": zod.enum(['idle', 'running']),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
 
 
 /**
@@ -6684,6 +7257,162 @@ export const DownloadRolesExportResponse = zod.unknown()
 
 
 /**
+ * Versione corrente delle istruzioni personali per Alfred o Lucius (versione 0 e testo vuoto se non ce ne sono). Altro personaggio: 404.
+ * @summary Istruzioni personali dell'utente per un personaggio
+ */
+export const GetCharacterInstructionsParams = zod.object({
+  "character": zod.coerce.string()
+})
+
+export const GetCharacterInstructionsResponse = zod.object({
+  "character": zod.string(),
+  "version": zod.number(),
+  "content": zod.string(),
+  "updatedAt": zod.coerce.date().nullable()
+})
+
+
+/**
+ * Scrive la versione successiva. `baseVersion` è la versione che l'utente ha caricato: se è cambiata, 409. Testo fino a 8 000 caratteri, senza credenziali. Solo con il login; 20 scritture al minuto per utente.
+ * @summary Salva le istruzioni personali (nuova versione)
+ */
+export const UpdateCharacterInstructionsParams = zod.object({
+  "character": zod.coerce.string()
+})
+
+export const updateCharacterInstructionsBodyBaseVersionMin = 0;
+
+
+
+export const UpdateCharacterInstructionsBody = zod.object({
+  "content": zod.string(),
+  "baseVersion": zod.number().min(updateCharacterInstructionsBodyBaseVersionMin)
+})
+
+export const UpdateCharacterInstructionsResponse = zod.object({
+  "character": zod.string(),
+  "version": zod.number(),
+  "content": zod.string(),
+  "updatedAt": zod.coerce.date().nullable()
+})
+
+
+/**
+ * @summary Versioni delle istruzioni personali (le ultime 50)
+ */
+export const ListCharacterInstructionVersionsParams = zod.object({
+  "character": zod.coerce.string()
+})
+
+export const ListCharacterInstructionVersionsResponseItem = zod.object({
+  "version": zod.number(),
+  "source": zod.enum(['manual', 'proposal', 'restore']),
+  "createdAt": zod.coerce.date(),
+  "length": zod.number()
+})
+export const ListCharacterInstructionVersionsResponse = zod.array(ListCharacterInstructionVersionsResponseItem)
+
+
+/**
+ * @summary Una versione delle istruzioni personali
+ */
+
+
+
+export const GetCharacterInstructionVersionParams = zod.object({
+  "character": zod.coerce.string(),
+  "version": zod.coerce.number().min(1)
+})
+
+export const GetCharacterInstructionVersionResponse = zod.object({
+  "version": zod.number(),
+  "source": zod.enum(['manual', 'proposal', 'restore']),
+  "content": zod.string(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * Scrive una versione nuova col testo di quella indicata. Stesse regole di concorrenza e limite del salvataggio. Solo con il login.
+ * @summary Ripristina una versione delle istruzioni personali (come versione nuova)
+ */
+export const RestoreCharacterInstructionsParams = zod.object({
+  "character": zod.coerce.string()
+})
+
+
+export const restoreCharacterInstructionsBodyBaseVersionMin = 0;
+
+
+
+export const RestoreCharacterInstructionsBody = zod.object({
+  "version": zod.number().min(1),
+  "baseVersion": zod.number().min(restoreCharacterInstructionsBodyBaseVersionMin)
+})
+
+export const RestoreCharacterInstructionsResponse = zod.object({
+  "character": zod.string(),
+  "version": zod.number(),
+  "content": zod.string(),
+  "updatedAt": zod.coerce.date().nullable()
+})
+
+
+/**
+ * Le schede che Alfred o Lucius hanno proposto in una conversazione dell'utente (la conversazione di un altro utente è 404). Valida con il login e con il pannello incorporato.
+ * @summary Schede di istruzioni personali di una conversazione
+ */
+
+
+
+export const ListCharacterInstructionProposalsQueryParams = zod.object({
+  "conversationKind": zod.enum(['character', 'plan_chat', 'team_chat']),
+  "conversationId": zod.coerce.number().min(1)
+})
+
+export const ListCharacterInstructionProposalsResponseItem = zod.object({
+  "id": zod.number(),
+  "character": zod.enum(['alfred', 'lucius']),
+  "content": zod.string(),
+  "reason": zod.string(),
+  "status": zod.enum(['pending', 'accepted', 'rejected', 'stale']),
+  "baseVersion": zod.number(),
+  "currentContent": zod.string(),
+  "messageId": zod.number().nullable(),
+  "createdAt": zod.coerce.date()
+})
+export const ListCharacterInstructionProposalsResponse = zod.array(ListCharacterInstructionProposalsResponseItem)
+
+
+/**
+ * Accettare scrive la versione successiva delle istruzioni; se sono cambiate dopo la proposta la scheda diventa superata (409). Valida con il login e con il pannello incorporato; 20 scritture al minuto per utente.
+ * @summary Accetta o rifiuta una scheda di istruzioni personali
+ */
+
+
+
+export const DecideCharacterInstructionProposalParams = zod.object({
+  "id": zod.coerce.number().min(1)
+})
+
+export const DecideCharacterInstructionProposalBody = zod.object({
+  "action": zod.enum(['accept', 'reject'])
+})
+
+export const DecideCharacterInstructionProposalResponse = zod.object({
+  "id": zod.number(),
+  "character": zod.enum(['alfred', 'lucius']),
+  "content": zod.string(),
+  "reason": zod.string(),
+  "status": zod.enum(['pending', 'accepted', 'rejected', 'stale']),
+  "baseVersion": zod.number(),
+  "currentContent": zod.string(),
+  "messageId": zod.number().nullable(),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
  * Restituisce il filo aperto di Alfred; crea il filo se non esiste (la GET può quindi scrivere).
  * @summary Il filo aperto di Alfred scritto (lo crea se manca)
  */
@@ -6709,6 +7438,7 @@ export const getAlfredThreadResponseTwoMessagesItemPageContextOneHostTitleRegExp
 
 
 export const GetAlfredThreadResponse = zod.object({
+  "bestPractice": zod.boolean().describe('Lucius cerca le best practice prima di proporre'),
   "id": zod.number(),
   "character": zod.enum(['alfred', 'lucius']),
   "subjectType": zod.enum(['alfred_thread', 'agent', 'skill', 'team_template', 'area_agents', 'area_skills', 'area_team_templates']),
@@ -6792,6 +7522,7 @@ export const restartAlfredThreadResponseTwoMessagesItemPageContextOneHostTitleRe
 
 
 export const RestartAlfredThreadResponse = zod.object({
+  "bestPractice": zod.boolean().describe('Lucius cerca le best practice prima di proporre'),
   "id": zod.number(),
   "character": zod.enum(['alfred', 'lucius']),
   "subjectType": zod.enum(['alfred_thread', 'agent', 'skill', 'team_template', 'area_agents', 'area_skills', 'area_team_templates']),
@@ -6865,6 +7596,7 @@ export const ListCharacterConversationsQueryParams = zod.object({
 })
 
 export const ListCharacterConversationsResponseItem = zod.object({
+  "bestPractice": zod.boolean().describe('Lucius cerca le best practice prima di proporre'),
   "id": zod.number(),
   "character": zod.enum(['alfred', 'lucius']),
   "subjectType": zod.enum(['alfred_thread', 'agent', 'skill', 'team_template', 'area_agents', 'area_skills', 'area_team_templates']),
@@ -6894,10 +7626,12 @@ export const createCharacterConversationBodySubjectIdMax = 100;
 export const CreateCharacterConversationBody = zod.object({
   "character": zod.enum(['alfred', 'lucius']),
   "subjectType": zod.enum(['agent', 'skill', 'team_template', 'area_agents', 'area_skills', 'area_team_templates']),
-  "subjectId": zod.string().min(1).max(createCharacterConversationBodySubjectIdMax).nullish()
+  "subjectId": zod.string().min(1).max(createCharacterConversationBodySubjectIdMax).nullish(),
+  "bestPractice": zod.boolean().optional().describe('Vince sul default dell\'utente (Account → Personaggi); per Alfred è ignorato')
 })
 
 export const CreateCharacterConversationResponse = zod.object({
+  "bestPractice": zod.boolean().describe('Lucius cerca le best practice prima di proporre'),
   "id": zod.number(),
   "character": zod.enum(['alfred', 'lucius']),
   "subjectType": zod.enum(['alfred_thread', 'agent', 'skill', 'team_template', 'area_agents', 'area_skills', 'area_team_templates']),
@@ -6944,6 +7678,7 @@ export const getCharacterConversationResponseTwoMessagesItemPageContextOneHostTi
 
 
 export const GetCharacterConversationResponse = zod.object({
+  "bestPractice": zod.boolean().describe('Lucius cerca le best practice prima di proporre'),
   "id": zod.number(),
   "character": zod.enum(['alfred', 'lucius']),
   "subjectType": zod.enum(['alfred_thread', 'agent', 'skill', 'team_template', 'area_agents', 'area_skills', 'area_team_templates']),
@@ -7015,10 +7750,12 @@ export const updateCharacterConversationBodyTitleMax = 80;
 
 export const UpdateCharacterConversationBody = zod.object({
   "aiModelId": zod.number().nullish().describe('Modello di un account AI dell\'utente'),
-  "title": zod.string().min(1).max(updateCharacterConversationBodyTitleMax).optional()
+  "title": zod.string().min(1).max(updateCharacterConversationBodyTitleMax).optional(),
+  "bestPractice": zod.boolean().optional().describe('Solo per le conversazioni di Lucius (Alfred → 400)')
 })
 
 export const UpdateCharacterConversationResponse = zod.object({
+  "bestPractice": zod.boolean().describe('Lucius cerca le best practice prima di proporre'),
   "id": zod.number(),
   "character": zod.enum(['alfred', 'lucius']),
   "subjectType": zod.enum(['alfred_thread', 'agent', 'skill', 'team_template', 'area_agents', 'area_skills', 'area_team_templates']),
@@ -7441,7 +8178,7 @@ export const ListPendingActionsResponse = zod.object({
   "actions": zod.array(zod.object({
   "number": zod.number(),
   "status": zod.enum(['pending', 'executing', 'done', 'failed', 'rejected']),
-  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal', 'merge']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima)'),
+  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal', 'merge', 'bug']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima), oppure segnalazione di un bug da affidare alla squadra per i bug dell\'App'),
   "proposal": zod.union([zod.object({
   "title": zod.string(),
   "reason": zod.string().nullable(),
@@ -7499,7 +8236,7 @@ export const GetPendingActionParams = zod.object({
 export const GetPendingActionResponse = zod.object({
   "number": zod.number(),
   "status": zod.enum(['pending', 'executing', 'done', 'failed', 'rejected']),
-  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal', 'merge']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima)'),
+  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal', 'merge', 'bug']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima), oppure segnalazione di un bug da affidare alla squadra per i bug dell\'App'),
   "proposal": zod.union([zod.object({
   "title": zod.string(),
   "reason": zod.string().nullable(),
@@ -7570,7 +8307,7 @@ export const ApprovePendingActionBody = zod.object({
 export const ApprovePendingActionResponse = zod.object({
   "number": zod.number(),
   "status": zod.enum(['pending', 'executing', 'done', 'failed', 'rejected']),
-  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal', 'merge']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima)'),
+  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal', 'merge', 'bug']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima), oppure segnalazione di un bug da affidare alla squadra per i bug dell\'App'),
   "proposal": zod.union([zod.object({
   "title": zod.string(),
   "reason": zod.string().nullable(),
@@ -7635,7 +8372,7 @@ export const RejectPendingActionBody = zod.object({
 export const RejectPendingActionResponse = zod.object({
   "number": zod.number(),
   "status": zod.enum(['pending', 'executing', 'done', 'failed', 'rejected']),
-  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal', 'merge']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima)'),
+  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal', 'merge', 'bug']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima), oppure segnalazione di un bug da affidare alla squadra per i bug dell\'App'),
   "proposal": zod.union([zod.object({
   "title": zod.string(),
   "reason": zod.string().nullable(),

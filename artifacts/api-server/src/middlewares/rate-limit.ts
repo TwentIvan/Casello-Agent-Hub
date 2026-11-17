@@ -163,6 +163,19 @@ export function consumeCharacterMessage(userId: number, character: Character): b
   return characterMessageCounter.consume(`${character}:user:${userId}`).ok;
 }
 
+// Scritture delle istruzioni personali dei personaggi (salvataggio e ripristino): 20 al minuto per utente.
+const instructionWriteCounter = fixedWindowCounter({ limit: 20, windowMs: 60_000 });
+
+/** Conta una scrittura delle istruzioni personali: false se il limite è raggiunto. */
+export function consumeInstructionWrite(userId: number): boolean {
+  return instructionWriteCounter.consume(`user:${userId}`).ok;
+}
+
+/** Solo per i test: azzera il contatore delle scritture delle istruzioni personali. */
+export function resetInstructionWriteLimit(): void {
+  instructionWriteCounter.reset();
+}
+
 // «Ferma» sui turni delle chat (personaggi, piano, squadra): 30 al minuto per utente, un solo contatore.
 const turnStopCounter = fixedWindowCounter({ limit: 30, windowMs: 60_000 });
 
@@ -319,7 +332,47 @@ export function consumeWebRead(userId: number): boolean {
   return webReadCounter.consume(`user:${userId}`).ok;
 }
 
+// Ricerche di best practice di Lucius (Gemini con ricerca Google): 10 al minuto per utente.
+const bestPracticeCounter = fixedWindowCounter({ limit: 10, windowMs: 60_000 });
+/** Conta una ricerca di best practice: false oltre 10 al minuto per utente. */
+export function consumeBestPracticeSearch(userId: number): boolean {
+  return bestPracticeCounter.consume(`user:${userId}`).ok;
+}
+
+/** Azzera il contatore delle ricerche di best practice (solo per i test). */
+export function resetBestPracticeSearchLimit(): void {
+  bestPracticeCounter.reset();
+}
+
 /** Azzera il contatore delle letture web (solo per i test). */
 export function resetWebReadLimit(): void {
   webReadCounter.reset();
+}
+
+// Segnalazioni dei bug dal plugin (route pubbliche /api/embed/bugs): 60 richieste al minuto e 10 segnalazioni all'ora
+// per IP, 20 messaggi all'ora per segnalazione. Contatori in memoria.
+const bugIpRequestCounter = fixedWindowCounter({ limit: 60, windowMs: 60_000 });
+const bugIpReportCounter = fixedWindowCounter({ limit: 10, windowMs: 3_600_000 });
+const bugMessageCounter = fixedWindowCounter({ limit: 20, windowMs: 3_600_000 });
+
+/** Conta una richiesta alle route delle segnalazioni da un IP: false oltre 60 al minuto. */
+export function consumeBugIpRequest(ip: string): boolean {
+  return bugIpRequestCounter.consume(`ip:${ip}`).ok;
+}
+
+/** Conta una nuova segnalazione da un IP: false oltre 10 all'ora. */
+export function consumeBugIpReport(ip: string): boolean {
+  return bugIpReportCounter.consume(`ip:${ip}`).ok;
+}
+
+/** Conta un messaggio del segnalante su una segnalazione: false oltre 20 all'ora. */
+export function consumeBugMessage(reportId: number): boolean {
+  return bugMessageCounter.consume(`report:${reportId}`).ok;
+}
+
+/** Azzera i contatori delle segnalazioni dei bug (solo per i test). */
+export function resetBugLimits(): void {
+  bugIpRequestCounter.reset();
+  bugIpReportCounter.reset();
+  bugMessageCounter.reset();
 }

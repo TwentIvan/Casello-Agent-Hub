@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CODE_INSTRUCTIONS } from "../code-reader/messages";
+import { PERSONAL_INSTRUCTIONS_HEADER } from "../characters/personal-instructions";
+import { INSTRUCTION_PROPOSAL_RULE } from "../characters/instruction-proposals";
 import { estimateTokens } from "../architect/phase-loop";
 import {
   PLAN_CONTEXT_MAX_TOKENS,
@@ -27,6 +29,28 @@ const baseInput = (over: Partial<PlanContextInput> = {}): PlanContextInput => ({
 });
 
 const text = (m: { content?: unknown }) => String(m.content);
+
+describe("istruzioni personali nel prompt del piano", () => {
+  it("in fondo al messaggio system se presenti, assenti senza il campo", () => {
+    const block = `${PERSONAL_INSTRUCTIONS_HEADER}\nSempre il costo`;
+    const withBlock = buildPlanMessages(baseInput({ personalInstructions: block }));
+    expect(text(withBlock[0]!).endsWith(block)).toBe(true);
+    expect(text(buildPlanMessages(baseInput())[0]!)).not.toContain(PERSONAL_INSTRUCTIONS_HEADER);
+  });
+});
+
+describe("proposte di istruzioni personali nel piano", () => {
+  it("regola nel system e stato della scheda nella cronologia", () => {
+    const history = [
+      { role: "user" as const, content: "ciao", proposals: [] },
+      { role: "assistant" as const, content: "ecco", proposals: [], instructionProposals: ["accepted"] },
+      { role: "user" as const, content: "grazie", proposals: [] },
+    ];
+    const msgs = buildPlanMessages(baseInput({ history }));
+    expect(text(msgs[0]!)).toContain(INSTRUCTION_PROPOSAL_RULE);
+    expect(text(msgs[3]!)).toContain("[scheda istruzioni personali: accepted]");
+  });
+});
 
 describe("lettura del codice nel contesto", () => {
   it("con codice: frase d'istruzione e riga nel blocco dati", () => {

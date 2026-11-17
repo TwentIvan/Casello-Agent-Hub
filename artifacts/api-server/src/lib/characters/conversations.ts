@@ -3,7 +3,7 @@
 import { and, eq } from "drizzle-orm";
 import { db, characterConversationsTable, type CharacterConversation } from "@workspace/db";
 import { getSubject } from "./registry";
-import { characterModelFor } from "./settings";
+import { characterModelFor, luciusBestPracticeDefault } from "./settings";
 import { CHARACTER_MESSAGES, CharacterError, type Character, type SubjectType } from "./types";
 
 /**
@@ -15,15 +15,18 @@ export async function createConversation(
   character: Character,
   subjectType: SubjectType,
   subjectId: string | null,
+  bestPractice?: boolean,
 ): Promise<CharacterConversation> {
   const handler = getSubject(subjectType);
   if (handler.character !== character) throw new CharacterError(404, CHARACTER_MESSAGES.subjectNotFound);
   const resolved = await handler.resolve(userId, subjectId);
   if (!resolved) throw new CharacterError(404, CHARACTER_MESSAGES.subjectNotFound);
   const aiModelId = await characterModelFor(userId, character);
+  // Solo Lucius cerca le best practice: Alfred resta sempre false
+  const bp = character === "lucius" ? (bestPractice ?? (await luciusBestPracticeDefault(userId))) : false;
   const [conv] = await db
     .insert(characterConversationsTable)
-    .values({ userId, character, subjectType, subjectId, subjectTitle: resolved.title, aiModelId, title: "" })
+    .values({ userId, character, subjectType, subjectId, subjectTitle: resolved.title, aiModelId, title: "", bestPractice: bp })
     .returning();
   return conv!;
 }

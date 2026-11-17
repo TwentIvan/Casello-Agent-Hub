@@ -20,4 +20,6 @@ export interface AnalysisStart {
      * @maximum 2000000
      */
   maxTokens?: number;
+  /** Verifica le best practice per app simili prima della fase di completamento (default: true se le best practice di Lucius sono «Sempre» in Account → Personaggi) */
+  bestPractice?: boolean;
 }

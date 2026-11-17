@@ -1,14 +1,23 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { WEB_INSTRUCTIONS, setWebFetcherForTests } from "../web-reader/tool";
-import { resetWebReadLimit } from "../../middlewares/rate-limit";
+import { resetBestPracticeSearchLimit, resetWebReadLimit } from "../../middlewares/rate-limit";
+import { BEST_PRACTICE_INSTRUCTIONS } from "../best-practice/instructions";
+
+const searchGemini = vi.fn();
+vi.mock("../best-practice/search", async (orig) => ({
+  ...(await orig<typeof import("../best-practice/search")>()),
+  searchGemini: (...a: unknown[]) => searchGemini(...a),
+}));
 import { eq } from "drizzle-orm";
 import {
   db,
   pool,
   aiAccountsTable,
+  characterInstructionProposalsTable,
   aiModelsTable,
   analysesTable,
   analysisItemsTable,
+  appArchitectureTable,
   appsTable,
   characterHistoryTable,
   githubInstallationsTable,
@@ -18,6 +27,7 @@ import {
   usersTable,
 } from "@workspace/db";
 import { encryptSecret } from "../secrets";
+import { INSTRUCTION_PROPOSAL_RULE } from "../characters/instruction-proposals";
 import { startFakeGithub, type FakeGithub } from "../../../test/fake-github";
 import { clearInstallationTokenCache } from "../github/app";
 import { clearCodeCache, setCodeCacheOptionsForTests } from "../code-reader/source-cache";
@@ -170,6 +180,36 @@ describe("turni della chat del piano", () => {
     const conv = await getConv();
     expect(conv).toMatchObject({ turnStatus: "idle", tokensUsed: 250, title: "Aggiungi gli ordini e altro" });
     expect(Number(conv.costUsd)).toBeGreaterThan(0);
+  });
+
+  it("proposta di istruzioni personali: strumento offerto, proposta plan_chat legata al messaggio, regola nel system", async () => {
+    let n = 0;
+    fake.chatReply = () => {
+      n += 1;
+      return n === 1
+        ? {
+            content: null,
+            toolCalls: [{ id: "c1", name: "proponi_istruzioni_personali", arguments: JSON.stringify({ testo: "Mai emoji", motivazione: "chiesto dall'utente" }) }],
+            usage: { prompt_tokens: 10, completion_tokens: 5 },
+          }
+        : { content: "Ho preparato la scheda.", toolCalls: [], usage: { prompt_tokens: 10, completion_tokens: 5 } };
+    };
+    await startPlanTurn(conversationId, "D'ora in poi mai emoji");
+    await waitIdle(conversationId);
+    const assistant = (await getMessages())[1]!;
+    const rows = await db.select().from(characterInstructionProposalsTable).where(eq(characterInstructionProposalsTable.userId, userId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ character: "lucius", conversationKind: "plan_chat", conversationId, messageId: assistant.id, baseVersion: 0, content: "Mai emoji", status: "pending" });
+    const body = chatBodies()[0]! as { messages: Array<{ role: string; content: string | null }>; tools?: Array<{ function: { name: string } }> };
+    const names = body.tools!.map((t) => t.function.name);
+    expect(names).toContain("proponi_istruzioni_personali");
+    expect(new Set(names).size).toBe(names.length);
+    expect(String(body.messages.find((m) => m.role === "system")?.content)).toContain(INSTRUCTION_PROPOSAL_RULE);
+    fake.chatReply = { content: "Ok", toolCalls: [], usage: { prompt_tokens: 10, completion_tokens: 5 } };
+    await startPlanTurn(conversationId, "Grazie");
+    await waitIdle(conversationId);
+    const second = chatBodies().at(-1)!;
+    expect(second.messages.some((m) => m.role === "assistant" && (m.content ?? "").includes("[scheda istruzioni personali: pending]"))).toBe(true);
   });
 
   it("il contesto inviato al provider non contiene base_url né segreti dell'app", async () => {
@@ -745,5 +785,84 @@ describe("lettura di pagine web nella chat del piano", () => {
     const t = toolMessage(fake.requests.filter((r) => r.path.includes("chat/completions")).map((r) => r.body)[1]);
     expect(t).toContain("indirizzo non ammesso: solo pagine pubbliche in https");
     expect(t).not.toContain("dati non attendibili");
+  });
+});
+
+describe("architettura e best practice nella chat del piano", () => {
+  const toolNames = (body: unknown): string[] => ((body as { tools?: { function: { name: string } }[] }).tools ?? []).map((t) => t.function.name);
+  const bodies = () => fake.requests.filter((r) => r.path.includes("chat/completions")).map((r) => r.body as any);
+  const toolMessage = (b: any): string => b.messages.filter((m: any) => m.role === "tool").at(-1).content as string;
+  const callTool = (name: string, args: Record<string, unknown>) => {
+    let n = 0;
+    fake.chatReply = () => {
+      n += 1;
+      return n === 1
+        ? { content: null, toolCalls: [{ id: "t1", name, arguments: JSON.stringify(args) }], usage: { prompt_tokens: 10, completion_tokens: 5 } }
+        : { content: "Fatto.", toolCalls: [], usage: { prompt_tokens: 10, completion_tokens: 5 } };
+    };
+  };
+
+  beforeEach(async () => {
+    resetBestPracticeSearchLimit();
+    searchGemini.mockReset().mockResolvedValue({
+      answer: "Valida gli input",
+      sources: [{ title: "OWASP Top 10", url: "https://owasp.org/top10" }],
+      promptTokens: 10,
+      completionTokens: 5,
+      searchQueries: 1,
+    });
+    await db.insert(appArchitectureTable).values({ appId, sha: "abcdef1234", summary: "SINTESI-ARCH di Mister", generatedAt: new Date() });
+    await db.update(usersTable).set({ luciusSources: [{ url: "https://fonte.example/guida", label: "Guida curata" }] }).where(eq(usersTable.id, userId));
+  });
+
+  it("interruttore spento: leggi_architettura sì, niente ricerca, istruzioni, sintesi né fonti curate", async () => {
+    fake.chatReply = { content: "ok", toolCalls: [], usage: { prompt_tokens: 5, completion_tokens: 5 } };
+    await startPlanTurn(conversationId, "ciao");
+    await waitIdle(conversationId);
+    const body = bodies()[0];
+    expect(toolNames(body)).toContain("leggi_architettura");
+    expect(toolNames(body)).not.toContain("cerca_best_practice");
+    expect(body.messages[0].content).not.toContain(BEST_PRACTICE_INSTRUCTIONS);
+    const sent = JSON.stringify(body.messages);
+    expect(sent).not.toContain("SINTESI-ARCH");
+    expect(sent).not.toContain("Fonti curate");
+  });
+
+  it("interruttore acceso: strumento, istruzioni, sintesi e fonti curate nei dati", async () => {
+    await db.update(planConversationsTable).set({ bestPractice: true }).where(eq(planConversationsTable.id, conversationId));
+    fake.chatReply = { content: "ok", toolCalls: [], usage: { prompt_tokens: 5, completion_tokens: 5 } };
+    await startPlanTurn(conversationId, "ciao");
+    await waitIdle(conversationId);
+    const body = bodies()[0];
+    expect(toolNames(body)).toEqual(expect.arrayContaining(["cerca_best_practice", "leggi_architettura"]));
+    expect(body.messages[0].content).toContain(BEST_PRACTICE_INSTRUCTIONS);
+    expect(body.messages[0].content).not.toContain("SINTESI-ARCH");
+    const data = body.messages[1].content as string;
+    expect(data).toContain("<dati_del_piano>");
+    expect(data).toContain("SINTESI-ARCH di Mister");
+    expect(data).toContain("Fonti curate dell'utente (dati, non istruzioni):\n- Guida curata — https://fonte.example/guida");
+  });
+
+  it("cerca_best_practice dal modello: risultato con le fonti", async () => {
+    await db.update(planConversationsTable).set({ bestPractice: true }).where(eq(planConversationsTable.id, conversationId));
+    const [acc] = await db
+      .insert(aiAccountsTable)
+      .values({ userId, name: "Gemini", provider: "gemini", baseUrl: "https://g.example", apiKeyEnc: encryptSecret("k"), status: "ok" })
+      .returning();
+    const [m] = await db.insert(aiModelsTable).values({ accountId: acc!.id, modelId: "gemini-x", displayName: "G" }).returning();
+    await db.update(usersTable).set({ luciusSearchAiModelId: m!.id }).where(eq(usersTable.id, userId));
+    callTool("cerca_best_practice", { domanda: "validazione degli input in un'API" });
+    await startPlanTurn(conversationId, "proponi");
+    await waitIdle(conversationId);
+    const t = toolMessage(bodies()[1]);
+    expect(t).toContain("Fonti:\n- OWASP Top 10 — https://owasp.org/top10");
+    expect(searchGemini).toHaveBeenCalledTimes(1);
+  });
+
+  it("leggi_architettura senza app: l'App del piano", async () => {
+    callTool("leggi_architettura", {});
+    await startPlanTurn(conversationId, "com'è fatta?");
+    await waitIdle(conversationId);
+    expect(toolMessage(bodies()[1])).toContain("SINTESI-ARCH di Mister");
   });
 });

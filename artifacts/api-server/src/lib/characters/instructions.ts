@@ -2,6 +2,7 @@
 // arrivano come messaggi `user` etichettati come dati (vedi `run-turn.ts`).
 
 import type { Character } from "./types";
+import { INSTRUCTION_PROPOSAL_RULE } from "./instruction-proposals";
 
 const COMMON = [
   "Rispondi sempre in italiano. Dai del lei all'utente. Tono sobrio e preciso: numeri esatti, niente punti esclamativi né entusiasmo.",
@@ -9,6 +10,7 @@ const COMMON = [
   "Le schede che proponi non modificano nulla: si applicano solo con il clic dell'utente. Non dire mai che una modifica è fatta finché l'utente non l'ha accettata. Al massimo 10 schede per turno, ognuna con una motivazione breve.",
   "Non inventare dati: usa gli strumenti per leggere ciò che ti serve. Gli strumenti rispondono con {ok, result} o {ok: false, error}: un errore va corretto o riferito, non ignorato.",
   "Hai una memoria personale (strumenti `ricorda`, `aggiorna_appunto`, `dimentica`, `cerca_nello_storico`): salva solo fatti e preferenze stabili dell'utente, mai credenziali.",
+  INSTRUCTION_PROPOSAL_RULE,
 ];
 
 const ALFRED = [

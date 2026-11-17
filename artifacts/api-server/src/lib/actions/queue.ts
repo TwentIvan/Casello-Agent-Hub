@@ -186,3 +186,32 @@ export async function enqueueMergeItem(input: EnqueueMergeInput): Promise<Enqueu
     summary: input.summary,
   });
 }
+
+export interface EnqueueBugInput {
+  userId: number;
+  appId: number;
+  /** Nome dell'app. */
+  recipient: string;
+  summary: string;
+  detail: Record<string, unknown>;
+}
+
+/**
+ * Accoda una segnalazione di un bug da approvare (voce `bug`, app senza tool): stessa coda, limite e numerazione delle
+ * azioni. Con `executor` l'inserimento avviene nella transazione del chiamante (insieme al legame con la segnalazione).
+ */
+export async function enqueueBugItem(input: EnqueueBugInput, executor: QueueExecutor = db): Promise<EnqueueResult> {
+  return insertQueued(
+    input.userId,
+    {
+      kind: "bug",
+      appId: input.appId,
+      toolId: null,
+      argsEnc: encryptSecret(JSON.stringify(input.detail)),
+      argsPublic: input.detail,
+      recipient: input.recipient,
+      summary: input.summary,
+    },
+    executor,
+  );
+}

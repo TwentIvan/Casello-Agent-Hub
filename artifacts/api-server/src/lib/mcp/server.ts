@@ -151,7 +151,7 @@ export function createMcpServer(sources: LocalSourceOptions = {}, userId: number
         "Istruzioni della fase corrente: `system` e `user` sono il prompt da seguire, con l'esempio JSON dell'esito e gli appunti delle fasi precedenti. Esegui la fase sul clone locale e consegna con submit_phase.",
       inputSchema: { analysisId, leaseToken },
     },
-    ({ analysisId: id, leaseToken: lease }) => run("get_phase_instructions", () => localPhaseInstructions(id, lease, new Date(), sources)),
+    ({ analysisId: id, leaseToken: lease }) => run("get_phase_instructions", () => localPhaseInstructions(id, lease, new Date(), sources, userId)),
   );
 
   server.registerTool(

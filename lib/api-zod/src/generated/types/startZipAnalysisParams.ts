@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { AnalysisExecutor } from './analysisExecutor';
+import type { StartZipAnalysisBestPractice } from './startZipAnalysisBestPractice';
 
 export type StartZipAnalysisParams = {
 /**
@@ -22,4 +23,8 @@ maxTokens?: number;
  * Con local risponde 400 "con l'agente locale lo zip non serve"
  */
 executor?: AnalysisExecutor;
+/**
+ * Verifica delle best practice (default dalle impostazioni di Lucius)
+ */
+bestPractice?: StartZipAnalysisBestPractice;
 };

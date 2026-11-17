@@ -59,3 +59,16 @@ describe("lineDiff", () => {
     ]);
   });
 });
+
+describe("lineDiff oltre il tetto", () => {
+  it("due testi da 1 500 righe diverse: confronto grezzo, veloce", () => {
+    const a = Array.from({ length: 1500 }, (_, i) => `a${i}`).join("\n");
+    const b = Array.from({ length: 1500 }, (_, i) => `b${i}`).join("\n");
+    const t = Date.now();
+    const d = lineDiff(a, b);
+    expect(Date.now() - t).toBeLessThan(200);
+    expect(d).toHaveLength(3000);
+    expect(d[0].kind).toBe("removed");
+    expect(d[2999].kind).toBe("added");
+  });
+});

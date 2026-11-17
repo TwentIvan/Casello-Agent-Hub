@@ -30,4 +30,6 @@ export interface TeamInstance {
   lastTurnAt: Date | null;
   /** Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato) */
   nodeWorkspace: string | null;
+  /** Squadra per i bug dell'App di riferimento (riceve le segnalazioni approvate) */
+  bugTeam: boolean;
 }

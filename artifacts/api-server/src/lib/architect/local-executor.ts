@@ -35,6 +35,8 @@ import { formatIssues } from "./phase-loop";
 import { existingToolsForPrompt, recordPhaseResult } from "./phase-record";
 import { chatPlannedItems } from "./planned";
 import { phasePrompt, SYSTEM_BASE } from "./prompts";
+import { personalInstructionsBlock, withPersonalInstructions } from "../characters/personal-instructions";
+import { architectureBlockFor } from "../architecture/tool";
 import { appendLog } from "./run-analysis";
 import { PHASES, PHASE_SCHEMAS, checkCatalogAgainstMcp, type AnalysisChapter, type CatalogResult, type PhaseName } from "./schemas";
 import { fetchOpenApi, type OpenApiDoc } from "./sources";
@@ -388,6 +390,7 @@ export async function localPhaseInstructions(
   leaseToken: string,
   now: Date = new Date(),
   opts: LocalSourceOptions = {},
+  userId: number | null = null,
 ): Promise<{ phase: PhaseName; system: string; user: string }> {
   const [row] = await db
     .select()
@@ -414,8 +417,14 @@ export async function localPhaseInstructions(
     previous,
     alreadyPlanned: await chatPlannedItems(app.id, analysisId),
     existingTools: phase === "catalog" ? await existingToolsForPrompt(app.id) : undefined,
+    // Con la verifica l'agente cerca da sé con la sua ricerca web: nessun costo per Botcave
+    localBestPractice:
+      analysis.bestPractice && (phase === "completion" || phase === "evolution")
+        ? { summary: phase === "completion" ? (await architectureBlockFor(app.id)) || null : null }
+        : undefined,
   });
-  return { phase, system: `${LOCAL_PREFACE}\n\n${SYSTEM_BASE}`, user };
+  const personal = userId === null ? "" : await personalInstructionsBlock(userId, "lucius");
+  return { phase, system: withPersonalInstructions(`${LOCAL_PREFACE}\n\n${SYSTEM_BASE}`, personal), user };
 }
 
 /**

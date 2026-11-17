@@ -5,6 +5,8 @@ import {
   db,
   pool,
   agentToolsTable,
+  aiAccountsTable,
+  aiModelsTable,
   agentsTable,
   appToolsTable,
   agentTriggersTable,
@@ -53,7 +55,9 @@ let mcpTool: CatalogTool;
 let userTool: CatalogTool;
 let templateId: number;
 
-const role = (over: Partial<TemplateRole> = {}): TemplateRole => ({ key: "capo", name: "Capo", task: "Guida", isLead: true, runsOn: "node", aiModelId: null, tools: [], code: "none", skills: [], ...over });
+let leadModel: number;
+// Il capo gira sempre in cloud: serve un modello cloud dell'utente
+const role = (over: Partial<TemplateRole> = {}): TemplateRole => ({ key: "capo", name: "Capo", task: "Guida", isLead: true, runsOn: "cloud", aiModelId: leadModel, tools: [], code: "none", skills: [], ...over });
 
 async function conversation(character: Character, subjectType: SubjectType, subjectId: string | null, owner = userId) {
   const [conv] = await db
@@ -116,6 +120,12 @@ beforeEach(async () => {
   userId = u!.id;
   const [o] = await db.insert(usersTable).values({ email: "b@x.it", name: "B" }).returning();
   otherUserId = o!.id;
+  const [acc] = await db
+    .insert(aiAccountsTable)
+    .values({ userId, name: "A", provider: "custom", baseUrl: "https://llm.example.com/v1", apiKeyEnc: encryptSecret("sk-test"), status: "ok" })
+    .returning();
+  const [lm] = await db.insert(aiModelsTable).values({ accountId: acc!.id, modelId: "capo-model", displayName: "capo-model" }).returning();
+  leadModel = lm!.id;
   const [app] = await db
     .insert(appsTable)
     .values({ name: "Mister", slug: "mister", baseUrl: "http://mister.example", mcpUrl: mcp.url, serviceAuth: { header: "X-Key", scheme: null }, serviceSecretEnc: encryptSecret("s") })

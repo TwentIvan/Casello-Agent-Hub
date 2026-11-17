@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { db, pool, usersTable } from "@workspace/db";
+import { db, pool, usersTable, characterConversationsTable } from "@workspace/db";
 import { ensureEmbedClients } from "../src/lib/embed/clients";
 
 // Token `cao_` con ambito embed su /api (lettura e scrittura, ma non le route solo-login) e sessioni di Alfred; mai su /mcp.
@@ -128,6 +128,20 @@ describe("token embed su /api", () => {
       luciusMonthlyBudgetUsd: null,
     });
     expect(put.status).toBe(403);
+  });
+
+  it("schede delle istruzioni personali: elenco e decisione ammessi", async () => {
+    const t = await embedToken();
+    const [u] = await db.select().from(usersTable);
+    const [c] = await db
+      .insert(characterConversationsTable)
+      .values({ userId: u!.id, character: "lucius", subjectType: "skill", subjectId: "x", title: "" })
+      .returning();
+    const list = await call("GET", `/api/character-instruction-proposals?conversationKind=character&conversationId=${c!.id}`, t);
+    expect(list.status).toBe(200);
+    expect(await list.json()).toEqual([]);
+    // scheda inesistente: 404 (non 403), quindi la route è raggiungibile col token embed
+    expect((await call("POST", "/api/character-instruction-proposals/999999/decision", t, { action: "reject" })).status).toBe(404);
   });
 
   it("sessioni di Alfred: ammesse (409 senza modello)", async () => {

@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, ne } from "drizzle-orm";
+import { and, eq, isNotNull, ne, sql } from "drizzle-orm";
 import {
   db,
   agentsTable,
@@ -10,7 +10,7 @@ import {
   type PendingActionRow,
 } from "@workspace/db";
 import { enqueueBugItem } from "../actions/queue";
-import type { DecideResult } from "../actions/decide";
+import { ACTION_MESSAGES, type DecideResult } from "../actions/decide";
 import { aiModelOwner } from "../ai/model-owner";
 import { githubConfig } from "../github/config";
 import { userHasInstallation } from "../github/installations";
@@ -31,9 +31,6 @@ type Executor = Tx | typeof db;
 export const BUG_APPROVAL_MESSAGES = {
   assigned: (team: string) => `Affidata alla squadra ${team}`,
   notPending: "la segnalazione non è più in attesa di approvazione",
-  alreadyDecided: "azione già decisa",
-  notFound: "azione non trovata",
-  internalFinish: "errore interno: esito dell'azione non registrato",
 } as const;
 
 export const BUG_ISSUE_LABELS = ["bug", "botcave"] as const;
@@ -121,8 +118,17 @@ export async function ensureApprovalItem(reportId: number): Promise<void> {
   if (outcome === "full") logger.warn({ reportId, appId: report.appId }, "Voce della segnalazione non accodata: coda piena");
 }
 
-/** Neutralizza le menzioni (`@nome`) dei testi dell'utente: nella issue non devono notificare nessuno. */
-const noMentions = (text: string) => text.replace(/@(?=[A-Za-z0-9_-])/g, "@​");
+const ZWSP = "​";
+
+/**
+ * Neutralizza menzioni (`@nome`) e riferimenti (`#123`, `GH-123`) dei testi dell'utente: nella issue non devono
+ * notificare nessuno né collegarsi ad altre issue o PR.
+ */
+export const noMentions = (text: string) =>
+  text
+    .replace(/@(?=[A-Za-z0-9_-])/g, `@${ZWSP}`)
+    .replace(/#(?=\d)/g, `#${ZWSP}`)
+    .replace(/\b(GH)-(?=\d)/gi, `$1-${ZWSP}`);
 
 function pageLine(report: BugReportRow): string | null {
   const ctx = report.pageContext;
@@ -253,8 +259,8 @@ export async function approveBug(userId: number, action: PendingActionRow): Prom
     return { kind: "claimed" as const, report };
   });
   if (claim.kind === "noTeam") return fail(409, BUG_MESSAGES.noBugTeam);
-  if (claim.kind === "decided") return fail(409, BUG_APPROVAL_MESSAGES.alreadyDecided);
-  if (claim.kind === "stale") return claim.row ? { ok: true, action: claim.row } : fail(404, BUG_APPROVAL_MESSAGES.notFound);
+  if (claim.kind === "decided") return fail(409, ACTION_MESSAGES.alreadyDecided);
+  if (claim.kind === "stale") return claim.row ? { ok: true, action: claim.row } : fail(404, ACTION_MESSAGES.notFound);
 
   const report = claim.report;
   const issue = await createBugIssue(userId, report);
@@ -279,12 +285,34 @@ export async function approveBug(userId: number, action: PendingActionRow): Prom
     });
     if (result.assigned) notifyTurnQueued(team.id);
     logger.info({ reportId: report.id, appId, number: report.number, teamId: team.id, assigned: result.assigned }, "Segnalazione approvata");
-    return result.row ? { ok: true, action: result.row } : fail(404, BUG_APPROVAL_MESSAGES.notFound);
+    return result.row ? { ok: true, action: result.row } : fail(404, ACTION_MESSAGES.notFound);
   } catch (err) {
     // La voce resta `executing`: all'avvio diventa «esito incerto» (failInterruptedActions)
     logger.error({ actionId: action.id, reportId: report.id, errName: errName(err) }, "Affidamento della segnalazione non riuscito");
-    return fail(500, BUG_APPROVAL_MESSAGES.internalFinish);
+    return fail(500, ACTION_MESSAGES.internalFinish);
   }
+}
+
+/**
+ * Stacca da una segnalazione ancora `pending_approval` la sua voce, se questa è chiusa senza averla portata avanti
+ * (es. `failed` dopo un'approvazione interrotta). UPDATE condizionato alla stessa voce: succede una volta sola. La voce
+ * nuova la crea `ensureApprovalItem`.
+ */
+export async function releaseStaleApprovalItem(reportId: number, actionId: number): Promise<boolean> {
+  const released = await db
+    .update(bugReportsTable)
+    .set({ pendingActionId: null, updatedAt: new Date() })
+    .where(
+      and(
+        eq(bugReportsTable.id, reportId),
+        eq(bugReportsTable.status, "pending_approval"),
+        eq(bugReportsTable.pendingActionId, actionId),
+        sql`exists (select 1 from ${pendingActionsTable} where ${pendingActionsTable.id} = ${actionId} and ${pendingActionsTable.status} not in ('pending', 'executing'))`,
+      ),
+    )
+    .returning({ id: bugReportsTable.id });
+  if (released.length > 0) logger.info({ reportId, actionId }, "Voce chiusa staccata dalla segnalazione");
+  return released.length > 0;
 }
 
 /** Blocca la segnalazione di una voce `bug` (prima della riga della voce, per l'ordine dei lock). */
@@ -299,6 +327,12 @@ export async function lockBugReportFor(tx: Tx, action: Pick<PendingActionRow, "k
 export async function rejectBug(row: PendingActionRow, note: string | null, executor: Executor = db): Promise<void> {
   const reportId = reportIdOf(row);
   if (row.kind !== "bug" || reportId === null) return;
+  // Solo la segnalazione legata a questa voce: una voce vecchia (sostituita dallo sweeper) non la chiude
+  const [report] = await executor
+    .select({ pendingActionId: bugReportsTable.pendingActionId })
+    .from(bugReportsTable)
+    .where(eq(bugReportsTable.id, reportId));
+  if (report?.pendingActionId !== row.id) return;
   await setStatus(executor, reportId, ["pending_approval"], "rejected", {
     publicMessage: note && note.trim() ? note.slice(0, BUG_LIMITS.rejectNote) : BUG_MESSAGES.rejectedDefault,
   });

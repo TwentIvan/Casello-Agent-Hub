@@ -16,12 +16,14 @@ import {
   type BugReportRow,
 } from "@workspace/db";
 import { startFakeGithub, type FakeGithub } from "../../../test/fake-github";
-import { approveAction, rejectAction } from "../actions/decide";
+import { approveAction, failInterruptedActions, rejectAction } from "../actions/decide";
 import { clearInstallationTokenCache } from "../github/app";
 import { resetGithubConfigForTests } from "../github/config";
+import { logger } from "../logger";
 import { encryptSecret } from "../secrets";
-import { bugIssueBody, bugTeamRequest, designatedBugTeam, ensureApprovalItem } from "./approval";
+import { bugIssueBody, bugTeamRequest, designatedBugTeam, ensureApprovalItem, noMentions } from "./approval";
 import { BUG_MESSAGES } from "./messages";
+import { sweepBugsOnce } from "./sweeper";
 
 // Voce «Bug» in «Da confermare»: creazione, approvazione (issue, turno del capo) e rifiuto. PGlite + finto GitHub.
 
@@ -260,6 +262,7 @@ describe("approvazione", () => {
   });
 
   it("GitHub in errore: nessuna issue, segnalazione comunque in lavorazione", async () => {
+    const warn = vi.spyOn(logger, "warn").mockImplementation(() => undefined as never);
     gh.failWith = () => 500;
     const report = await seedReport();
     const item = await queued(report);
@@ -267,6 +270,36 @@ describe("approvazione", () => {
     expect(res.ok && res.action.status).toBe("done");
     expect(await getReport(report.id)).toMatchObject({ status: "in_progress", issueNumber: null });
     expect(await reasons()).toHaveLength(1);
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it("approvazione interrotta (voce executing → failed all'avvio): lo sweeper crea una voce nuova, una volta sola", async () => {
+    const report = await seedReport();
+    const item = await queued(report);
+    // Prenotata e mai conclusa: il processo è caduto tra le due transazioni
+    await db.update(pendingActionsTable).set({ status: "executing" }).where(eq(pendingActionsTable.id, item.id));
+    expect(await failInterruptedActions()).toBe(1);
+
+    await sweepBugsOnce();
+    await sweepBugsOnce();
+    const all = await items();
+    expect(all.map((i) => i.status).sort()).toEqual(["failed", "pending"]);
+    const fresh = all.find((i) => i.status === "pending")!;
+    expect(fresh).toMatchObject({ kind: "bug", userId: ownerId });
+    expect(await getReport(report.id)).toMatchObject({ status: "pending_approval", pendingActionId: fresh.id });
+
+    // La voce nuova si approva come le altre
+    const res = await approveAction(ownerId, fresh.number);
+    expect(res.ok && res.action.status).toBe("done");
+    expect((await getReport(report.id)).status).toBe("in_progress");
+  });
+
+  it("lo sweeper non tocca le voci ancora aperte", async () => {
+    const report = await seedReport();
+    const item = await queued(report);
+    await sweepBugsOnce();
+    expect(await items()).toHaveLength(1);
+    expect((await getReport(report.id)).pendingActionId).toBe(item.id);
   });
 
   it("due approvazioni concorrenti: una sola issue e un solo turno", async () => {
@@ -288,6 +321,15 @@ describe("rifiuto", () => {
     expect(res.ok && res.action.status).toBe("rejected");
     expect(await getReport(report.id)).toMatchObject({ status: "rejected", publicMessage: "Non riproducibile" });
     expect(await reasons()).toHaveLength(0);
+  });
+
+  it("una voce non più legata alla segnalazione non la chiude", async () => {
+    const report = await seedReport();
+    const item = await queued(report);
+    await db.update(bugReportsTable).set({ pendingActionId: null }).where(eq(bugReportsTable.id, report.id));
+    const res = await rejectAction(ownerId, item.number, "No");
+    expect(res.ok && res.action.status).toBe("rejected");
+    expect(await getReport(report.id)).toMatchObject({ status: "pending_approval", publicMessage: null });
   });
 
   it("senza nota: «Segnalazione non accolta.»", async () => {
@@ -323,6 +365,16 @@ describe("testi", () => {
     expect(body).not.toContain("sub-segreto-42");
     expect(body).not.toContain("mario@example.com");
     expect(body).not.toContain("h".repeat(64));
+  });
+
+  it("noMentions: menzioni e riferimenti a issue neutralizzati, nel titolo e nel corpo", () => {
+    const out = noMentions("vedi #12 e GH-7, chiedi a @ivan (prezzo #a resta)");
+    expect(out).not.toMatch(/#\d/);
+    expect(out).not.toMatch(/GH-\d/);
+    expect(out).not.toMatch(/@[a-z]/);
+    expect(out).toContain("#a");
+    const body = bugIssueBody({ ...base, title: "Errore #5", description: "come in #34" } as BugReportRow);
+    expect(body).not.toMatch(/#\d/);
   });
 
   it("bugTeamRequest: dati tra delimitatori, compito con la issue, ≤ 4 000 caratteri", () => {

@@ -1,11 +1,12 @@
-import { and, eq, isNull, lt, sql } from "drizzle-orm";
-import { db, bugReportsTable, runsTable } from "@workspace/db";
+import { and, eq, isNull, lt, notInArray, sql } from "drizzle-orm";
+import { db, bugReportsTable, pendingActionsTable, runsTable } from "@workspace/db";
 import { logger } from "../logger";
-import { ensureApprovalItem } from "./approval";
+import { ensureApprovalItem, releaseStaleApprovalItem } from "./approval";
 import { finalizeReport, startTriage } from "./triage";
 
 // Controllo periodico delle segnalazioni: chiude i vagli con la run finita altrove (riavvio, annullo, altro
-// container), riavvia quelli mai partiti e riprova la voce in «Da confermare» che non si era potuta creare.
+// container), riavvia quelli mai partiti, stacca le voci chiuse senza esito e riprova la voce in «Da confermare» che non
+// si era potuta creare.
 
 const SWEEP_MS = 60_000;
 const BATCH = 100;
@@ -42,6 +43,22 @@ export async function sweepBugsOnce(): Promise<void> {
     )
     .limit(BATCH);
   for (const row of stuck) await startTriage(row.id);
+
+  // Segnalazioni ancora da approvare con una voce chiusa senza esito (approvazione interrotta: la voce `executing`
+  // diventa `failed` all'avvio): si stacca la voce, così sotto se ne crea una nuova
+  const orphaned = await db
+    .select({ id: bugReportsTable.id, actionId: pendingActionsTable.id })
+    .from(bugReportsTable)
+    .innerJoin(pendingActionsTable, eq(pendingActionsTable.id, bugReportsTable.pendingActionId))
+    .where(and(eq(bugReportsTable.status, "pending_approval"), notInArray(pendingActionsTable.status, ["pending", "executing"])))
+    .limit(BATCH);
+  for (const row of orphaned) {
+    try {
+      await releaseStaleApprovalItem(row.id, row.actionId);
+    } catch (err) {
+      logger.error({ reportId: row.id, errName: errName(err) }, "Voce chiusa della segnalazione non staccata");
+    }
+  }
 
   const waiting = await db
     .select({ id: bugReportsTable.id })

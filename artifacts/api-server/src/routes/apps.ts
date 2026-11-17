@@ -26,6 +26,7 @@ import { checkAuthHeaderName, checkExtraHeaders, normalizeExtraHeaders } from ".
 import type { AuthConfig, ExtraHeader } from "../lib/tools/types";
 import { uniqueSlug, withSlugRetry } from "../lib/slug";
 import { isValidGithubRepo } from "../lib/architect/sources";
+import { checkStagingBranch, checkStagingUrl } from "../lib/teams/staging";
 import { INSTALLATION_NOT_YOURS, REPO_NOT_VISIBLE, REPOS_NOT_VERIFIED, userHasInstallation, userRepoAccess } from "../lib/github/installations";
 import { currentUserId } from "../lib/auth";
 import { GITHUB_MESSAGES, GithubError, repoInstallationId } from "../lib/github/app";
@@ -125,6 +126,23 @@ function normalizeSources<T extends SourceFields>(body: T): T {
  * entro il tetto e, con la sorgente `github`, un repo nello stato risultante (`current` = valori
  * già salvati, per la PATCH). Restituisce il primo errore ("<campo>: <motivo>") o null.
  */
+/**
+ * Branch e indirizzo di prova (lavoro su branch unico): il branch lo riscrive Botcave a ogni lavoro, quindi mai il base
+ * dell'App (quello della richiesta, se cambia insieme), `main`/`master` o un branch di Botcave. Null = valido o assente.
+ */
+function stagingError(
+  body: { stagingBranch?: string | null; stagingUrl?: string | null; sourceBranch?: string | null },
+  currentBase: string | null,
+): string | null {
+  const base = body.sourceBranch !== undefined ? body.sourceBranch : currentBase;
+  if (typeof body.stagingBranch === "string") {
+    const bad = checkStagingBranch(body.stagingBranch, base);
+    if (bad) return bad;
+  }
+  if (typeof body.stagingUrl === "string") return checkStagingUrl(body.stagingUrl);
+  return null;
+}
+
 function sourceError(body: SourceFields, current?: { sourceType: string; sourceRepo: string | null }): string | null {
   if (body.sourceRepo != null && !isValidGithubRepo(body.sourceRepo)) {
     return "sourceRepo: repo GitHub non valido, atteso il formato proprietario/nome";
@@ -286,6 +304,7 @@ router.patch("/apps/:id", async (req, res) => {
       sourceType: appsTable.sourceType,
       sourceRepo: appsTable.sourceRepo,
       sourceInstallationId: appsTable.sourceInstallationId,
+      sourceBranch: appsTable.sourceBranch,
     })
     .from(appsTable)
     .where(eq(appsTable.id, id))
@@ -294,7 +313,8 @@ router.patch("/apps/:id", async (req, res) => {
     res.status(404).json({ error: "App non trovata" });
     return;
   }
-  const invalid = connectionError(body) ?? extraHeadersError(body, current) ?? sourceError(body, current);
+  const invalid =
+    connectionError(body) ?? extraHeadersError(body, current) ?? sourceError(body, current) ?? stagingError(body, current.sourceBranch);
   if (invalid) {
     res.status(400).json({ error: invalid });
     return;

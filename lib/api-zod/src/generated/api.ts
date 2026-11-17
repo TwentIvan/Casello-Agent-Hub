@@ -1674,6 +1674,8 @@ export const ListAppsResponseItem = zod.object({
   "openapiUrl": zod.string().nullable().describe('URL dell\'OpenAPI dell\'app, letto (GET) dall\'architetto'),
   "functionalDescription": zod.string().nullable().describe('Descrizione funzionale dell\'app per l\'architetto'),
   "architectureRefresh": zod.enum(['off', 'hourly', '6h', 'daily', 'weekly']).describe('Frequenza di controllo della sintesi dell\'architettura'),
+  "stagingBranch": zod.string().nullable().describe('Branch di prova dell\'App, riscritto da Botcave a ogni lavoro delle squadre (null = nessuna versione di prova)'),
+  "stagingUrl": zod.string().nullable().describe('Indirizzo https dove la CI dell\'App pubblica il branch di prova'),
   "status": zod.enum(['active', 'inactive']),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -1755,6 +1757,8 @@ export const CreateAppResponse = zod.object({
   "openapiUrl": zod.string().nullable().describe('URL dell\'OpenAPI dell\'app, letto (GET) dall\'architetto'),
   "functionalDescription": zod.string().nullable().describe('Descrizione funzionale dell\'app per l\'architetto'),
   "architectureRefresh": zod.enum(['off', 'hourly', '6h', 'daily', 'weekly']).describe('Frequenza di controllo della sintesi dell\'architettura'),
+  "stagingBranch": zod.string().nullable().describe('Branch di prova dell\'App, riscritto da Botcave a ogni lavoro delle squadre (null = nessuna versione di prova)'),
+  "stagingUrl": zod.string().nullable().describe('Indirizzo https dove la CI dell\'App pubblica il branch di prova'),
   "status": zod.enum(['active', 'inactive']),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -1803,6 +1807,8 @@ export const GetAppResponse = zod.object({
   "openapiUrl": zod.string().nullable().describe('URL dell\'OpenAPI dell\'app, letto (GET) dall\'architetto'),
   "functionalDescription": zod.string().nullable().describe('Descrizione funzionale dell\'app per l\'architetto'),
   "architectureRefresh": zod.enum(['off', 'hourly', '6h', 'daily', 'weekly']).describe('Frequenza di controllo della sintesi dell\'architettura'),
+  "stagingBranch": zod.string().nullable().describe('Branch di prova dell\'App, riscritto da Botcave a ogni lavoro delle squadre (null = nessuna versione di prova)'),
+  "stagingUrl": zod.string().nullable().describe('Indirizzo https dove la CI dell\'App pubblica il branch di prova'),
   "status": zod.enum(['active', 'inactive']),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -1849,6 +1855,8 @@ export const UpdateAppBody = zod.object({
   "openapiUrl": zod.string().nullish(),
   "functionalDescription": zod.string().nullish(),
   "architectureRefresh": zod.enum(['off', 'hourly', '6h', 'daily', 'weekly']).optional().describe('Frequenza di controllo della sintesi dell\'architettura'),
+  "stagingBranch": zod.string().nullish().describe('Branch di prova (non il base, non main\/master, non botcave\/…); null lo toglie'),
+  "stagingUrl": zod.string().nullish().describe('Indirizzo https della versione di prova; null lo toglie'),
   "status": zod.enum(['active', 'inactive']).optional()
 })
 
@@ -1887,6 +1895,8 @@ export const UpdateAppResponse = zod.object({
   "openapiUrl": zod.string().nullable().describe('URL dell\'OpenAPI dell\'app, letto (GET) dall\'architetto'),
   "functionalDescription": zod.string().nullable().describe('Descrizione funzionale dell\'app per l\'architetto'),
   "architectureRefresh": zod.enum(['off', 'hourly', '6h', 'daily', 'weekly']).describe('Frequenza di controllo della sintesi dell\'architettura'),
+  "stagingBranch": zod.string().nullable().describe('Branch di prova dell\'App, riscritto da Botcave a ogni lavoro delle squadre (null = nessuna versione di prova)'),
+  "stagingUrl": zod.string().nullable().describe('Indirizzo https dove la CI dell\'App pubblica il branch di prova'),
   "status": zod.enum(['active', 'inactive']),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()

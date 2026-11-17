@@ -499,6 +499,16 @@ export interface App {
      */
   functionalDescription: string | null;
   architectureRefresh: ArchitectureRefresh;
+  /**
+     * Branch di prova dell'App, riscritto da Botcave a ogni lavoro delle squadre (null = nessuna versione di prova)
+     * @nullable
+     */
+  stagingBranch: string | null;
+  /**
+     * Indirizzo https dove la CI dell'App pubblica il branch di prova
+     * @nullable
+     */
+  stagingUrl: string | null;
   status: AppStatus;
   createdAt: string;
   updatedAt: string;
@@ -866,6 +876,16 @@ export interface AppUpdate {
   /** @nullable */
   functionalDescription?: string | null;
   architectureRefresh?: ArchitectureRefresh;
+  /**
+     * Branch di prova (non il base, non main/master, non botcave/…); null lo toglie
+     * @nullable
+     */
+  stagingBranch?: string | null;
+  /**
+     * Indirizzo https della versione di prova; null lo toglie
+     * @nullable
+     */
+  stagingUrl?: string | null;
   status?: AppStatus;
 }
 

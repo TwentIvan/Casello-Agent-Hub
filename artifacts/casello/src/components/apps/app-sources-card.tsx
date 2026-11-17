@@ -50,6 +50,9 @@ export function AppSourcesCard({ app }: { app: App }) {
   const [branch, setBranch] = useState(app.sourceBranch ?? "");
   const [openapiUrl, setOpenapiUrl] = useState(app.openapiUrl ?? "");
   const [description, setDescription] = useState(app.functionalDescription ?? "");
+  const [stagingBranch, setStagingBranch] = useState(app.stagingBranch ?? "");
+  const [stagingUrl, setStagingUrl] = useState(app.stagingUrl ?? "");
+  const [stagingAck, setStagingAck] = useState(false);
   // Il token non torna mai dall'API: resta invariato salvo nuovo valore o rimozione esplicita.
   const [token, setToken] = useState("");
   const [clearToken, setClearToken] = useState(false);
@@ -98,6 +101,9 @@ export function AppSourcesCard({ app }: { app: App }) {
       sourceBranch: isGithub ? branch.trim() || null : null,
       openapiUrl: openapiUrl.trim() || null,
       functionalDescription: description.trim() || null,
+      // Versione di prova solo con GitHub: Botcave riscrive il branch a ogni lavoro delle squadre
+      stagingBranch: isGithub ? stagingBranch.trim() || null : null,
+      stagingUrl: isGithub ? stagingUrl.trim() || null : null,
     };
     if (isGithub && githubMode === "installation") {
       // Con l'installazione il token manuale non serve: non si invia (resta salvato ma inutilizzato)
@@ -130,6 +136,8 @@ export function AppSourcesCard({ app }: { app: App }) {
     });
   };
 
+  // Un branch di prova nuovo o cambiato chiede la conferma che Botcave lo riscriverà
+  const stagingChanged = stagingBranch.trim() !== "" && stagingBranch.trim() !== (app.stagingBranch ?? "");
   const pickedRepo = parseRepoValue(selectedRepo);
   const repoList: GithubRepo[] = repos.data ?? [];
   const pickedInfo = pickedRepo
@@ -232,6 +240,40 @@ export function AppSourcesCard({ app }: { app: App }) {
                 onChange={(e) => setBranch(e.target.value)}
               />
             </div>
+            <div className="space-y-2">
+              <Label htmlFor="staging-branch">Branch di prova</Label>
+              <Input
+                id="staging-branch"
+                className="font-mono"
+                placeholder="es. staging"
+                value={stagingBranch}
+                onChange={(e) => {
+                  setStagingBranch(e.target.value);
+                  setStagingAck(false);
+                }}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="staging-url">Indirizzo di prova</Label>
+              <Input
+                id="staging-url"
+                placeholder="https://…"
+                value={stagingUrl}
+                onChange={(e) => setStagingUrl(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1 text-xs text-muted-foreground sm:col-span-2">
+              <p>
+                Botcave riscrive il branch di prova a ogni lavoro delle squadre: usalo solo per l'ambiente di prova. Il lavoro va in
+                produzione solo quando approvi «Porta in produzione».
+              </p>
+              {stagingChanged && (
+                <label className="flex items-center gap-2 text-foreground">
+                  <input type="checkbox" checked={stagingAck} onChange={(e) => setStagingAck(e.target.checked)} />
+                  Ho capito: Botcave riscriverà il branch {stagingBranch.trim()}
+                </label>
+              )}
+            </div>
             <div className="space-y-1 text-xs text-muted-foreground sm:col-span-2">
               {app.sourceTokenSet && (
                 <p>Il token manuale salvato non viene usato finché è scelta un'installazione.</p>
@@ -331,7 +373,7 @@ export function AppSourcesCard({ app }: { app: App }) {
           </p>
         </div>
         <div className="flex justify-end">
-          <Button onClick={save} disabled={updateApp.isPending}>
+          <Button onClick={save} disabled={updateApp.isPending || (sourceType === "github" && stagingChanged && !stagingAck)}>
             {updateApp.isPending ? "Salvataggio…" : "Salva sorgenti"}
           </Button>
         </div>

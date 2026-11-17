@@ -6794,7 +6794,7 @@ components:
 
     App:
       type: object
-      required: [id, name, slug, baseUrl, status, serviceSecretSet, extraHeaders, sourceType, sourceRepo, sourceBranch, sourceTokenSet, sourceInstallationId, openapiUrl, functionalDescription, architectureRefresh, createdAt, updatedAt]
+      required: [id, name, slug, baseUrl, status, serviceSecretSet, extraHeaders, sourceType, sourceRepo, sourceBranch, sourceTokenSet, sourceInstallationId, openapiUrl, functionalDescription, architectureRefresh, stagingBranch, stagingUrl, createdAt, updatedAt]
       properties:
         id:
           type: integer
@@ -6852,6 +6852,12 @@ components:
           description: Descrizione funzionale dell'app per l'architetto
         architectureRefresh:
           $ref: "#/components/schemas/ArchitectureRefresh"
+        stagingBranch:
+          type: ["string", "null"]
+          description: Branch di prova dell'App, riscritto da Botcave a ogni lavoro delle squadre (null = nessuna versione di prova)
+        stagingUrl:
+          type: ["string", "null"]
+          description: Indirizzo https dove la CI dell'App pubblica il branch di prova
         status:
           $ref: "#/components/schemas/AppStatus"
         createdAt:
@@ -7310,6 +7316,12 @@ components:
           type: ["string", "null"]
         architectureRefresh:
           $ref: "#/components/schemas/ArchitectureRefresh"
+        stagingBranch:
+          type: ["string", "null"]
+          description: Branch di prova (non il base, non main/master, non botcave/…); null lo toglie
+        stagingUrl:
+          type: ["string", "null"]
+          description: Indirizzo https della versione di prova; null lo toglie
         status:
           $ref: "#/components/schemas/AppStatus"
 

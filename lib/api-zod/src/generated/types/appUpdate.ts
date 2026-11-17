@@ -54,5 +54,15 @@ export interface AppUpdate {
   /** @nullable */
   functionalDescription?: string | null;
   architectureRefresh?: ArchitectureRefresh;
+  /**
+     * Branch di prova (non il base, non main/master, non botcave/…); null lo toglie
+     * @nullable
+     */
+  stagingBranch?: string | null;
+  /**
+     * Indirizzo https della versione di prova; null lo toglie
+     * @nullable
+     */
+  stagingUrl?: string | null;
   status?: AppStatus;
 }

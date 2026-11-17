@@ -63,6 +63,16 @@ export interface App {
      */
   functionalDescription: string | null;
   architectureRefresh: ArchitectureRefresh;
+  /**
+     * Branch di prova dell'App, riscritto da Botcave a ogni lavoro delle squadre (null = nessuna versione di prova)
+     * @nullable
+     */
+  stagingBranch: string | null;
+  /**
+     * Indirizzo https dove la CI dell'App pubblica il branch di prova
+     * @nullable
+     */
+  stagingUrl: string | null;
   status: AppStatus;
   createdAt: Date;
   updatedAt: Date;

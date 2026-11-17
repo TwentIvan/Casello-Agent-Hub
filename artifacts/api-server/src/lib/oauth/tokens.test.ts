@@ -112,7 +112,7 @@ describe("rinnovo", () => {
     const second = await refreshTokens({ grant_type: "refresh_token", refresh_token: first.refresh_token, client_id: clientId });
     expect(second.access_token).not.toBe(first.access_token);
     expect(second.refresh_token).not.toBe(first.refresh_token);
-    expect(await verifyAccessToken(second.access_token)).toMatchObject({ userId, scopes: ["mcp", "api:write"] });
+    expect(await verifyAccessToken(second.access_token)).toMatchObject({ userId, scopes: ["mcp", "api:write"], clientId });
     await rejects(refreshTokens({ refresh_token: first.refresh_token, client_id: clientId }), "invalid_grant");
   });
 

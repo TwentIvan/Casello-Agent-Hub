@@ -196,10 +196,10 @@ export async function refreshTokens(form: Record<string, unknown>): Promise<Toke
   return out;
 }
 
-/** Verifica un token d'accesso `cao_…`: null se sconosciuto, scaduto, revocato o utente non più ammesso. */
+/** Verifica un token d'accesso `cao_…` (con il `client_id` del suo client): null se sconosciuto, scaduto, revocato o utente non più ammesso. */
 export async function verifyAccessToken(
   raw: string,
-): Promise<{ userId: number; grantId: number; scopes: TokenScope[] } | null> {
+): Promise<{ userId: number; grantId: number; scopes: TokenScope[]; clientId: string } | null> {
   if (!raw.startsWith("cao_")) return null;
   const [row] = await db
     .select({
@@ -249,5 +249,5 @@ export async function verifyAccessToken(
         ),
       );
   }
-  return { userId: row.userId, grantId: row.grantId, scopes: row.scopes as TokenScope[] };
+  return { userId: row.userId, grantId: row.grantId, scopes: row.scopes as TokenScope[], clientId: row.clientId };
 }

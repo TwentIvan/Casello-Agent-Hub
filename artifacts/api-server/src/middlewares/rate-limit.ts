@@ -150,6 +150,14 @@ export function consumeCharacterMessage(userId: number, character: Character): b
   return characterMessageCounter.consume(`${character}:user:${userId}`).ok;
 }
 
+// Scritture delle istruzioni personali dei personaggi (salvataggio e ripristino): 20 al minuto per utente.
+const instructionWriteCounter = fixedWindowCounter({ limit: 20, windowMs: 60_000 });
+
+/** Conta una scrittura delle istruzioni personali: false se il limite è raggiunto. */
+export function consumeInstructionWrite(userId: number): boolean {
+  return instructionWriteCounter.consume(`user:${userId}`).ok;
+}
+
 // «Ferma» sui turni delle chat (personaggi, piano, squadra): 30 al minuto per utente, un solo contatore.
 const turnStopCounter = fixedWindowCounter({ limit: 30, windowMs: 60_000 });
 

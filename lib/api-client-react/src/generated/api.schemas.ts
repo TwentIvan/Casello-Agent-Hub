@@ -289,6 +289,59 @@ export interface CentralinoModel {
   aiModelId: number | null;
 }
 
+export interface CharacterInstructions {
+  character: string;
+  version: number;
+  content: string;
+  /** @nullable */
+  updatedAt: string | null;
+}
+
+export interface CharacterInstructionsUpdate {
+  content: string;
+  /** @minimum 0 */
+  baseVersion: number;
+}
+
+export interface CharacterInstructionsRestore {
+  /** @minimum 1 */
+  version: number;
+  /** @minimum 0 */
+  baseVersion: number;
+}
+
+export type CharacterInstructionVersionSummarySource = typeof CharacterInstructionVersionSummarySource[keyof typeof CharacterInstructionVersionSummarySource];
+
+
+export const CharacterInstructionVersionSummarySource = {
+  manual: 'manual',
+  proposal: 'proposal',
+  restore: 'restore',
+} as const;
+
+export interface CharacterInstructionVersionSummary {
+  version: number;
+  source: CharacterInstructionVersionSummarySource;
+  createdAt: string;
+  length: number;
+}
+
+export type CharacterInstructionVersionSource = typeof CharacterInstructionVersionSource[keyof typeof CharacterInstructionVersionSource];
+
+
+export const CharacterInstructionVersionSource = {
+  manual: 'manual',
+  proposal: 'proposal',
+  restore: 'restore',
+} as const;
+
+export interface CharacterInstructionVersion {
+  version: number;
+  source: CharacterInstructionVersionSource;
+  content: string;
+  createdAt: string;
+}
+
 export type CharacterSettingsLuciusBestPractice = typeof CharacterSettingsLuciusBestPractice[keyof typeof CharacterSettingsLuciusBestPractice];
 
 

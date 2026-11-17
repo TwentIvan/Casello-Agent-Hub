@@ -285,6 +285,18 @@ export function consumeLeadChatMessage(userId: number): boolean {
   return leadChatCounter.consume(`user:${userId}`).ok;
 }
 
+const embedStatusCounter = fixedWindowCounter({ limit: 60, windowMs: 60_000 });
+
+/** Conta una lettura dello stato del pannello incorporato (chiave `embed:<grantId>` o `user:<id>`): false se il limite è raggiunto. */
+export function consumeEmbedStatus(key: string): boolean {
+  return embedStatusCounter.consume(key).ok;
+}
+
+/** Azzera il limite dello stato del pannello (solo per i test). */
+export function resetEmbedStatusLimits(): void {
+  embedStatusCounter.reset();
+}
+
 // Webhook in entrata degli inneschi (pubblici). Due limiti, entrambi con `Retry-After: 60`:
 // - 120 al minuto per IP, prima del parser del corpo (conta anche le richieste non autenticate);
 // - 60 al minuto per innesco, contato da `handleWebhook` solo DOPO il controllo di segreto e firma: chi non conosce il

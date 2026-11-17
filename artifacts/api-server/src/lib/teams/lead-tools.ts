@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
-import { WorkError, codeQueueBlock, ensureWorkForCodeTask, roleWritesCode } from "./works";
+import { WORK_MESSAGES, WorkError, closeWorkIfDone, codeQueueBlock, ensureWorkForCodeTask, getOpenWork, roleWritesCode } from "./works";
 import { codeErrorMessage } from "../code-writer/session";
 import { z } from "zod";
 import { db, pendingActionsTable, teamCodeTasksTable, teamInstancesTable, teamPlanVersionsTable, teamTasksTable } from "@workspace/db";
@@ -717,10 +717,30 @@ async function signal(ctx: LeadContext, args: Record<string, unknown>): Promise<
   return done("segnalazione registrata nel bollettino");
 }
 
+/** Squadra attiva (con la riga bloccata il tempo del controllo): altrimenti «la squadra non è attiva». */
+async function lockActiveInstanceOnce(instanceId: number): Promise<void> {
+  await db.transaction(async (tx) => {
+    await lockActiveInstance(tx, instanceId);
+  });
+}
+
 /** `chiudi_lavoro`: evento `lavoro_finito` (la squadra resta attiva finché l'utente non la chiude). */
 async function closeWork(ctx: LeadContext, args: Record<string, unknown>): Promise<ToolResult> {
   const parsed = CloseWorkSchema.safeParse(args);
   if (!parsed.success) return fail(LEAD_MESSAGES.invalidArgs(zodDetail(parsed.error)));
+  // Lavoro su branch unico: un solo «Lavoro finito» per lavoro, poi versione di prova e «Porta in produzione»
+  const work = await getOpenWork(ctx.instanceId);
+  if (work && work.status !== "open") return fail(WORK_MESSAGES.alreadyClosed);
+  if (work) {
+    await lockActiveInstanceOnce(ctx.instanceId);
+    const result = await closeWorkIfDone(ctx.instanceId, { fromLead: true, bulletin: parsed.data.bulletin });
+    if (result === "already") return fail(WORK_MESSAGES.alreadyClosed);
+    return done(
+      result === "abandoned"
+        ? "lavoro chiuso senza compiti uniti: nessuna voce Porta in produzione"
+        : "lavoro chiuso: versione di prova aggiornata e voce Porta in produzione in «Da confermare»",
+    );
+  }
   await db.transaction(async (tx) => {
     await lockActiveInstance(tx, ctx.instanceId);
     await emitEvent({ instanceId: ctx.instanceId, type: "lavoro_finito", bulletin: parsed.data.bulletin }, tx);

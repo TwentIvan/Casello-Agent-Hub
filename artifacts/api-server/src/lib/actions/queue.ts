@@ -187,6 +187,31 @@ export async function enqueueMergeItem(input: EnqueueMergeInput): Promise<Enqueu
   });
 }
 
+export interface EnqueueReleaseInput {
+  userId: number;
+  instanceId: number;
+  /** Repository del lavoro. */
+  recipient: string;
+  summary: string;
+  detail: Record<string, unknown>;
+}
+
+/** Accoda «Porta in produzione» di un lavoro su branch unico (voce `release`, squadra, senza app né tool). */
+export async function enqueueReleaseItem(input: EnqueueReleaseInput, executor?: QueueExecutor): Promise<EnqueueResult> {
+  return insertQueued(
+    input.userId,
+    {
+      kind: "release",
+      teamInstanceId: input.instanceId,
+      argsEnc: encryptSecret(JSON.stringify(input.detail)),
+      argsPublic: input.detail,
+      recipient: input.recipient,
+      summary: input.summary,
+    },
+    executor,
+  );
+}
+
 export interface EnqueueBugInput {
   userId: number;
   appId: number;

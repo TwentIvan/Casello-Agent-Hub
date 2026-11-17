@@ -6,6 +6,8 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import {
   db,
   appsTable,
+  pendingActionsTable,
+  teamInstancesTable,
   teamCodeTasksTable,
   teamTasksTable,
   teamWorksTable,
@@ -14,7 +16,11 @@ import {
 } from "@workspace/db";
 import { logger } from "../logger";
 import { githubConfig } from "../github/config";
-import { createBranch, getBranchHead, getDefaultBranch, type RepoRef } from "../code-writer/github-git";
+import { createBranch, forceUpdateRef, getBranchHead, getDefaultBranch, type RepoRef } from "../code-writer/github-git";
+import { enqueueReleaseItem } from "../actions/queue";
+import { emitEvent } from "./events";
+import { getApprovedPlan, getPlan } from "./plan";
+import { checkStagingBranch } from "./staging";
 import { isUniqueViolation } from "../pg-errors";
 import { codeWrites } from "./manifest";
 
@@ -129,4 +135,152 @@ export async function codeQueueBlock(instance: TeamInstanceRow, workId: number, 
     .where(and(eq(teamCodeTasksTable.workId, workId), eq(teamCodeTasksTable.prState, "open")))
     .limit(1);
   return open ? WORK_MESSAGES.queueBusy : null;
+}
+
+// --- Chiusura del lavoro, versione di prova e voce «Porta in produzione» (§15.3) ----------------------------------------
+
+export type CloseWorkResult = "closed" | "abandoned" | "not_done" | "already" | "none";
+
+/**
+ * Chiude il lavoro aperto della squadra (dalla sorveglianza, quando non resta nulla da fare, o da `chiudi_lavoro`):
+ * nessuna PR unita → `abandoned` con l'evento; altrimenti `awaiting_release` (UPDATE condizionato a `open`, una volta sola)
+ * con l'evento `lavoro_finito`, poi versione di prova e voce `release` (`ensureReleaseItem`). Senza `fromLead` chiude solo se
+ * nessun compito di un ruolo che scrive codice è in corso, tutti i compiti con codice del PLAN approvato sono finiti
+ * (`done|blocked|failed`) e nessuna PR del lavoro è aperta.
+ */
+export async function closeWorkIfDone(instanceId: number, opts: { fromLead?: boolean; bulletin?: string } = {}): Promise<CloseWorkResult> {
+  const work = await getOpenWork(instanceId);
+  if (!work) return "none";
+  if (work.status !== "open") return "already";
+  const [instance] = await db.select().from(teamInstancesTable).where(eq(teamInstancesTable.id, instanceId)).limit(1);
+  if (!instance) return "none";
+  if (!opts.fromLead && !(await workFinished(instance, work.id))) return "not_done";
+  const [{ merged } = { merged: 0 }] = await db
+    .select({ merged: sql<number>`count(*)::int` })
+    .from(teamCodeTasksTable)
+    .where(and(eq(teamCodeTasksTable.workId, work.id), eq(teamCodeTasksTable.prState, "merged")));
+  const abandon = merged === 0;
+  const won = await db.transaction(async (tx) => {
+    const [w] = await tx
+      .update(teamWorksTable)
+      .set(abandon ? { status: "abandoned", finishedAt: new Date(), updatedAt: new Date() } : { status: "awaiting_release", updatedAt: new Date() })
+      .where(and(eq(teamWorksTable.id, work.id), eq(teamWorksTable.status, "open")))
+      .returning({ id: teamWorksTable.id });
+    if (!w) return false;
+    if (abandon) await emitEvent({ instanceId, type: "bloccato", bulletin: WORK_MESSAGES.nothingMerged }, tx);
+    else await emitEvent({ instanceId, type: "lavoro_finito", bulletin: (opts.bulletin ?? `Lavoro ${work.number}: compiti finiti`).slice(0, 300) }, tx);
+    return true;
+  });
+  if (!won) return "already";
+  logger.info({ instanceId, work: work.number, merged }, abandon ? "Lavoro abbandonato" : "Lavoro chiuso");
+  if (abandon) return "abandoned";
+  await ensureReleaseItem(work.id);
+  return "closed";
+}
+
+/** Nessun compito di chi scrive codice in corso, compiti con codice del PLAN approvato finiti, nessuna PR del lavoro aperta. */
+async function workFinished(instance: TeamInstanceRow, workId: number): Promise<boolean> {
+  const writers = instance.roles.filter((r) => codeWrites(r.code ?? "none")).map((r) => r.key);
+  if (writers.length === 0) return false;
+  const [busy] = await db
+    .select({ id: teamTasksTable.id })
+    .from(teamTasksTable)
+    .where(and(eq(teamTasksTable.instanceId, instance.id), inArray(teamTasksTable.roleKey, writers), inArray(teamTasksTable.status, ["queued", "running", "waiting_node"])))
+    .limit(1);
+  if (busy) return false;
+  const [open] = await db
+    .select({ id: teamCodeTasksTable.id })
+    .from(teamCodeTasksTable)
+    .where(and(eq(teamCodeTasksTable.workId, workId), eq(teamCodeTasksTable.prState, "open")))
+    .limit(1);
+  if (open) return false;
+  const approved = await getApprovedPlan(instance.id);
+  if (!approved) return false;
+  const current = await getPlan(instance.id);
+  const status = new Map(current.tasks.map((t) => [t.id, t.status]));
+  const codeTasks = approved.tasks.filter((t) => writers.includes(t.roleKey));
+  return codeTasks.length > 0 && codeTasks.every((t) => ["done", "blocked", "failed"].includes(status.get(t.id) ?? "planned"));
+}
+
+/**
+ * Lavoro `awaiting_release` senza voce: sposta il branch di prova dell'App alla testa del lavoro (solo se il nome è ancora
+ * valido, ricontrollato qui) con l'evento `lavoro_in_prova`, poi accoda la voce `release` all'utente che ha attivato la
+ * squadra. Una coda piena lascia il lavoro com'è: la sorveglianza riprova al giro dopo.
+ */
+export async function ensureReleaseItem(workId: number): Promise<void> {
+  const [work] = await db.select().from(teamWorksTable).where(eq(teamWorksTable.id, workId)).limit(1);
+  if (!work || work.status !== "awaiting_release" || work.pendingActionId !== null) return;
+  const [instance] = await db.select().from(teamInstancesTable).where(eq(teamInstancesTable.id, work.instanceId)).limit(1);
+  if (!instance || instance.activatedBy === null) return;
+  const repo = await workRepo(instance);
+  if (!repo) return;
+  const head = (await getBranchHead(repo.ref, work.branch)) ?? work.headSha ?? work.baseSha;
+  const staging =
+    repo.stagingBranch !== null && checkStagingBranch(repo.stagingBranch, work.baseBranch) === null ? { branch: repo.stagingBranch, url: repo.stagingUrl } : null;
+  if (staging) {
+    await forceUpdateRef(repo.ref, staging.branch, head);
+    await emitEvent({
+      instanceId: instance.id,
+      type: "lavoro_in_prova",
+      bulletin: `Lavoro ${work.number} in prova${staging.url ? ` su ${staging.url}` : ` sul branch ${staging.branch}`}`.slice(0, 300),
+    });
+  }
+  const pulls = await db
+    .select({ planTaskId: teamCodeTasksTable.planTaskId, prNumber: teamCodeTasksTable.prNumber, prUrl: teamCodeTasksTable.prUrl })
+    .from(teamCodeTasksTable)
+    .where(and(eq(teamCodeTasksTable.workId, work.id), eq(teamCodeTasksTable.prState, "merged")));
+  const approved = await getApprovedPlan(instance.id);
+  const tasks = pulls.map((p) => {
+    const t = approved?.tasks.find((x) => x.id === p.planTaskId);
+    return { id: p.planTaskId, title: t?.title ?? p.planTaskId, issue: t?.issue ?? null, prNumber: p.prNumber, prUrl: p.prUrl };
+  });
+  const detail = {
+    workId: work.id,
+    number: work.number,
+    repo: work.repo,
+    branch: work.branch,
+    baseBranch: work.baseBranch,
+    headSha: head,
+    stagingBranch: staging?.branch ?? null,
+    stagingUrl: staging?.url ?? null,
+    stagingNote: staging ? null : WORK_MESSAGES.noStaging,
+    tasks,
+    postScripts: work.postScripts,
+  };
+  await db.transaction(async (tx) => {
+    const [locked] = await tx.select().from(teamWorksTable).where(eq(teamWorksTable.id, work.id)).for("update").limit(1);
+    if (!locked || locked.status !== "awaiting_release" || locked.pendingActionId !== null) return;
+    const queued = await enqueueReleaseItem(
+      { userId: instance.activatedBy!, instanceId: instance.id, recipient: work.repo, summary: `Porta in produzione il lavoro ${work.number} di ${instance.name}`, detail },
+      tx,
+    );
+    if (!queued.ok) {
+      logger.warn({ instanceId: instance.id, work: work.number }, "Voce Porta in produzione non accodata: coda piena");
+      return;
+    }
+    const [item] = await tx
+      .select({ id: pendingActionsTable.id })
+      .from(pendingActionsTable)
+      .where(and(eq(pendingActionsTable.userId, instance.activatedBy!), eq(pendingActionsTable.number, queued.number)))
+      .limit(1);
+    await tx.update(teamWorksTable).set({ pendingActionId: item!.id, headSha: head, updatedAt: new Date() }).where(eq(teamWorksTable.id, work.id));
+  });
+}
+
+/** Giro della sorveglianza: chiude i lavori aperti finiti e completa quelli in attesa senza voce (al più 20 squadre attive). */
+export async function sweepWorks(): Promise<void> {
+  const rows = await db
+    .select({ id: teamWorksTable.id, instanceId: teamWorksTable.instanceId, status: teamWorksTable.status })
+    .from(teamWorksTable)
+    .innerJoin(teamInstancesTable, eq(teamInstancesTable.id, teamWorksTable.instanceId))
+    .where(and(eq(teamInstancesTable.status, "active"), inArray(teamWorksTable.status, ["open", "awaiting_release"])))
+    .limit(20);
+  for (const w of rows) {
+    try {
+      if (w.status === "open") await closeWorkIfDone(w.instanceId);
+      else await ensureReleaseItem(w.id);
+    } catch (err) {
+      logger.error({ instanceId: w.instanceId, errName: err instanceof Error ? err.name : "Error" }, "Controllo del lavoro non riuscito");
+    }
+  }
 }

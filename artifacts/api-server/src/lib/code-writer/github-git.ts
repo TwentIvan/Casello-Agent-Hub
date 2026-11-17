@@ -157,6 +157,26 @@ export async function createBranch(r: RepoRef, branch: string, sha: string): Pro
   if (head !== sha) throw new CodeWriteError(CODE_WRITE_MESSAGES.unavailable, 422);
 }
 
+/**
+ * Sposta il branch di prova dell'App allo sha dato con `force: true` (lo crea se manca): l'unica scrittura forzata di
+ * Botcave. Mai su `main`/`master` né su un branch di Botcave; il chiamante ricontrolla il nome con `checkStagingBranch`.
+ */
+export async function forceUpdateRef(r: RepoRef, branch: string, sha: string): Promise<void> {
+  if (branch === "main" || branch === "master" || branch.startsWith("botcave/")) throw new Error("scrittura forzata rifiutata: branch non di prova");
+  const token = await tokenFor(r, { contents: "write" });
+  const { status } = await call(
+    r,
+    token,
+    "contents: write",
+    { method: "PATCH", path: repoPath(r, `/git/refs/heads/${refPath(branch)}`), body: { sha, force: true } },
+    [404, 422],
+  );
+  if (status === 404 || status === 422) {
+    const created = await call(r, token, "contents: write", { method: "POST", path: repoPath(r, "/git/refs"), body: { ref: `refs/heads/${branch}`, sha } }, [422]);
+    if (created.status === 422) throw new CodeWriteError(CODE_WRITE_MESSAGES.unavailable, 422);
+  }
+}
+
 /** Confronto tra due commit: titoli dei commit (i più recenti) e file toccati, con tetti fissi. */
 export interface CommitComparison {
   commits: string[];

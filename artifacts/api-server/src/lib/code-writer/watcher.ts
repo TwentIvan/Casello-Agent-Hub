@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
-import { WORK_MESSAGES } from "../teams/works";
+import { WORK_MESSAGES, closeWorkIfDone, sweepWorks } from "../teams/works";
 import { mergeIntoWork } from "./merge";
 import { appsTable, db, teamCodeTasksTable, teamInstancesTable, teamTasksTable, type TeamCodeTaskRow } from "@workspace/db";
 import { githubConfig } from "../github/config";
@@ -77,6 +77,8 @@ async function watchRow(code: TeamCodeTaskRow, r: RepoRef, now: Date): Promise<v
       return true;
     });
     if (won) notifyTurnQueued(code.instanceId);
+    // Lavoro su branch unico: una PR del lavoro chiusa può essere l'ultima (chiusura, versione di prova, voce)
+    if (won && code.workId !== null) await closeWorkIfDone(code.instanceId);
     return;
   }
 
@@ -189,6 +191,8 @@ export async function watchCodeTasksOnce(now: Date = new Date()): Promise<void> 
     }
   }
   if (skipped > 0) logger.info({ count: skipped }, "PR dei compiti senza installazione GitHub: saltate");
+  // Lavori su branch unico: chiusura quando non resta nulla da fare, voce «Porta in produzione» non ancora accodata
+  await sweepWorks();
 }
 
 /** Avvia la sorveglianza ogni minuto, un giro alla volta; restituisce la funzione che la ferma. */

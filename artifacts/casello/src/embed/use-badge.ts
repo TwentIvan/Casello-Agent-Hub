@@ -44,6 +44,27 @@ export function usePanelOpen(openRequest: HostOpenRequest | null): boolean {
 }
 
 /**
+ * Il pannello è stato mostrato almeno una volta: l'iframe nasce nascosto prima del primo clic, e il pannello del
+ * visitatore (che legge le sue segnalazioni) si monta solo da quel momento. Conta solo un'intersezione vera, non il
+ * valore iniziale di `usePanelOpen`; senza IntersectionObserver vale subito.
+ */
+export function useShownOnce(openRequest: HostOpenRequest | null): boolean {
+  const [shown, setShown] = useState(() => typeof IntersectionObserver === "undefined");
+  useEffect(() => {
+    if (shown || typeof IntersectionObserver === "undefined" || !document.body) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting) && isDocumentVisible()) setShown(true);
+    });
+    observer.observe(document.body);
+    return () => observer.disconnect();
+  }, [shown]);
+  useEffect(() => {
+    if (openRequest) setShown(true);
+  }, [openRequest]);
+  return shown;
+}
+
+/**
  * Contatore del visitatore: segnalazioni con novità non viste, lette ogni 10 s a pannello aperto e ogni 60 s chiuso,
  * ma a pannello chiuso solo se il visitatore ha almeno una segnalazione.
  */
@@ -59,6 +80,6 @@ export function useVisitorBadge(open: boolean, post: (m: FromFrame) => void): vo
     const next = nextBadge(last.current, visitorBadge(data));
     if (next === null) return;
     last.current = next;
-    post({ botcave: 1, type: "badge", payload: { pending: next } });
+    post({ botcave: 1, type: "status", payload: { pending: next, bugs: 0, working: false, unread: false, actions: 0 } });
   }, [data, post]);
 }

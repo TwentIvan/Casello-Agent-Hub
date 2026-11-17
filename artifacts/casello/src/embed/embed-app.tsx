@@ -5,7 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "reac
 import { QueryCache, QueryClient, QueryClientProvider, MutationCache } from "@tanstack/react-query";
 import { Router } from "wouter";
 import { ApiError, getCurrentUser, setAuthTokenGetter, setBaseUrl, setRequestCredentials } from "@workspace/api-client-react";
-import { getListUnreadTeamEventsQueryKey, useListUnreadTeamEvents, type EmbedStatus } from "@workspace/api-client-react";
+import { getListUnreadTeamEventsQueryKey, useListUnreadTeamEvents } from "@workspace/api-client-react";
 import { BotcavePanel, type EmbedPanelChrome } from "@/components/panel/botcave-panel";
 import { ContextBar } from "@/components/panel/context-bar";
 import { PanelProvider, usePanel, type PanelEnv } from "@/components/panel/panel-context";
@@ -28,9 +28,10 @@ import {
   startConnect,
 } from "./auth";
 import { useHost } from "./use-host";
-import { usePanelOpen } from "./use-badge";
-import { useStatus } from "./use-status";
-import { useBotActivity } from "./use-bot-activity";
+import { usePanelOpen, useShownOnce } from "./use-badge";
+import { usePostStatus, useStatus, type StatusRead } from "./use-status";
+import { useBotActivity, useUnreadReplies } from "./use-bot-activity";
+import { statusPayload } from "./unread";
 import { embedHrefs, useEmbedLocation } from "./embed-location";
 import { badgeIntervalMs } from "./panel-helpers";
 import { VisitorBugsProvider } from "./bugs/visitor-bugs";
@@ -127,9 +128,13 @@ function ConnectScreen({ busy, error, onConnect }: ConnectState & { onConnect: (
 const UNREAD_EVENTS = { unread: true } as const;
 const UNREAD_EVENTS_MS = 30_000;
 
-/** Contatori e LED delle schede, barra «Stai guardando». */
-function useChrome(host: ReturnType<typeof useHost>, status: EmbedStatus | null, open: boolean): EmbedPanelChrome {
-  const { runAction } = usePanel();
+/**
+ * Contatori e LED delle schede, barra «Stai guardando» e messaggio `status` per il pulsante della pagina ospite.
+ * Una richiesta `open` con `focusContext` (clic sul pulsante con azioni) mostra la barra aperta.
+ */
+function useChrome(host: ReturnType<typeof useHost>, read: StatusRead, open: boolean): EmbedPanelChrome {
+  const { runAction, state } = usePanel();
+  const status = read.data;
   const voice = useSharedAlfredVoice();
   const { activity, refreshUnwatched } = useBotActivity();
   const [collapsed, setCollapsed] = useState(false);
@@ -144,15 +149,25 @@ function useChrome(host: ReturnType<typeof useHost>, status: EmbedStatus | null,
     return () => clearInterval(timer);
   }, [refreshUnwatched, open]);
 
+  const focusContext = host.openRequest?.focusContext === true;
+  useEffect(() => {
+    if (focusContext) setCollapsed(false);
+  }, [host.openRequest, focusContext]);
+
+  const working = {
+    alfred: activity.alfred.running || voice.status !== "stopped",
+    lucius: activity.lucius.running,
+    lead: activity.lead.running || status?.leadWorking === true,
+  };
+  const unread = useUnreadReplies(activity, open, state.tab);
+  const anyWorking = working.alfred || working.lucius || working.lead;
+  usePostStatus(read.pending === undefined ? null : statusPayload(status, read.pending, { working: anyWorking, unread }), host.post);
+
   const context = host.context;
   const actions = status?.actions ?? [];
   return {
-    counts: { pending: status?.pending ?? 0, bulletin: unreadEvents, bugs: status?.bugs ?? 0 },
-    working: {
-      alfred: activity.alfred.running || voice.status !== "stopped",
-      lucius: activity.lucius.running,
-      lead: activity.lead.running || status?.leadWorking === true,
-    },
+    counts: { pending: read.pending ?? 0, bulletin: unreadEvents, bugs: status?.bugs ?? 0 },
+    working,
     contextBar: context ? (
       <ContextBar
         context={context}
@@ -166,10 +181,10 @@ function useChrome(host: ReturnType<typeof useHost>, status: EmbedStatus | null,
 }
 
 /** Apre il pannello sulla scheda chiesta dalla pagina ospite; schede con contatori e barra del contesto. */
-function EmbedPanel({ host, status, open }: { host: ReturnType<typeof useHost>; status: EmbedStatus | null; open: boolean }) {
+function EmbedPanel({ host, read, open }: { host: ReturnType<typeof useHost>; read: StatusRead; open: boolean }) {
   const { openPanel } = usePanel();
   const { openRequest } = host;
-  const chrome = useChrome(host, status, open);
+  const chrome = useChrome(host, read, open);
 
   // Ogni nuova richiesta `open` (seq diverso) porta sulla scheda chiesta, o su quella corrente se non ne indica
   useEffect(() => {
@@ -187,7 +202,8 @@ function EmbedPanel({ host, status, open }: { host: ReturnType<typeof useHost>; 
 function Shell({ host }: { host: ReturnType<typeof useHost> }) {
   const { appSlug, appName, context, post } = host;
   const open = usePanelOpen(host.openRequest);
-  const status = useStatus(open, context, post);
+  const read = useStatus(open, context);
+  const status = read.data;
   // Ambiente stabile: un oggetto nuovo a ogni render rinnoverebbe il contesto del pannello
   const env = useMemo<PanelEnv>(
     () => ({
@@ -206,7 +222,7 @@ function Shell({ host }: { host: ReturnType<typeof useHost> }) {
   return (
     <AlfredVoiceProvider>
       <PanelProvider env={env}>
-        <EmbedPanel host={host} status={status} open={open} />
+        <EmbedPanel host={host} read={read} open={open} />
       </PanelProvider>
     </AlfredVoiceProvider>
   );
@@ -216,6 +232,7 @@ function EmbedRoot() {
   const host = useHost();
   const [connected, setConnected] = useState(() => loadTokens() !== null);
   const connect = useConnect(host.clientId);
+  const shownOnce = useShownOnce(host.openRequest);
 
   useEffect(() => onTokensChange((t) => setConnected(t !== null)), []);
   // Lo spazio dei token è quello del client della pagina ospite: si sceglie appena la configurazione lo dà
@@ -259,6 +276,8 @@ function EmbedRoot() {
   // Senza collegamento: con le segnalazioni attive il pannello del visitatore, altrimenti «Collega con Botcave»
   if (!connected) {
     if (!host.bugs.enabled) return <ConnectScreen busy={false} error={connect.error} onConnect={connect.connect} />;
+    // Iframe nato nascosto prima del primo clic: nessuna lettura delle segnalazioni finché il pannello non si mostra
+    if (!shownOnce) return null;
     return (
       <VisitorBugsProvider host={host}>
         <VisitorPanel host={host} connectError={connect.error} onConnect={connect.connect} />

@@ -9,17 +9,26 @@ export type EmbedTab = "alfred" | "lucius" | "lead" | "pending" | "bulletin" | "
 
 export type HostContextMsg = { page: string; id?: string; title?: string };
 
+/** Stato per il pulsante della pagina ospite: contatori, bot al lavoro, risposta non vista, azioni della pagina (0..6). */
+export type StatusPayload = { pending: number; bugs: number; working: boolean; unread: boolean; actions: number };
+
+/** Richiesta di apertura: scheda facoltativa; `focusContext` mostra la barra «Stai guardando» aperta. */
+export type OpenPayload = { tab?: EmbedTab; focusContext?: true };
+
+/** Azioni al più per tipo di pagina (come sul server). */
+export const MAX_PAGE_ACTIONS = 6;
+
 export type ToFrame =
   | { botcave: 1; type: "theme"; payload: HostTheme }
   | { botcave: 1; type: "context"; payload: HostContextMsg }
-  | { botcave: 1; type: "open"; payload: { tab?: EmbedTab } }
+  | { botcave: 1; type: "open"; payload: OpenPayload }
   | { botcave: 1; type: "identity"; payload: { token: string | null } };
 
 export type FromFrame =
   | { botcave: 1; type: "ready" }
   | { botcave: 1; type: "close" }
   | { botcave: 1; type: "identity_request" }
-  | { botcave: 1; type: "badge"; payload: { pending: number } }
+  | { botcave: 1; type: "status"; payload: StatusPayload }
   | { botcave: 1; type: "error"; payload: { code: "host_not_allowed" | "unreachable" } };
 
 const TABS: readonly string[] = ["alfred", "lucius", "lead", "pending", "bulletin", "bugs"];
@@ -83,10 +92,15 @@ export function parseToFrame(data: unknown): ToFrame | null {
     case "open": {
       if (data.payload === undefined) return { botcave: 1, type: "open", payload: {} };
       if (!isRecord(data.payload)) return null;
+      const payload: OpenPayload = {};
       const tab = data.payload.tab;
-      if (tab === undefined) return { botcave: 1, type: "open", payload: {} };
-      if (typeof tab !== "string" || !TABS.includes(tab)) return null;
-      return { botcave: 1, type: "open", payload: { tab: tab as EmbedTab } };
+      if (tab !== undefined) {
+        if (typeof tab !== "string" || !TABS.includes(tab)) return null;
+        payload.tab = tab as EmbedTab;
+      }
+      // Solo `true`: ogni altro valore vale come assente
+      if (data.payload.focusContext === true) payload.focusContext = true;
+      return { botcave: 1, type: "open", payload };
     }
     case "identity": {
       if (!isRecord(data.payload)) return null;
@@ -106,6 +120,18 @@ export function contextMessage(c: unknown): Extract<ToFrame, { type: "context" }
   return payload ? { botcave: 1, type: "context", payload } : null;
 }
 
+function isCount(v: unknown): v is number {
+  return typeof v === "number" && Number.isInteger(v) && v >= 0;
+}
+
+function parseStatus(p: unknown): StatusPayload | null {
+  if (!isRecord(p)) return null;
+  const { pending, bugs, working, unread, actions } = p;
+  if (!isCount(pending) || !isCount(bugs) || !isCount(actions) || actions > MAX_PAGE_ACTIONS) return null;
+  if (typeof working !== "boolean" || typeof unread !== "boolean") return null;
+  return { pending, bugs, working, unread, actions };
+}
+
 export function parseFromFrame(data: unknown): FromFrame | null {
   if (!isRecord(data) || data.botcave !== 1) return null;
   switch (data.type) {
@@ -115,12 +141,16 @@ export function parseFromFrame(data: unknown): FromFrame | null {
       return { botcave: 1, type: "close" };
     case "identity_request":
       return { botcave: 1, type: "identity_request" };
+    case "status": {
+      const payload = parseStatus(data.payload);
+      return payload ? { botcave: 1, type: "status", payload } : null;
+    }
+    // Messaggio degli iframe di prima, solo con il contatore delle voci da confermare: da togliere 30 giorni dopo il
+    // deploy del messaggio `status` (le pagine ospiti tengono botcave.js in cache)
     case "badge": {
       const p = data.payload;
-      if (!isRecord(p)) return null;
-      const n = p.pending;
-      if (typeof n !== "number" || !Number.isInteger(n) || n < 0) return null;
-      return { botcave: 1, type: "badge", payload: { pending: n } };
+      if (!isRecord(p) || !isCount(p.pending)) return null;
+      return { botcave: 1, type: "status", payload: { pending: p.pending, bugs: 0, working: false, unread: false, actions: 0 } };
     }
     case "error": {
       const p = data.payload;

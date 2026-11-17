@@ -5,7 +5,105 @@
  * Casello — hub per agentificare applicazioni
  * OpenAPI spec version: 0.1.0
  */
+export type EmbedBugCreatePageContext = {
+  /** @maxLength 1000 */
+  page?: string;
+  /** @maxLength 1000 */
+  id?: string;
+  /** @maxLength 1000 */
+  title?: string;
+  /** @maxLength 5000 */
+  url?: string;
+};
+
+export interface EmbedBugCreate {
+  /** @maxLength 1000 */
+  title: string;
+  /** @maxLength 10000 */
+  description: string;
+  /** @maxLength 10000 */
+  steps?: string;
+  /** @maxLength 10000 */
+  expected?: string;
+  pageContext?: EmbedBugCreatePageContext;
+}
+
+export type EmbedBugStatus = typeof EmbedBugStatus[keyof typeof EmbedBugStatus];
+
+
+export const EmbedBugStatus = {
+  received: 'received',
+  triage: 'triage',
+  needs_info: 'needs_info',
+  pending_approval: 'pending_approval',
+  in_progress: 'in_progress',
+  fixed: 'fixed',
+  not_a_bug: 'not_a_bug',
+  duplicate: 'duplicate',
+  rejected: 'rejected',
+} as const;
+
+export interface EmbedBugCreated {
+  id: number;
+  number: number;
+  status: EmbedBugStatus;
+}
+
+export interface EmbedBugSummary {
+  id: number;
+  number: number;
+  title: string;
+  status: EmbedBugStatus;
+  statusLabel: string;
+  publicMessage: string | null;
+  unseen: boolean;
+  createdAt: string;
+  statusChangedAt: string;
+}
+
+export type EmbedBugMessageViewAuthor = typeof EmbedBugMessageViewAuthor[keyof typeof EmbedBugMessageViewAuthor];
+
+
+export const EmbedBugMessageViewAuthor = {
+  reporter: 'reporter',
+  lead: 'lead',
+  owner: 'owner',
+} as const;
+
+export interface EmbedBugMessageView {
+  author: EmbedBugMessageViewAuthor;
+  content: string;
+  createdAt: string;
+}
+
+export type EmbedBugDetail = EmbedBugSummary & ({
+  description: string;
+  steps: string | null;
+  expected: string | null;
+  messages: EmbedBugMessageView[];
+});
+
+export interface EmbedBugMessage {
+  /** @maxLength 10000 */
+  content: string;
+}
+
+export interface EmbedBugSeen {
+  /** @maxItems 50 */
+  ids: number[];
+}
+
+export interface EmbedBugSeenResult {
+  updated: number;
+}
+
+export interface EmbedBugsConfig {
+  enabled: boolean;
+  identity: boolean;
+}
+
 export interface EmbedConfig {
+  bugs: EmbedBugsConfig;
   allowed: boolean;
   clientId: string | null;
   appName: string | null;
@@ -4647,10 +4745,89 @@ export type BadGatewayResponse = ErrorResponse;
  */
 export type PayloadTooLargeResponse = ErrorResponse;
 
+/**
+ * Slug dell'App ospite
+ */
+export type EmbedBugAppParameter = string;
+
+/**
+ * Origine della pagina ospite
+ */
+export type EmbedBugOriginParameter = string;
+
+/**
+ * 32 byte base64url generati dall'iframe e tenuti nel suo storage
+ */
+export type EmbedBrowserKeyParameter = string;
+
+/**
+ * Token d'identità firmato dall'app ospite
+ */
+export type EmbedIdentityParameter = string;
+
 export type CharacterQueryParameter = MemoryCharacter;
 
 export type GetEmbedConfigParams = {
 origin?: string;
+/**
+ * Slug dell'App ospite, per sapere se le segnalazioni dei bug sono attive.
+ */
+app?: string;
+};
+
+export type ListEmbedBugsParams = {
+/**
+ * Slug dell'App ospite
+ */
+app: EmbedBugAppParameter;
+/**
+ * Origine della pagina ospite
+ */
+origin: EmbedBugOriginParameter;
+};
+
+export type CreateEmbedBugParams = {
+/**
+ * Slug dell'App ospite
+ */
+app: EmbedBugAppParameter;
+/**
+ * Origine della pagina ospite
+ */
+origin: EmbedBugOriginParameter;
+};
+
+export type MarkEmbedBugsSeenParams = {
+/**
+ * Slug dell'App ospite
+ */
+app: EmbedBugAppParameter;
+/**
+ * Origine della pagina ospite
+ */
+origin: EmbedBugOriginParameter;
+};
+
+export type GetEmbedBugParams = {
+/**
+ * Slug dell'App ospite
+ */
+app: EmbedBugAppParameter;
+/**
+ * Origine della pagina ospite
+ */
+origin: EmbedBugOriginParameter;
+};
+
+export type AddEmbedBugMessageParams = {
+/**
+ * Slug dell'App ospite
+ */
+app: EmbedBugAppParameter;
+/**
+ * Origine della pagina ospite
+ */
+origin: EmbedBugOriginParameter;
 };
 
 export type GetAlfredNotificationsParams = {

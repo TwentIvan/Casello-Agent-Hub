@@ -8,4 +8,8 @@
 
 export type GetEmbedConfigParams = {
 origin?: string;
+/**
+ * Slug dell'App ospite, per sapere se le segnalazioni dei bug sono attive.
+ */
+app?: string;
 };

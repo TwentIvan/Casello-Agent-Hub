@@ -20,6 +20,7 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  AddEmbedBugMessageParams,
   Agent,
   AgentInput,
   AgentModelAssignments,
@@ -98,17 +99,26 @@ import type {
   ChatTurnStopResult,
   ConflictResponse,
   CostEstimate,
+  CreateEmbedBugParams,
   CurrentUser,
   DashboardStats,
   DefaultModel,
   DeleteMemoryHistoryEntryParams,
   DeleteMemoryNoteParams,
+  EmbedBugCreate,
+  EmbedBugCreated,
+  EmbedBugDetail,
+  EmbedBugMessage,
+  EmbedBugSeen,
+  EmbedBugSeenResult,
+  EmbedBugSummary,
   EmbedConfig,
   ErrorResponse,
   EstimateAnalysisCostParams,
   ExportAnalysisIssuesParams,
   ForbiddenResponse,
   GetAlfredNotificationsParams,
+  GetEmbedBugParams,
   GetEmbedConfigParams,
   GetTeamInstanceUpdates200,
   GithubInstallations,
@@ -125,6 +135,7 @@ import type {
   ListCatalogProvidersParams,
   ListCharacterConversationsParams,
   ListCharacterInstructionProposalsParams,
+  ListEmbedBugsParams,
   ListMemoryHistoryParams,
   ListMemoryNotesParams,
   ListPendingActionsParams,
@@ -133,6 +144,7 @@ import type {
   ListTeamInstancesParams,
   ListTeamTemplatesParams,
   ListUnreadTeamEventsParams,
+  MarkEmbedBugsSeenParams,
   MarkTeamEventsRead200,
   McpSyncResult,
   MemoryHistoryEntry,
@@ -419,6 +431,418 @@ export function useGetEmbedConfig<TData = Awaited<ReturnType<typeof getEmbedConf
 
 
 
+
+export const getListEmbedBugsUrl = (params: ListEmbedBugsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/embed/bugs?${stringifiedParams}` : `/api/embed/bugs`
+}
+
+/**
+ * Al più 50, le più recenti prima. Origine non ammessa o diversa da quella dell'App, App inesistente o con le segnalazioni spente: sempre 404 «segnalazioni non disponibili». 60 richieste al minuto per IP.
+ * @summary Le segnalazioni del visitatore in un'App (pubblica)
+ */
+export const listEmbedBugs = async (params: ListEmbedBugsParams, options?: RequestInit): Promise<EmbedBugSummary[]> => {
+
+  return customFetch<EmbedBugSummary[]>(getListEmbedBugsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListEmbedBugsQueryKey = (params?: ListEmbedBugsParams,) => {
+    return [
+    `/api/embed/bugs`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListEmbedBugsQueryOptions = <TData = Awaited<ReturnType<typeof listEmbedBugs>>, TError = ErrorType<BadRequestResponse | UnauthorizedResponse | NotFoundResponse | TooManyRequestsResponse>>(params: ListEmbedBugsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEmbedBugs>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListEmbedBugsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listEmbedBugs>>> = ({ signal }) => listEmbedBugs(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listEmbedBugs>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListEmbedBugsQueryResult = NonNullable<Awaited<ReturnType<typeof listEmbedBugs>>>
+export type ListEmbedBugsQueryError = ErrorType<BadRequestResponse | UnauthorizedResponse | NotFoundResponse | TooManyRequestsResponse>
+
+
+/**
+ * @summary Le segnalazioni del visitatore in un'App (pubblica)
+ */
+
+export function useListEmbedBugs<TData = Awaited<ReturnType<typeof listEmbedBugs>>, TError = ErrorType<BadRequestResponse | UnauthorizedResponse | NotFoundResponse | TooManyRequestsResponse>>(
+ params: ListEmbedBugsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listEmbedBugs>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListEmbedBugsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateEmbedBugUrl = (params: CreateEmbedBugParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/embed/bugs?${stringifiedParams}` : `/api/embed/bugs`
+}
+
+/**
+ * Limiti: segnalazioni per App al giorno, 5 al giorno per richiedente, 10 all'ora per IP. Corpo al più 32 KB.
+ * @summary Registra una segnalazione (pubblica)
+ */
+export const createEmbedBug = async (embedBugCreate: EmbedBugCreate,
+    params: CreateEmbedBugParams, options?: RequestInit): Promise<EmbedBugCreated> => {
+
+  return customFetch<EmbedBugCreated>(getCreateEmbedBugUrl(params),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(embedBugCreate)
+  }
+);}
+
+
+
+
+export const getCreateEmbedBugMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | NotFoundResponse | ErrorResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEmbedBug>>, TError,{data: BodyType<EmbedBugCreate>;params: CreateEmbedBugParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createEmbedBug>>, TError,{data: BodyType<EmbedBugCreate>;params: CreateEmbedBugParams}, TContext> => {
+
+const mutationKey = ['createEmbedBug'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createEmbedBug>>, {data: BodyType<EmbedBugCreate>;params: CreateEmbedBugParams}> = (props) => {
+          const {data,params} = props ?? {};
+
+          return  createEmbedBug(data,params,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateEmbedBugMutationResult = NonNullable<Awaited<ReturnType<typeof createEmbedBug>>>
+    export type CreateEmbedBugMutationBody = BodyType<EmbedBugCreate>
+    export type CreateEmbedBugMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | NotFoundResponse | ErrorResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Registra una segnalazione (pubblica)
+ */
+export const useCreateEmbedBug = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | NotFoundResponse | ErrorResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createEmbedBug>>, TError,{data: BodyType<EmbedBugCreate>;params: CreateEmbedBugParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createEmbedBug>>,
+        TError,
+        {data: BodyType<EmbedBugCreate>;params: CreateEmbedBugParams},
+        TContext
+      > => {
+      return useMutation(getCreateEmbedBugMutationOptions(options));
+    }
+
+export const getMarkEmbedBugsSeenUrl = (params: MarkEmbedBugsSeenParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/embed/bugs/seen?${stringifiedParams}` : `/api/embed/bugs/seen`
+}
+
+/**
+ * @summary Segna come lette le segnalazioni del visitatore (pubblica)
+ */
+export const markEmbedBugsSeen = async (embedBugSeen: EmbedBugSeen,
+    params: MarkEmbedBugsSeenParams, options?: RequestInit): Promise<EmbedBugSeenResult> => {
+
+  return customFetch<EmbedBugSeenResult>(getMarkEmbedBugsSeenUrl(params),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(embedBugSeen)
+  }
+);}
+
+
+
+
+export const getMarkEmbedBugsSeenMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | NotFoundResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof markEmbedBugsSeen>>, TError,{data: BodyType<EmbedBugSeen>;params: MarkEmbedBugsSeenParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof markEmbedBugsSeen>>, TError,{data: BodyType<EmbedBugSeen>;params: MarkEmbedBugsSeenParams}, TContext> => {
+
+const mutationKey = ['markEmbedBugsSeen'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof markEmbedBugsSeen>>, {data: BodyType<EmbedBugSeen>;params: MarkEmbedBugsSeenParams}> = (props) => {
+          const {data,params} = props ?? {};
+
+          return  markEmbedBugsSeen(data,params,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type MarkEmbedBugsSeenMutationResult = NonNullable<Awaited<ReturnType<typeof markEmbedBugsSeen>>>
+    export type MarkEmbedBugsSeenMutationBody = BodyType<EmbedBugSeen>
+    export type MarkEmbedBugsSeenMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | NotFoundResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Segna come lette le segnalazioni del visitatore (pubblica)
+ */
+export const useMarkEmbedBugsSeen = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | NotFoundResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof markEmbedBugsSeen>>, TError,{data: BodyType<EmbedBugSeen>;params: MarkEmbedBugsSeenParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof markEmbedBugsSeen>>,
+        TError,
+        {data: BodyType<EmbedBugSeen>;params: MarkEmbedBugsSeenParams},
+        TContext
+      > => {
+      return useMutation(getMarkEmbedBugsSeenMutationOptions(options));
+    }
+
+export const getGetEmbedBugUrl = (id: number,
+    params: GetEmbedBugParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/embed/bugs/${id}?${stringifiedParams}` : `/api/embed/bugs/${id}`
+}
+
+/**
+ * @summary Dettaglio di una segnalazione del visitatore (pubblica)
+ */
+export const getEmbedBug = async (id: number,
+    params: GetEmbedBugParams, options?: RequestInit): Promise<EmbedBugDetail> => {
+
+  return customFetch<EmbedBugDetail>(getGetEmbedBugUrl(id,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetEmbedBugQueryKey = (id: number,
+    params?: GetEmbedBugParams,) => {
+    return [
+    `/api/embed/bugs/${id}`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetEmbedBugQueryOptions = <TData = Awaited<ReturnType<typeof getEmbedBug>>, TError = ErrorType<BadRequestResponse | UnauthorizedResponse | NotFoundResponse | TooManyRequestsResponse>>(id: number,
+    params: GetEmbedBugParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEmbedBug>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetEmbedBugQueryKey(id,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getEmbedBug>>> = ({ signal }) => getEmbedBug(id,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getEmbedBug>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetEmbedBugQueryResult = NonNullable<Awaited<ReturnType<typeof getEmbedBug>>>
+export type GetEmbedBugQueryError = ErrorType<BadRequestResponse | UnauthorizedResponse | NotFoundResponse | TooManyRequestsResponse>
+
+
+/**
+ * @summary Dettaglio di una segnalazione del visitatore (pubblica)
+ */
+
+export function useGetEmbedBug<TData = Awaited<ReturnType<typeof getEmbedBug>>, TError = ErrorType<BadRequestResponse | UnauthorizedResponse | NotFoundResponse | TooManyRequestsResponse>>(
+ id: number,
+    params: GetEmbedBugParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEmbedBug>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetEmbedBugQueryOptions(id,params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getAddEmbedBugMessageUrl = (id: number,
+    params: AddEmbedBugMessageParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/embed/bugs/${id}/messages?${stringifiedParams}` : `/api/embed/bugs/${id}/messages`
+}
+
+/**
+ * Solo con la segnalazione in «Serve una tua risposta»; la rimette in esame. 20 messaggi all'ora per segnalazione.
+ * @summary Risposta del visitatore alla domanda del Responsabile (pubblica)
+ */
+export const addEmbedBugMessage = async (id: number,
+    embedBugMessage: EmbedBugMessage,
+    params: AddEmbedBugMessageParams, options?: RequestInit): Promise<EmbedBugDetail> => {
+
+  return customFetch<EmbedBugDetail>(getAddEmbedBugMessageUrl(id,params),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(embedBugMessage)
+  }
+);}
+
+
+
+
+export const getAddEmbedBugMessageMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addEmbedBugMessage>>, TError,{id: number;data: BodyType<EmbedBugMessage>;params: AddEmbedBugMessageParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof addEmbedBugMessage>>, TError,{id: number;data: BodyType<EmbedBugMessage>;params: AddEmbedBugMessageParams}, TContext> => {
+
+const mutationKey = ['addEmbedBugMessage'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof addEmbedBugMessage>>, {id: number;data: BodyType<EmbedBugMessage>;params: AddEmbedBugMessageParams}> = (props) => {
+          const {id,data,params} = props ?? {};
+
+          return  addEmbedBugMessage(id,data,params,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AddEmbedBugMessageMutationResult = NonNullable<Awaited<ReturnType<typeof addEmbedBugMessage>>>
+    export type AddEmbedBugMessageMutationBody = BodyType<EmbedBugMessage>
+    export type AddEmbedBugMessageMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Risposta del visitatore alla domanda del Responsabile (pubblica)
+ */
+export const useAddEmbedBugMessage = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addEmbedBugMessage>>, TError,{id: number;data: BodyType<EmbedBugMessage>;params: AddEmbedBugMessageParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof addEmbedBugMessage>>,
+        TError,
+        {id: number;data: BodyType<EmbedBugMessage>;params: AddEmbedBugMessageParams},
+        TContext
+      > => {
+      return useMutation(getAddEmbedBugMessageMutationOptions(options));
+    }
 
 export const getStartNodePairingUrl = () => {
 

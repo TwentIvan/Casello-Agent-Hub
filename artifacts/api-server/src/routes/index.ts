@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import healthRouter from "./health";
 import embedRouter from "./embed";
+import embedBugsRouter from "./embed-bugs";
 import appsRouter from "./apps";
 import appToolsRouter from "./app-tools";
 import appArchitectureRouter from "./app-architecture";
@@ -42,6 +43,7 @@ const router: IRouter = Router();
 // sessione o un token personale con l'ambito giusto (requireAuth).
 router.use(healthRouter);
 router.use(embedRouter);
+router.use(embedBugsRouter);
 router.use(authRouter());
 // Protocollo dei nodi: solo token d'ambito `node` (requireNodeToken), mai sessione né token personali;
 // va prima di requireAuth, che a sua volta rifiuta i token `node` su tutto il resto di /api.

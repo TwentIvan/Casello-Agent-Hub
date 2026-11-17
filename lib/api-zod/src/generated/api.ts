@@ -22,14 +22,212 @@ export const HealthCheckResponse = zod.object({
  * @summary Configurazione del plugin per un'origine ospite (pubblica)
  */
 export const GetEmbedConfigQueryParams = zod.object({
-  "origin": zod.coerce.string().optional()
+  "origin": zod.coerce.string().optional(),
+  "app": zod.coerce.string().optional().describe('Slug dell\'App ospite, per sapere se le segnalazioni dei bug sono attive.')
 })
 
 export const GetEmbedConfigResponse = zod.object({
+  "bugs": zod.object({
+  "enabled": zod.boolean(),
+  "identity": zod.boolean()
+}),
   "allowed": zod.boolean(),
   "clientId": zod.string().nullable(),
   "appName": zod.string().nullable()
 })
+
+
+/**
+ * Al più 50, le più recenti prima. Origine non ammessa o diversa da quella dell'App, App inesistente o con le segnalazioni spente: sempre 404 «segnalazioni non disponibili». 60 richieste al minuto per IP.
+ * @summary Le segnalazioni del visitatore in un'App (pubblica)
+ */
+export const ListEmbedBugsQueryParams = zod.object({
+  "app": zod.coerce.string().describe('Slug dell\'App ospite'),
+  "origin": zod.coerce.string().describe('Origine della pagina ospite')
+})
+
+export const ListEmbedBugsHeader = zod.object({
+  "X-Botcave-Browser-Key": zod.string().describe('32 byte base64url generati dall\'iframe e tenuti nel suo storage'),
+  "X-Botcave-Identity": zod.string().optional().describe('Token d\'identità firmato dall\'app ospite')
+})
+
+export const ListEmbedBugsResponseItem = zod.object({
+  "id": zod.number(),
+  "number": zod.number(),
+  "title": zod.string(),
+  "status": zod.enum(['received', 'triage', 'needs_info', 'pending_approval', 'in_progress', 'fixed', 'not_a_bug', 'duplicate', 'rejected']),
+  "statusLabel": zod.string(),
+  "publicMessage": zod.string().nullable(),
+  "unseen": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "statusChangedAt": zod.coerce.date()
+})
+export const ListEmbedBugsResponse = zod.array(ListEmbedBugsResponseItem)
+
+
+/**
+ * Limiti: segnalazioni per App al giorno, 5 al giorno per richiedente, 10 all'ora per IP. Corpo al più 32 KB.
+ * @summary Registra una segnalazione (pubblica)
+ */
+export const CreateEmbedBugQueryParams = zod.object({
+  "app": zod.coerce.string().describe('Slug dell\'App ospite'),
+  "origin": zod.coerce.string().describe('Origine della pagina ospite')
+})
+
+export const CreateEmbedBugHeader = zod.object({
+  "X-Botcave-Browser-Key": zod.string().describe('32 byte base64url generati dall\'iframe e tenuti nel suo storage'),
+  "X-Botcave-Identity": zod.string().optional().describe('Token d\'identità firmato dall\'app ospite')
+})
+
+export const createEmbedBugBodyTitleMax = 1000;
+
+export const createEmbedBugBodyDescriptionMax = 10000;
+
+export const createEmbedBugBodyStepsMax = 10000;
+
+export const createEmbedBugBodyExpectedMax = 10000;
+
+export const createEmbedBugBodyPageContextPageMax = 1000;
+
+export const createEmbedBugBodyPageContextIdMax = 1000;
+
+export const createEmbedBugBodyPageContextTitleMax = 1000;
+
+export const createEmbedBugBodyPageContextUrlMax = 5000;
+
+
+
+export const CreateEmbedBugBody = zod.object({
+  "title": zod.string().max(createEmbedBugBodyTitleMax),
+  "description": zod.string().max(createEmbedBugBodyDescriptionMax),
+  "steps": zod.string().max(createEmbedBugBodyStepsMax).optional(),
+  "expected": zod.string().max(createEmbedBugBodyExpectedMax).optional(),
+  "pageContext": zod.object({
+  "page": zod.string().max(createEmbedBugBodyPageContextPageMax).optional(),
+  "id": zod.string().max(createEmbedBugBodyPageContextIdMax).optional(),
+  "title": zod.string().max(createEmbedBugBodyPageContextTitleMax).optional(),
+  "url": zod.string().max(createEmbedBugBodyPageContextUrlMax).optional()
+}).optional()
+})
+
+export const CreateEmbedBugResponse = zod.object({
+  "id": zod.number(),
+  "number": zod.number(),
+  "status": zod.enum(['received', 'triage', 'needs_info', 'pending_approval', 'in_progress', 'fixed', 'not_a_bug', 'duplicate', 'rejected'])
+})
+
+
+/**
+ * @summary Segna come lette le segnalazioni del visitatore (pubblica)
+ */
+export const MarkEmbedBugsSeenQueryParams = zod.object({
+  "app": zod.coerce.string().describe('Slug dell\'App ospite'),
+  "origin": zod.coerce.string().describe('Origine della pagina ospite')
+})
+
+export const MarkEmbedBugsSeenHeader = zod.object({
+  "X-Botcave-Browser-Key": zod.string().describe('32 byte base64url generati dall\'iframe e tenuti nel suo storage'),
+  "X-Botcave-Identity": zod.string().optional().describe('Token d\'identità firmato dall\'app ospite')
+})
+
+export const markEmbedBugsSeenBodyIdsMax = 50;
+
+
+
+export const MarkEmbedBugsSeenBody = zod.object({
+  "ids": zod.array(zod.number()).max(markEmbedBugsSeenBodyIdsMax)
+})
+
+export const MarkEmbedBugsSeenResponse = zod.object({
+  "updated": zod.number()
+})
+
+
+/**
+ * @summary Dettaglio di una segnalazione del visitatore (pubblica)
+ */
+export const GetEmbedBugParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetEmbedBugQueryParams = zod.object({
+  "app": zod.coerce.string().describe('Slug dell\'App ospite'),
+  "origin": zod.coerce.string().describe('Origine della pagina ospite')
+})
+
+export const GetEmbedBugHeader = zod.object({
+  "X-Botcave-Browser-Key": zod.string().describe('32 byte base64url generati dall\'iframe e tenuti nel suo storage'),
+  "X-Botcave-Identity": zod.string().optional().describe('Token d\'identità firmato dall\'app ospite')
+})
+
+export const GetEmbedBugResponse = zod.object({
+  "id": zod.number(),
+  "number": zod.number(),
+  "title": zod.string(),
+  "status": zod.enum(['received', 'triage', 'needs_info', 'pending_approval', 'in_progress', 'fixed', 'not_a_bug', 'duplicate', 'rejected']),
+  "statusLabel": zod.string(),
+  "publicMessage": zod.string().nullable(),
+  "unseen": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "statusChangedAt": zod.coerce.date()
+}).and(zod.object({
+  "description": zod.string(),
+  "steps": zod.string().nullable(),
+  "expected": zod.string().nullable(),
+  "messages": zod.array(zod.object({
+  "author": zod.enum(['reporter', 'lead', 'owner']),
+  "content": zod.string(),
+  "createdAt": zod.coerce.date()
+}))
+}))
+
+
+/**
+ * Solo con la segnalazione in «Serve una tua risposta»; la rimette in esame. 20 messaggi all'ora per segnalazione.
+ * @summary Risposta del visitatore alla domanda del Responsabile (pubblica)
+ */
+export const AddEmbedBugMessageParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const AddEmbedBugMessageQueryParams = zod.object({
+  "app": zod.coerce.string().describe('Slug dell\'App ospite'),
+  "origin": zod.coerce.string().describe('Origine della pagina ospite')
+})
+
+export const AddEmbedBugMessageHeader = zod.object({
+  "X-Botcave-Browser-Key": zod.string().describe('32 byte base64url generati dall\'iframe e tenuti nel suo storage'),
+  "X-Botcave-Identity": zod.string().optional().describe('Token d\'identità firmato dall\'app ospite')
+})
+
+export const addEmbedBugMessageBodyContentMax = 10000;
+
+
+
+export const AddEmbedBugMessageBody = zod.object({
+  "content": zod.string().max(addEmbedBugMessageBodyContentMax)
+})
+
+export const AddEmbedBugMessageResponse = zod.object({
+  "id": zod.number(),
+  "number": zod.number(),
+  "title": zod.string(),
+  "status": zod.enum(['received', 'triage', 'needs_info', 'pending_approval', 'in_progress', 'fixed', 'not_a_bug', 'duplicate', 'rejected']),
+  "statusLabel": zod.string(),
+  "publicMessage": zod.string().nullable(),
+  "unseen": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "statusChangedAt": zod.coerce.date()
+}).and(zod.object({
+  "description": zod.string(),
+  "steps": zod.string().nullable(),
+  "expected": zod.string().nullable(),
+  "messages": zod.array(zod.object({
+  "author": zod.enum(['reporter', 'lead', 'owner']),
+  "content": zod.string(),
+  "createdAt": zod.coerce.date()
+}))
+}))
 
 
 /**

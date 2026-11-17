@@ -56,6 +56,21 @@ export function monthStart(now: Date = new Date()): Date {
   throw new Error("Inizio del mese non calcolabile");
 }
 
+/**
+ * Mezzanotte di Roma del giorno di `now`, come istante. Un giorno italiano dura 23, 24 o 25 ore: si prova
+ * +0, +1 e +2 ore di scarto dalla mezzanotte UTC (a Roma è UTC+1 o UTC+2) finché l'ora locale è 0.
+ */
+export function dayStart(now: Date = new Date()): Date {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: TIME_ZONE, year: "numeric", month: "numeric", day: "numeric" }).formatToParts(now);
+  const get = (type: string) => Number(parts.find((p) => p.type === type)!.value);
+  for (const offsetHours of [1, 2]) {
+    const candidate = new Date(Date.UTC(get("year"), get("month") - 1, get("day"), -offsetHours));
+    const hour = new Intl.DateTimeFormat("en-US", { timeZone: TIME_ZONE, hour: "numeric", hourCycle: "h23" }).format(candidate);
+    if (Number(hour) === 0) return candidate;
+  }
+  throw new Error("Inizio del giorno non calcolabile");
+}
+
 /** Mese corrente come "AAAA-MM" (ora italiana). */
 export function monthLabel(now: Date = new Date()): string {
   const { year, month } = romeYearMonth(now);

@@ -113,7 +113,9 @@ async function publicProposals(proposals: PlanProposal[]) {
         ? target
           ? itemTitle(target.chapter as PlanChapter, target.payload)
           : "(voce rimossa)"
-        : itemTitle(p.chapter as PlanChapter, p.payload);
+        : p.chapter === null
+          ? "Azioni per pagina"
+          : itemTitle(p.chapter as PlanChapter, p.payload);
     return toPublicPlanProposal(p, title);
   });
 }

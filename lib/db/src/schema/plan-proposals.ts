@@ -1,9 +1,10 @@
-import { pgTable, serial, integer, text, timestamp, pgEnum, jsonb, index } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, pgEnum, jsonb, index, check } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { planConversationsTable } from "./plan-conversations";
 import { planMessagesTable } from "./plan-messages";
 import { analysisChapterEnum, analysisItemsTable } from "./analysis-items";
 
-export const planProposalKindEnum = pgEnum("plan_proposal_kind", ["add", "update", "discard"]);
+export const planProposalKindEnum = pgEnum("plan_proposal_kind", ["add", "update", "discard", "page_actions"]);
 export const planProposalStatusEnum = pgEnum("plan_proposal_status", ["pending", "accepted", "rejected", "stale"]);
 
 // Proposta del bot sul piano, da accettare o rifiutare. Il capitolo è uno tra endpoint, completion, evolution
@@ -19,7 +20,8 @@ export const planProposalsTable = pgTable(
       .notNull()
       .references(() => planMessagesTable.id, { onDelete: "cascade" }),
     kind: planProposalKindEnum("kind").notNull(),
-    chapter: analysisChapterEnum("chapter").notNull(),
+    // Null solo per page_actions (CHECK plan_proposals_chapter_check)
+    chapter: analysisChapterEnum("chapter"),
     // add e update: validato con ITEM_SCHEMAS[chapter]; discard: null
     payload: jsonb("payload"),
     rationale: text("rationale").notNull(),
@@ -33,7 +35,10 @@ export const planProposalsTable = pgTable(
     decidedAt: timestamp("decided_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
-  (table) => [index("plan_proposals_conversation_idx").on(table.conversationId)],
+  (table) => [
+    index("plan_proposals_conversation_idx").on(table.conversationId),
+    check("plan_proposals_chapter_check", sql`${table.kind}::text = 'page_actions' OR ${table.chapter} IS NOT NULL`),
+  ],
 );
 
 export type PlanProposal = typeof planProposalsTable.$inferSelect;

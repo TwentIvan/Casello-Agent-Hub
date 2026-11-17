@@ -83,18 +83,24 @@ export async function decideProposal(
       if (!proposal) throw new ProposalConflictError("La proposta è già stata decisa");
       if (action === "reject") return { proposal, item: null };
 
+      // Le proposte `page_actions` (senza capitolo) non nascono dalla chat del piano: le gestirà il riordino del plugin
+      const chapter = proposal.chapter;
+      if (proposal.kind === "page_actions" || (proposal.kind === "add" && chapter === null)) {
+        throw new ProposalConflictError("La proposta non si può accettare da qui");
+      }
+
       let item: AnalysisItem;
       if (proposal.kind === "add") {
         // Posizione in coda al capitolo; il riferimento univoco impedisce doppioni
         const [{ last }] = await tx
           .select({ last: max(analysisItemsTable.position) })
           .from(analysisItemsTable)
-          .where(and(eq(analysisItemsTable.analysisId, owned.analysisId), eq(analysisItemsTable.chapter, proposal.chapter)));
+          .where(and(eq(analysisItemsTable.analysisId, owned.analysisId), eq(analysisItemsTable.chapter, chapter!)));
         [item] = await tx
           .insert(analysisItemsTable)
           .values({
             analysisId: owned.analysisId,
-            chapter: proposal.chapter,
+            chapter: chapter!,
             ref: `chat-${proposal.id}`,
             position: (last ?? 0) + 1,
             payload: proposal.payload,

@@ -172,7 +172,7 @@ async function loadHistory(conversationId: number, assistantMessageId: number): 
   const targetById = new Map(targets.map((t) => [t.id, t]));
 
   const titleOf = (p: (typeof proposals)[number]): string => {
-    if (p.payload !== null) return itemTitle(p.chapter as PlanChapter, p.payload);
+    if (p.payload !== null && p.chapter !== null) return itemTitle(p.chapter as PlanChapter, p.payload);
     const t = p.targetItemId !== null ? targetById.get(p.targetItemId) : undefined;
     return t ? itemTitle(t.chapter as PlanChapter, t.payload) : "voce non più disponibile";
   };
@@ -184,8 +184,8 @@ async function loadHistory(conversationId: number, assistantMessageId: number): 
       role: m.role,
       content: m.content,
       proposals: proposals
-        .filter((p) => p.messageId === m.id)
-        .map((p): HistoryProposal => ({ kind: p.kind, title: titleOf(p), status: p.status })),
+        .filter((p) => p.messageId === m.id && p.kind !== "page_actions")
+        .map((p): HistoryProposal => ({ kind: p.kind as HistoryProposal["kind"], title: titleOf(p), status: p.status })),
       instructionProposals: instructionStatuses.get(m.id) ?? [],
     }));
 }

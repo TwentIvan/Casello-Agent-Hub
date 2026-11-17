@@ -44,6 +44,9 @@ export const appsTable = pgTable(
     mcpUrl: text("mcp_url"),
     functionalDescription: text("functional_description"),
     architectureRefresh: architectureRefreshEnum("architecture_refresh").notNull().default("6h"),
+    // Versione di prova (lavoro su branch unico): branch riscritto da Botcave a ogni lavoro e indirizzo dove la CI/Coolify lo pubblica
+    stagingBranch: text("staging_branch"),
+    stagingUrl: text("staging_url"),
     bugReportsEnabled: boolean("bug_reports_enabled").notNull().default(false),
     bugReportsDailyLimit: integer("bug_reports_daily_limit").notNull().default(20),
     identitySecretEnc: text("identity_secret_enc"),

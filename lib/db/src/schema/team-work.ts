@@ -23,6 +23,7 @@ export const teamEventTypeEnum = pgEnum("team_event_type", [
   "lavoro_finito",
   "interrotto",
   "risposta_capo",
+  "lavoro_in_prova",
 ]);
 
 // Motivo di un turno del capo (accumulati nel turno in coda)

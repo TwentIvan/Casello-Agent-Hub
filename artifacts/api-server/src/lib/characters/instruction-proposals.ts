@@ -103,9 +103,9 @@ export class InstructionProposer {
       if (this.proposed) return toolFail(INSTRUCTION_MESSAGES.onePerTurn);
       const args = parseArgs(rawArgs);
       const reason = typeof args?.motivazione === "string" ? args.motivazione.trim() : "";
-      if (!args || typeof args.testo !== "string" || reason.length === 0 || reason.length > INSTRUCTION_REASON_MAX) {
-        return toolFail(INSTRUCTION_MESSAGES.badReason);
-      }
+      if (!args) return toolFail(INSTRUCTION_MESSAGES.badReason);
+      if (typeof args.testo !== "string") return toolFail(INSTRUCTION_MESSAGES.badText);
+      if (reason.length === 0 || reason.length > INSTRUCTION_REASON_MAX) return toolFail(INSTRUCTION_MESSAGES.badReason);
       if (looksLikeCredential(reason)) return toolFail(INSTRUCTION_MESSAGES.credential);
       const content = normalizeInstructions(args.testo);
       const { userId, character } = this.ctx;

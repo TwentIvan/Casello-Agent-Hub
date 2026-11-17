@@ -80,7 +80,8 @@ describe("strumento proponi_istruzioni_personali", () => {
     expect(parse(await p.run("non json"))).toEqual({ ok: false, error: INSTRUCTION_MESSAGES.badReason });
     expect(parse(await p.run(args("Sempre in euro", "  ")))).toEqual({ ok: false, error: INSTRUCTION_MESSAGES.badReason });
     expect(parse(await p.run(args("Sempre in euro", "x".repeat(1_001))))).toEqual({ ok: false, error: INSTRUCTION_MESSAGES.badReason });
-    expect(parse(await p.run(args(42)))).toEqual({ ok: false, error: INSTRUCTION_MESSAGES.badReason });
+    expect(parse(await p.run(args(42)))).toEqual({ ok: false, error: INSTRUCTION_MESSAGES.badText });
+    expect(parse(await p.run(JSON.stringify({ motivazione: "perché sì" })))).toEqual({ ok: false, error: INSTRUCTION_MESSAGES.badText });
   });
 
   it("testo uguale all'attuale (anche con spazi in fondo) → sameAsCurrent; credenziale → credential", async () => {

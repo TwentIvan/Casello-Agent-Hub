@@ -57,7 +57,11 @@ export function PersonalInstructionsBlock({ character }: { character: Character 
     setStale(false);
   };
   const onError = (error: unknown) => {
-    if (error instanceof ApiError && error.status === 409) setStale(true);
+    if (error instanceof ApiError && error.status === 409) {
+      setStale(true);
+      // Chiude «Versioni»: l'avviso con «Ricarica» sta nel blocco, dietro il dialogo
+      setVersionsOpen(false);
+    }
     else toast({ variant: "destructive", title: "Salvataggio non riuscito", description: apiErrorMessage(error) });
   };
 

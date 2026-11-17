@@ -18,6 +18,7 @@ export const INSTRUCTION_MESSAGES = {
   versionNotFound: "versione non trovata",
   rateLimited: "Troppe richieste: riprova tra poco",
   sameAsCurrent: "la proposta è uguale alle istruzioni attuali",
+  badText: "testo obbligatorio: il testo completo delle nuove istruzioni",
   badReason: "motivazione obbligatoria, al massimo 1 000 caratteri",
   onePerTurn: "hai già proposto in questo turno",
   proposalNotFound: "proposta non trovata",

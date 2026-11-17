@@ -2196,10 +2196,11 @@ export const PlanProposalKind = {
   add: 'add',
   update: 'update',
   discard: 'discard',
+  page_actions: 'page_actions',
 } as const;
 
 /**
- * Contenuto proposto (add e update), null per discard
+ * Contenuto proposto (add e update; per page_actions {page, actions: [{label, request}]}), null per discard
  * @nullable
  */
 export type PlanProposalPayload = { [key: string]: unknown } | null;
@@ -2218,11 +2219,12 @@ export interface PlanProposal {
   id: number;
   messageId: number;
   kind: PlanProposalKind;
-  chapter: AnalysisChapter;
+  /** Capitolo della voce; null per page_actions (azioni del plugin) */
+  chapter: AnalysisChapter | null;
   /** Titolo della voce proposta (per discard, quello della voce di destinazione) */
   title: string;
   /**
-     * Contenuto proposto (add e update), null per discard
+     * Contenuto proposto (add e update; per page_actions {page, actions: [{label, request}]}), null per discard
      * @nullable
      */
   payload: PlanProposalPayload;

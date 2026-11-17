@@ -4,11 +4,13 @@ import {
   db,
   analysesTable,
   analysisItemsTable,
+  appsTable,
   planConversationsTable,
   planProposalsTable,
   type AnalysisItem,
   type PlanProposal,
 } from "@workspace/db";
+import { pageActionsHash, validatePageActions } from "../apps/page-actions";
 
 /** Proposta inesistente o di una conversazione di un altro utente (la route risponde 404). */
 export class ProposalNotFoundError extends Error {
@@ -28,8 +30,14 @@ export class ProposalConflictError extends Error {
 
 const STALE_MESSAGE = "La voce è cambiata dopo la proposta: chiedi al bot di riproporla";
 
+const STALE_ACTIONS_MESSAGE = "le azioni sono cambiate: chiedi a Lucius una proposta aggiornata";
+
 /** Segnale interno: la voce di destinazione è cambiata, la transazione va annullata e la proposta marcata `stale`. */
-class StaleTarget extends Error {}
+class StaleTarget extends Error {
+  constructor(readonly userMessage: string = STALE_MESSAGE) {
+    super(userMessage);
+  }
+}
 
 function canonical(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonical);
@@ -83,11 +91,12 @@ export async function decideProposal(
       if (!proposal) throw new ProposalConflictError("La proposta è già stata decisa");
       if (action === "reject") return { proposal, item: null };
 
-      // Le proposte `page_actions` (senza capitolo) non nascono dalla chat del piano: le gestirà il riordino del plugin
-      const chapter = proposal.chapter;
-      if (proposal.kind === "page_actions" || (proposal.kind === "add" && chapter === null)) {
-        throw new ProposalConflictError("La proposta non si può accettare da qui");
+      if (proposal.kind === "page_actions") {
+        await applyPageActions(tx, owned.appId, proposal);
+        return { proposal, item: null };
       }
+      const chapter = proposal.chapter;
+      if (proposal.kind === "add" && chapter === null) throw new ProposalConflictError("La proposta non si può accettare da qui");
 
       let item: AnalysisItem;
       if (proposal.kind === "add") {
@@ -165,6 +174,26 @@ export async function decideProposal(
       .update(planProposalsTable)
       .set({ status: "stale", decidedAt: sql`now()` })
       .where(and(eq(planProposalsTable.id, proposalId), eq(planProposalsTable.status, "pending")));
-    throw new ProposalConflictError(STALE_MESSAGE);
+    throw new ProposalConflictError(err.userMessage);
   }
+}
+
+type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+/**
+ * Applica una proposta `page_actions` con la riga dell'App bloccata: se le azioni di quel tipo di pagina non sono più
+ * quelle su cui è nata la proposta → `StaleTarget`; altrimenti sostituisce solo quelle (le altre restano) e rivalida l'elenco.
+ */
+async function applyPageActions(tx: Tx, appId: number, proposal: PlanProposal): Promise<void> {
+  const [app] = await tx.select({ pageActions: appsTable.pageActions }).from(appsTable).where(eq(appsTable.id, appId)).for("update");
+  const payload = (proposal.payload ?? {}) as { page?: unknown; actions?: unknown };
+  const page = typeof payload.page === "string" ? payload.page : "";
+  if (!app || pageActionsHash(app.pageActions, page) !== proposal.targetHash) throw new StaleTarget(STALE_ACTIONS_MESSAGE);
+  const proposed = Array.isArray(payload.actions) ? payload.actions : [];
+  const checked = validatePageActions([
+    ...app.pageActions.filter((a) => a.page !== page),
+    ...proposed.map((a) => ({ ...(a as object), page })),
+  ]);
+  if (!checked.ok) throw new ProposalConflictError(checked.error);
+  await tx.update(appsTable).set({ pageActions: checked.actions }).where(eq(appsTable.id, appId));
 }

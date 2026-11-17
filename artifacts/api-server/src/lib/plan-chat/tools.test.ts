@@ -8,6 +8,7 @@ import {
   type PlanToolEnv,
   type PlanToolItem,
 } from "./tools";
+import { PAGE_ACTION_MESSAGES, pageActionsHash } from "../apps/page-actions";
 
 const completionPayload = (key: string, dependsOn: string[] = []) => ({
   key,
@@ -35,6 +36,8 @@ function makeEnv() {
       return saved.length;
     },
     hash: (it) => `h:${it.id}`,
+    pageActions: () => [{ page: "wi", label: "Riassumi", request: "Leggi il work item e riassumilo" }],
+    pagesSeen: () => ["wi", "board"],
   };
   return { env, saved, item };
 }
@@ -162,5 +165,41 @@ describe("PlanToolRunner", () => {
     const propose = PLAN_TOOLS.find((t) => t.function.name === "propose")!;
     const desc = JSON.stringify(propose.function.parameters);
     for (const field of ["missing", "doneWhen", "patch", "priority", "impact"]) expect(desc).toContain(field);
+  });
+});
+
+describe("proponi_azioni_pagina", () => {
+  it("registra la proposta con capitolo nullo e impronta delle azioni attuali", async () => {
+    const { env, saved } = makeEnv();
+    const out = await new PlanToolRunner(env, 1).run(
+      call("proponi_azioni_pagina", { page: "board", actions: [{ label: " Stato ", request: "Leggi la board" }], rationale: "serve" }),
+    );
+    expect(out).toContain("proposta registrata (#1)");
+    expect(saved[0]).toEqual({
+      kind: "page_actions",
+      chapter: null,
+      payload: { page: "board", actions: [{ label: "Stato", request: "Leggi la board" }] },
+      rationale: "serve",
+      targetItemId: null,
+      targetHash: pageActionsHash([{ page: "wi", label: "Riassumi", request: "Leggi il work item e riassumilo" }], "board"),
+    });
+  });
+
+  it("azione non valida: testo con il messaggio fisso, conta nelle correzioni", async () => {
+    const { env, saved } = makeEnv();
+    const r = new PlanToolRunner(env, 1);
+    const bad = call("proponi_azioni_pagina", { page: "wi", actions: [{ label: "", request: "x" }], rationale: "r" });
+    expect(await r.run(bad)).toContain(PAGE_ACTION_MESSAGES.label);
+    await r.run(bad);
+    await r.run(bad);
+    expect(await r.run(bad)).toBe(PROPOSAL_EXHAUSTED);
+    expect(saved).toHaveLength(0);
+  });
+
+  it("sette azioni nello stesso tipo di pagina: errore del limite", async () => {
+    const { env } = makeEnv();
+    const actions = Array.from({ length: 7 }, (_, i) => ({ label: `a${i}`, request: "r" }));
+    const out = await new PlanToolRunner(env, 1).run(call("proponi_azioni_pagina", { page: "wi", actions, rationale: "r" }));
+    expect(out).toContain(PAGE_ACTION_MESSAGES.perPage);
   });
 });

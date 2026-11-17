@@ -8981,16 +8981,19 @@ components:
           type: integer
         kind:
           type: string
-          enum: [add, update, discard]
+          enum: [add, update, discard, page_actions]
         chapter:
-          $ref: "#/components/schemas/AnalysisChapter"
+          description: "Capitolo della voce; null per page_actions (azioni del plugin)"
+          oneOf:
+            - $ref: "#/components/schemas/AnalysisChapter"
+            - type: "null"
         title:
           type: string
           description: Titolo della voce proposta (per discard, quello della voce di destinazione)
         payload:
           type: ["object", "null"]
           additionalProperties: true
-          description: Contenuto proposto (add e update), null per discard
+          description: "Contenuto proposto (add e update; per page_actions {page, actions: [{label, request}]}), null per discard"
         rationale:
           type: string
         targetItemId:

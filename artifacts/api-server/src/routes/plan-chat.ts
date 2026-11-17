@@ -114,7 +114,7 @@ async function publicProposals(proposals: PlanProposal[]) {
           ? itemTitle(target.chapter as PlanChapter, target.payload)
           : "(voce rimossa)"
         : p.chapter === null
-          ? "Azioni per pagina"
+          ? `Azioni per ${typeof (p.payload as { page?: unknown } | null)?.page === "string" ? (p.payload as { page: string }).page : "pagina"}`
           : itemTitle(p.chapter as PlanChapter, p.payload);
     return toPublicPlanProposal(p, title);
   });

@@ -26,6 +26,7 @@ const KIND_LABELS: Record<PlanProposal["kind"], string> = {
   add: "Nuova voce",
   update: "Modifica",
   discard: "Scarta",
+  page_actions: "Azioni del plugin",
 };
 
 const STATUS_LABELS: Record<PlanProposal["status"], string> = {
@@ -41,6 +42,32 @@ const STATUS_LED: Record<PlanProposal["status"], LedState> = {
   rejected: "idle",
   stale: "idle",
 };
+
+/** Azioni proposte per un tipo di pagina: etichetta → richiesta al Responsabile. */
+function PageActionsList({ payload }: { payload: PlanProposal["payload"] }) {
+  const page = typeof payload?.page === "string" ? payload.page : null;
+  const actions = Array.isArray(payload?.actions) ? (payload.actions as { label?: unknown; request?: unknown }[]) : [];
+  return (
+    <div className="min-w-0 space-y-1.5">
+      {page && (
+        <p className="text-xs font-medium text-muted-foreground">
+          Tipo di pagina: <span className="font-mono">{page}</span>
+        </p>
+      )}
+      {actions.length === 0 ? (
+        <p className="text-sm text-muted-foreground">Nessuna azione: le attuali di questo tipo di pagina verrebbero tolte.</p>
+      ) : (
+        <ul className="space-y-1.5 text-sm">
+          {actions.map((a, i) => (
+            <li key={i} className="min-w-0 break-words">
+              <span className="font-medium">{String(a.label ?? "")}</span> → <span className="text-muted-foreground">{String(a.request ?? "")}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 function Json({ label, value }: { label: string; value: unknown }) {
   return (
@@ -83,7 +110,8 @@ export function ProposalCard({ proposal, currentItem, appId }: ProposalCardProps
   });
 
   const pending = proposal.status === "pending";
-  const hasPayload = proposal.payload !== null;
+  const isPageActions = proposal.kind === "page_actions";
+  const hasPayload = proposal.payload !== null && !isPageActions;
   const showCurrent = proposal.kind === "update" && currentItem !== undefined;
 
   return (
@@ -91,11 +119,13 @@ export function ProposalCard({ proposal, currentItem, appId }: ProposalCardProps
       <CardContent className="space-y-3 p-3">
         <div className="flex flex-wrap items-center gap-1.5">
           <Badge variant="secondary">{KIND_LABELS[proposal.kind]}</Badge>
-          <Badge variant="outline">{CHAPTER_LABELS[proposal.chapter]}</Badge>
+          <Badge variant="outline">{proposal.chapter ? CHAPTER_LABELS[proposal.chapter] : "Plugin"}</Badge>
           <Led state={STATUS_LED[proposal.status]} label={STATUS_LABELS[proposal.status]} />
         </div>
         <p className="text-sm font-medium break-words">{proposal.title}</p>
         {proposal.rationale && <p className="text-sm whitespace-pre-wrap text-muted-foreground">{proposal.rationale}</p>}
+
+        {isPageActions && <PageActionsList payload={proposal.payload} />}
 
         {hasPayload && (
           <div className="space-y-2">

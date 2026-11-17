@@ -15,10 +15,12 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
+import { bugApprovalBlocker, readBugArgs } from "@/lib/bug-status";
 import { formatRelative } from "@/lib/format";
 import { ActionStatusBadge } from "./action-status";
 import { decidedTitle } from "./pending-action-item";
 import { ACTION_KIND_LABELS, PlanProposalDetail, isPlanItem } from "./plan-proposal";
+import { BugDetail } from "./bug-detail";
 import { MergeDetail } from "./merge-detail";
 import { ProposalSteps } from "./proposal-steps";
 import { useProposalSelection } from "./use-proposal-selection";
@@ -91,6 +93,7 @@ export function ActionDialog({
   // Solo le azioni di uno strumento con identità utente: i piani non hanno strumento
   const needsToken = action?.kind === "action" && action.tool?.identity === "user";
   const plan = action !== null && isPlanItem(action);
+  const bugBlocker = action?.kind === "bug" ? bugApprovalBlocker(readBugArgs(action.args)) : null;
 
   return (
     <Dialog open={action !== null} onOpenChange={(open) => {
@@ -163,6 +166,10 @@ export function ActionDialog({
                   {...(action.status === "pending" ? { excluded: selection.excluded, onToggle: selection.toggle } : {})}
                 />
               </div>
+            ) : action.kind === "bug" ? (
+              <div className="rounded-md border p-3">
+                <BugDetail args={action.args} />
+              </div>
             ) : action.kind === "merge" ? (
               <div className="rounded-md border p-3">
                 <MergeDetail args={action.args} />
@@ -211,6 +218,9 @@ export function ActionDialog({
                 )}
                 <div className="space-y-1.5">
                   <Label htmlFor="action-note">Nota del rifiuto (facoltativa)</Label>
+                  {action.kind === "bug" && (
+                    <p className="text-xs text-muted-foreground">La nota la vede l'utente che ha segnalato.</p>
+                  )}
                   <Textarea
                     id="action-note"
                     rows={2}
@@ -219,6 +229,7 @@ export function ActionDialog({
                     onChange={(e) => setNote(e.target.value)}
                   />
                 </div>
+                {bugBlocker && <p className="text-sm text-destructive">{bugBlocker}</p>}
                 <DialogFooter>
                   <Button
                     variant="outline"
@@ -228,7 +239,7 @@ export function ActionDialog({
                     {reject.isPending ? "Rifiuto…" : "Rifiuta"}
                   </Button>
                   <Button
-                    disabled={busy || selection.nothingLeft}
+                    disabled={busy || selection.nothingLeft || bugBlocker !== null}
                     onClick={() => {
                       approve.mutate({
                         number: action.number,
@@ -238,7 +249,7 @@ export function ActionDialog({
                       setUserToken("");
                     }}
                   >
-                    {approve.isPending ? (plan ? "Approvazione…" : "Esecuzione…") : plan ? "Approva" : action.kind === "proposal" ? selection.approveLabel : action.kind === "merge" ? "Approva e unisci" : "Approva ed esegui"}
+                    {approve.isPending ? (plan ? "Approvazione…" : "Esecuzione…") : plan ? "Approva" : action.kind === "proposal" ? selection.approveLabel : action.kind === "merge" ? "Approva e unisci" : action.kind === "bug" ? "Approva e affida alla squadra" : "Approva ed esegui"}
                   </Button>
                 </DialogFooter>
               </div>

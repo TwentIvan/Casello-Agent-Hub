@@ -10,15 +10,17 @@ import { ConfirmItem } from "@/components/brand/confirm-item";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
+import { bugApprovalBlocker, readBugArgs } from "@/lib/bug-status";
 import { formatRelative } from "@/lib/format";
 import { ACTION_KIND_LABELS, isPlanItem } from "./plan-proposal";
+import { BugDetail } from "./bug-detail";
 import { MergeDetail } from "./merge-detail";
 import { ProposalSteps } from "./proposal-steps";
 import { useProposalSelection } from "./use-proposal-selection";
 
 /** «Azione n. 3 approvata», «Piano n. 4 rifiutato», «Modifica del piano n. 5 approvata». */
 export function decidedTitle(action: QueuedAction, approved: boolean): string {
-  const masculine = action.kind === "plan" || action.kind === "merge";
+  const masculine = action.kind === "plan" || action.kind === "merge" || action.kind === "bug";
   const ending = masculine ? (approved ? "approvato" : "rifiutato") : approved ? "approvata" : "rifiutata";
   return `${ACTION_KIND_LABELS[action.kind]} n. ${action.number} ${ending}`;
 }
@@ -88,6 +90,7 @@ export function PendingActionItem({
     .filter(Boolean)
     .join(" · ");
   const plan = isPlanItem(action);
+  const bugBlocker = action.kind === "bug" ? bugApprovalBlocker(readBugArgs(action.args)) : null;
   const toConsole = consoleHref !== undefined && needsDialogToApprove(action);
 
   return (
@@ -100,6 +103,11 @@ export function PendingActionItem({
           <>
             {proposal.reason && <span className="block whitespace-pre-wrap">{proposal.reason}</span>}
             <span className="block">Destinatario: {action.recipient}</span>
+          </>
+        ) : action.kind === "bug" ? (
+          <>
+            Segnalazione dall'app: approvando la affidi alla squadra per i bug. La nota di un rifiuto la vede l'utente che ha segnalato.
+            {bugBlocker && <span className="mt-1 block text-danger">{bugBlocker}</span>}
           </>
         ) : action.kind === "merge" ? (
           <>Merge chiesto dalla squadra: dopo il deploy applica su Neon lo script -post.</>
@@ -122,11 +130,15 @@ export function PendingActionItem({
       note={note}
       onNoteChange={setNote}
       busy={busy}
-      approveDisabled={nothingLeft}
+      approveDisabled={nothingLeft || bugBlocker !== null}
       approveLabel={
         plan
           ? "Leggi e approva"
-          : approve.isPending
+          : action.kind === "bug"
+            ? approve.isPending
+              ? "Affido…"
+              : "Approva e affida alla squadra"
+            : approve.isPending
             ? "Esecuzione…"
             : selection.approveLabel
       }
@@ -154,6 +166,7 @@ export function PendingActionItem({
       }
     >
       {proposal && <ProposalSteps proposal={proposal} excluded={excluded} onToggle={toggle} />}
+      {action.kind === "bug" && <BugDetail args={action.args} linkTeam={consoleHref === undefined} />}
       {action.kind === "merge" && <MergeDetail args={action.args} />}
     </ConfirmItem>
   );

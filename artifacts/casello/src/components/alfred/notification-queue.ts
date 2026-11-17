@@ -23,7 +23,7 @@ const oneLine = (text: string): string => text.replace(/\s+/g, " ").trim();
 /** Testo che viene da agenti o app: tra «…», così si distingue come dato. */
 const quoted = (text: string): string => `«${oneLine(text)}»`;
 
-const KIND_LABEL: Record<string, string> = { action: "azione", proposal: "proposta", plan: "piano", plan_change: "modifica del piano", merge: "merge di una PR" };
+const KIND_LABEL: Record<string, string> = { action: "azione", proposal: "proposta", plan: "piano", plan_change: "modifica del piano", merge: "merge di una PR", bug: "segnalazione di un bug" };
 const kindLabel = (tipo: string): string => KIND_LABEL[tipo] ?? tipo;
 
 const RUN_STATUS: Record<string, string> = { succeeded: "finita", failed: "non riuscita", cancelled: "annullata" };

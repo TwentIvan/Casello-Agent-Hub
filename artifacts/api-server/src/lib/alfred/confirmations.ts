@@ -40,7 +40,7 @@ async function guardDb<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-const KIND_LABEL: Record<string, string> = { action: "azione", plan: "piano", plan_change: "modifica del piano", proposal: "proposta", merge: "merge di una PR" };
+const KIND_LABEL: Record<string, string> = { action: "azione", plan: "piano", plan_change: "modifica del piano", proposal: "proposta", merge: "merge di una PR", bug: "segnalazione di un bug" };
 
 const hashCode = (code: string) => createHash("sha256").update(code).digest("hex");
 

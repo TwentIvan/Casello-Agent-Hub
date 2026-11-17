@@ -34,3 +34,41 @@ export function bugStatusLed(status: EmbedBugStatus): LedState {
 export function visitorBadge(list: readonly { unseen: boolean }[]): number {
   return list.filter((b) => b.unseen).length;
 }
+
+export type BugArgs = {
+  title: string;
+  description: string;
+  steps: string;
+  expected: string;
+  triage: { verdict: string; summary: string; question: string } | null;
+  team: { id: number; name: string; status: string | null } | null;
+};
+
+const str = (v: unknown) => (typeof v === "string" ? v : "");
+
+/** Contenuto di una voce `bug` (args = { title, description, steps, expected, triage, team }). */
+export function readBugArgs(args: unknown): BugArgs {
+  const a = (args && typeof args === "object" ? args : {}) as Record<string, unknown>;
+  const t = a.triage && typeof a.triage === "object" ? (a.triage as Record<string, unknown>) : null;
+  const team = a.team && typeof a.team === "object" ? (a.team as Record<string, unknown>) : null;
+  return {
+    title: str(a.title),
+    description: str(a.description),
+    steps: str(a.steps),
+    expected: str(a.expected),
+    triage: t ? { verdict: str(t.verdict), summary: str(t.summary), question: str(t.question) } : null,
+    team: team && typeof team.id === "number" ? { id: team.id, name: str(team.name), status: typeof team.status === "string" ? team.status : null } : null,
+  };
+}
+
+const NO_TEAM = "nessuna squadra per i bug attiva per questa App";
+
+/**
+ * Motivo per cui «Approva e affida alla squadra» è disattivato, o null. La voce porta id e nome della squadra al momento
+ * dell'accodamento, non il suo stato: se lo stato non è noto decide il server (409 col motivo) all'approvazione.
+ */
+export function bugApprovalBlocker(args: { team?: { status?: string | null } | null }): string | null {
+  const team = args.team;
+  if (!team) return NO_TEAM;
+  return team.status == null || team.status === "active" ? null : NO_TEAM;
+}

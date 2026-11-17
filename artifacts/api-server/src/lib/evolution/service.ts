@@ -1,5 +1,6 @@
-// Servizio del ciclo di evoluzione automatica (3a): impostazioni e consenso, avvio di un giro con i controlli della spec §5,
-// avanzamento del giro alla fine dell'analisi (approvazione delle voci scelte, issue), Ferma, Riprendi ed elimina.
+// Servizio del ciclo di evoluzione automatica (3a + 3c): impostazioni e consenso, avvio di un giro con i controlli della spec §5,
+// avanzamento del giro alla fine dell'analisi (approvazione delle voci scelte, issue), squadra del ciclo con il messaggio
+// «Implementa» e giro che segue il lavoro della squadra (spec §15.8), Ferma, Riprendi ed elimina.
 // Ogni passaggio di stato è un UPDATE condizionato: le funzioni sono idempotenti. Chi paga è sempre `activated_by`.
 // Nei log solo id, conteggi ed esiti, mai titoli, note o testo delle voci.
 
@@ -12,9 +13,14 @@ import {
   appsTable,
   evolutionCyclesTable,
   evolutionRoundsTable,
+  pendingActionsTable,
+  teamInstancesTable,
+  teamTasksTable,
   teamTemplatesTable,
+  teamWorksTable,
   type EvolutionCycle,
   type EvolutionRound,
+  type TeamWork,
 } from "@workspace/db";
 import { ModelChoiceError, MODEL_UNAVAILABLE, chooseCloudModel, type ModelChoice } from "../ai/choice";
 import { abortAnalysis } from "../architect/abort";
@@ -25,8 +31,21 @@ import { userHasInstallation } from "../github/installations";
 import { logger } from "../logger";
 import { isUniqueViolation } from "../pg-errors";
 import { createPlanIssues } from "../plan-issues/service";
-import { CONSENT_VERSION, consentHash, consentRequired, type ConsentSettings } from "./consent";
-import { EVOLUTION_MESSAGES, roundOutcome } from "./messages";
+import { itemTitle } from "../plan-chat/context";
+import { codeWrites } from "../teams/manifest";
+import { InstanceError, createInstance } from "../teams/instances";
+import { patchPlan } from "../teams/plan";
+import { TeamRuleError } from "../teams/rules";
+import { pumpTasks } from "../teams/task-runner";
+import { EVOLUTION_REF_TYPE } from "../teams/team-spend";
+import { TemplateError, getTemplateVersion } from "../teams/templates";
+import { activateInstance } from "../teams/turn-runner";
+import { enqueueTurnReason, notifyTurnQueued } from "../teams/turn-queue";
+import { getOpenWork } from "../teams/works";
+import { CONSENT_VERSION, consentHash, consentRequired, consentValid, settingsOf, type ConsentSettings } from "./consent";
+import { cycleEvent } from "./cycle-team";
+import { implementMessage } from "./implement";
+import { EVOLUTION_MESSAGES, awaitingReleaseOutcome, implementingOutcome, releasedOutcome, roundOutcome } from "./messages";
 import { selectRoundItems } from "./select";
 import { cycleBudgetBlock } from "./spend";
 import { FREQUENCY_MS, backoffMs, nextRoundAt, type EvolutionFrequency } from "./timing";
@@ -44,15 +63,24 @@ export class EvolutionError extends Error {
 
 export type CycleInput = ConsentSettings & {
   frequency: EvolutionFrequency;
-  stagingUrl: string | null;
+  /** Dalla 3c non decide più nulla: si accetta e si salva sempre `direct`. */
+  mergeMode?: "staging" | "direct";
+  stagingBranch?: string | null;
+  stagingUrl?: string | null;
   consent?: { accepted: true; appSlug: string; version: string; directMerge?: boolean };
 };
+
+export { consentValid } from "./consent";
 
 /** Errori di fila dopo cui il ciclo va in pausa. */
 export const MAX_CONSECUTIVE_ERRORS = 5;
 const OUTCOME_MAX = 300;
 const ROUNDS_LISTED = 20;
 const OPEN_STATUSES = ["analyzing", "approving", "implementing", "awaiting_release"] as const;
+/** Giri che seguono il lavoro della squadra del ciclo (3c): «Ferma» non li chiude, riprendono con «Riprendi». */
+const TEAM_STATUSES = ["implementing", "awaiting_release"] as const;
+/** Durata massima di un giro in `implementing` (spec §15.8). */
+export const IMPLEMENTING_MAX_HOURS = 72;
 
 // --- Lavoro in background (fine delle analisi), atteso dai test ---
 
@@ -105,42 +133,15 @@ async function hasOpenRound(cycleId: number): Promise<boolean> {
 
 // --- Consenso ---
 
-/** Impostazioni del ciclo coperte dal consenso; null senza modello dell'analisi (eliminato). */
-function settingsOf(cycle: EvolutionCycle): ConsentSettings | null {
-  if (cycle.analysisAiModelId === null) return null;
-  return {
-    mergeMode: cycle.mergeMode,
-    stagingBranch: cycle.stagingBranch,
-    teamTemplateId: cycle.teamTemplateId,
-    analysisAiModelId: cycle.analysisAiModelId,
-    itemsPerRound: cycle.itemsPerRound,
-    monthlyBudgetUsd: Number(cycle.monthlyBudgetUsd),
-  };
-}
-
-/**
- * Consenso valido: dato da un utente ancora presente, con l'impronta delle impostazioni attuali. L'impronta contiene
- * CONSENT_VERSION: una versione nuova del testo invalida i consensi precedenti.
- */
-export function consentValid(cycle: EvolutionCycle): boolean {
-  const settings = settingsOf(cycle);
-  return (
-    cycle.consentAt !== null &&
-    cycle.activatedBy !== null &&
-    cycle.consentVersion === CONSENT_VERSION &&
-    settings !== null &&
-    cycle.consentHash === consentHash(settings)
-  );
-}
-
 /** Due decimali, come la colonna `numeric(12,2)`: l'impronta si calcola sul valore che resta salvato. */
 function roundBudget(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
 function validateInput(input: CycleInput): ConsentSettings {
-  if (input.mergeMode === "staging") throw new EvolutionError(400, EVOLUTION_MESSAGES.modeUnavailable);
-  if (input.mergeMode !== "direct") throw new EvolutionError(400, EVOLUTION_MESSAGES.invalidSettings);
+  if (input.mergeMode !== undefined && input.mergeMode !== "direct" && input.mergeMode !== "staging") {
+    throw new EvolutionError(400, EVOLUTION_MESSAGES.invalidSettings);
+  }
   if (!Object.hasOwn(FREQUENCY_MS, input.frequency)) throw new EvolutionError(400, EVOLUTION_MESSAGES.invalidSettings);
   if (!Number.isInteger(input.itemsPerRound) || input.itemsPerRound < 1 || input.itemsPerRound > 10) {
     throw new EvolutionError(400, EVOLUTION_MESSAGES.invalidSettings);
@@ -150,10 +151,7 @@ function validateInput(input: CycleInput): ConsentSettings {
   if (input.teamTemplateId !== null && (!Number.isSafeInteger(input.teamTemplateId) || input.teamTemplateId <= 0)) {
     throw new EvolutionError(400, EVOLUTION_MESSAGES.templateUnavailable);
   }
-  // In `direct` niente branch né indirizzo di prova
   return {
-    mergeMode: "direct",
-    stagingBranch: null,
     teamTemplateId: input.teamTemplateId,
     analysisAiModelId: input.analysisAiModelId,
     itemsPerRound: input.itemsPerRound,
@@ -164,8 +162,8 @@ function validateInput(input: CycleInput): ConsentSettings {
 /**
  * Crea o aggiorna il ciclo dell'App (spec §9). Serve un consenso nuovo per un ciclo nuovo, per un consenso non più
  * valido, se salva un utente diverso da chi l'ha attivato o se cambia un'impostazione dell'impronta (salvo abbassare il
- * tetto: l'impronta si ricalcola col valore nuovo). In 3a si accetta solo `direct` e nulla si unisce, quindi `directMerge`
- * non è richiesto (lo chiede la 3b insieme alla squadra). Un ciclo nuovo nasce attivo e dovuto subito.
+ * tetto: l'impronta si ricalcola col valore nuovo). `merge_mode` non decide più nulla (3c): si salva `direct`. Il modello di
+ * squadra deve avere un ruolo che scrive codice. Un ciclo nuovo nasce attivo e dovuto subito; il tetto si copia sulla squadra.
  */
 export async function saveCycle(appId: number, userId: number, input: CycleInput): Promise<EvolutionCycle> {
   const settings = validateInput(input);
@@ -202,6 +200,9 @@ export async function saveCycle(appId: number, userId: number, input: CycleInput
       .where(and(eq(teamTemplatesTable.id, settings.teamTemplateId), eq(teamTemplatesTable.archived, false)))
       .limit(1);
     if (!template) throw new EvolutionError(400, EVOLUTION_MESSAGES.templateUnavailable);
+    const [row] = await db.select({ version: teamTemplatesTable.version }).from(teamTemplatesTable).where(eq(teamTemplatesTable.id, template.id)).limit(1);
+    const roles = await getTemplateVersion(template.id, row!.version);
+    if (!roles.some((r) => codeWrites(r.code ?? "none"))) throw new EvolutionError(400, EVOLUTION_MESSAGES.templateNoCode);
   }
 
   const now = new Date();
@@ -210,7 +211,7 @@ export async function saveCycle(appId: number, userId: number, input: CycleInput
     itemsPerRound: settings.itemsPerRound,
     analysisAiModelId: settings.analysisAiModelId,
     teamTemplateId: settings.teamTemplateId,
-    mergeMode: settings.mergeMode,
+    mergeMode: "direct" as const,
     stagingBranch: null,
     stagingUrl: null,
     monthlyBudgetUsd: settings.monthlyBudgetUsd.toFixed(2),
@@ -252,6 +253,13 @@ export async function saveCycle(appId: number, userId: number, input: CycleInput
     .set({ ...values, nextRoundAt: next })
     .where(eq(evolutionCyclesTable.id, existing.id))
     .returning();
+  // La squadra del ciclo usa il tetto del ciclo: la colonna della squadra si allinea per la console
+  if (row!.teamInstanceId !== null) {
+    await db
+      .update(teamInstancesTable)
+      .set({ monthlyBudgetUsd: values.monthlyBudgetUsd, updatedAt: now })
+      .where(and(eq(teamInstancesTable.id, row!.teamInstanceId), inArray(teamInstancesTable.status, ["draft", "active"])));
+  }
   logger.info({ appId, cycleId: existing.id, consent: input.consent !== undefined }, "Ciclo di evoluzione aggiornato");
   return row!;
 }
@@ -265,7 +273,11 @@ async function pauseCycle(cycleId: number, reason: string): Promise<void> {
     // Solo un ciclo ancora attivo: una lettura vecchia non sovrascrive «fermato dall'utente» né rimette in pausa un ciclo appena ripreso
     .where(and(eq(evolutionCyclesTable.id, cycleId), eq(evolutionCyclesTable.status, "active")))
     .returning({ id: evolutionCyclesTable.id });
-  if (rows.length > 0) logger.warn({ cycleId, reason }, "Ciclo di evoluzione in pausa");
+  if (rows.length > 0) {
+    logger.warn({ cycleId, reason }, "Ciclo di evoluzione in pausa");
+    const [cycle] = await db.select({ teamInstanceId: evolutionCyclesTable.teamInstanceId }).from(evolutionCyclesTable).where(eq(evolutionCyclesTable.id, cycleId)).limit(1);
+    if (cycle) await cycleEvent(cycle, `Ciclo di evoluzione in pausa: ${reason}`);
+  }
 }
 
 async function pauseAndThrow(cycleId: number, reason: string): Promise<never> {
@@ -318,6 +330,8 @@ export async function startRound(cycleId: number, opts: { manual?: boolean } = {
   if (!cycle) throw new EvolutionError(404, EVOLUTION_MESSAGES.notFound);
   if (cycle.status !== "active") throw new EvolutionError(409, EVOLUTION_MESSAGES.paused);
   if (await hasOpenRound(cycleId)) throw new EvolutionError(409, EVOLUTION_MESSAGES.roundRunning);
+  // Nessun giro nuovo finché il lavoro della squadra del ciclo non è chiuso (transitorio: niente pausa né errore)
+  if (cycle.teamInstanceId !== null && (await getOpenWork(cycle.teamInstanceId))) throw new EvolutionError(409, EVOLUTION_MESSAGES.workOpen);
 
   // 1. Consenso (il modello eliminato si segnala al punto 3)
   if (cycle.analysisAiModelId !== null && !consentValid(cycle)) await pauseAndThrow(cycleId, EVOLUTION_MESSAGES.consentRenew);
@@ -483,7 +497,7 @@ export async function advanceRound(roundId: number): Promise<void> {
           .set({ status: "paused", pausedReason: EVOLUTION_MESSAGES.consentRenew, updatedAt: now })
           .where(eq(evolutionCyclesTable.id, cycle.id));
       }
-      return closed ? { ids: [] as number[], cycle, blocked } : null;
+      return closed ? { ids: [] as number[], cycle, blocked, withTeam: false } : null;
     }
     const [approving] = await tx
       .update(evolutionRoundsTable)
@@ -505,20 +519,22 @@ export async function advanceRound(roundId: number): Promise<void> {
     // Nell'ordine della scelta
     const approvedSet = new Set(approved.map((a) => a.id));
     const ids = chosen.filter((id) => approvedSet.has(id));
+    // 3c: con un modello di squadra le voci vanno alla squadra del ciclo e il giro segue il suo lavoro
+    const withTeam = cycle.teamTemplateId !== null && ids.length > 0;
     await tx
       .update(evolutionRoundsTable)
       .set({
-        status: "done",
+        status: withTeam ? "implementing" : "done",
         itemIds: ids,
-        outcome: ids.length > 0 ? roundOutcome(ids.length) : EVOLUTION_MESSAGES.noNewItems,
-        finishedAt: now,
+        outcome: ids.length === 0 ? EVOLUTION_MESSAGES.noNewItems : withTeam ? implementingOutcome(ids.length) : roundOutcome(ids.length),
+        finishedAt: withTeam ? null : now,
       })
       .where(and(eq(evolutionRoundsTable.id, roundId), eq(evolutionRoundsTable.status, "approving")));
     await tx
       .update(evolutionCyclesTable)
       .set({ consecutiveErrors: 0, lastError: null, nextAttemptAt: null, updatedAt: now })
       .where(eq(evolutionCyclesTable.id, approving.cycleId));
-    return { ids, cycle, blocked: null };
+    return { ids, cycle, blocked: null, withTeam };
   });
   if (!result) return;
   if (result.blocked !== null) {
@@ -534,6 +550,283 @@ export async function advanceRound(roundId: number): Promise<void> {
     } catch (err) {
       // Le voci restano approvate senza issue
       logger.warn({ roundId, errName: err instanceof Error ? err.name : "unknown" }, "Issue delle voci del giro non create");
+    }
+  }
+  if (result.withTeam) await startImplementation(roundId);
+}
+
+// --- Squadra del ciclo e implementazione (3c) ---
+
+type TeamResult = { id: number; activate: boolean };
+
+/**
+ * Squadra del ciclo: quella salvata se non è chiusa e viene dallo stesso modello (passata a chi paga se è cambiato, tetto
+ * allineato), altrimenti una nuova in bozza dal modello con `ref` `{type: "evoluzione"}`. `activate` = va attivata dopo aver
+ * accodato il messaggio. Errori di regola (ruoli non più validi, modello archiviato) risalgono al chiamante.
+ */
+async function ensureCycleTeam(cycle: EvolutionCycle, app: { id: number; name: string }): Promise<TeamResult> {
+  const payer = cycle.activatedBy!;
+  const budget = Number(cycle.monthlyBudgetUsd).toFixed(2);
+  if (cycle.teamInstanceId !== null) {
+    const [team] = await db.select().from(teamInstancesTable).where(eq(teamInstancesTable.id, cycle.teamInstanceId)).limit(1);
+    if (team && team.status !== "closed" && team.templateId === cycle.teamTemplateId) {
+      await db
+        .update(teamInstancesTable)
+        .set({ monthlyBudgetUsd: budget, ...(team.status === "active" && team.activatedBy !== payer ? { activatedBy: payer } : {}), updatedAt: new Date() })
+        .where(eq(teamInstancesTable.id, team.id));
+      return { id: team.id, activate: team.status === "draft" };
+    }
+  }
+  const title = `Evoluzione di ${app.name}`.slice(0, 200);
+  const view = await createInstance(payer, {
+    templateId: cycle.teamTemplateId!,
+    name: title,
+    ref: { appId: app.id, type: EVOLUTION_REF_TYPE, id: String(app.id), title },
+  });
+  await db.update(teamInstancesTable).set({ monthlyBudgetUsd: budget }).where(eq(teamInstancesTable.id, view.id));
+  await db.update(evolutionCyclesTable).set({ teamInstanceId: view.id, updatedAt: new Date() }).where(eq(evolutionCyclesTable.id, cycle.id));
+  logger.info({ cycleId: cycle.id, instanceId: view.id }, "Squadra del ciclo di evoluzione creata");
+  return { id: view.id, activate: true };
+}
+
+function ruleMessage(err: unknown): string | null {
+  if (err instanceof TeamRuleError || err instanceof TemplateError || err instanceof InstanceError) return err.message;
+  return null;
+}
+
+/**
+ * Affida le voci di un giro `implementing` alla squadra del ciclo: squadra (creata o riusata), poi in una transazione il giro
+ * registra squadra e istante del messaggio (orologio del DB, una volta sola) e il capo riceve «Implementa» con le voci;
+ * infine la squadra nuova si attiva (il messaggio si aggiunge al turno di attivazione). Con il ciclo in pausa non fa nulla
+ * (riprova il controllo periodico). Un errore di regola nella squadra chiude il giro `blocked` e mette in pausa il ciclo.
+ */
+export async function startImplementation(roundId: number): Promise<void> {
+  const [round] = await db.select().from(evolutionRoundsTable).where(eq(evolutionRoundsTable.id, roundId)).limit(1);
+  if (!round || round.status !== "implementing" || round.implementationStartedAt !== null) return;
+  const [cycle] = await db.select().from(evolutionCyclesTable).where(eq(evolutionCyclesTable.id, round.cycleId)).limit(1);
+  if (!cycle || cycle.status !== "active" || cycle.activatedBy === null || cycle.teamTemplateId === null) return;
+  const [app] = await db.select({ id: appsTable.id, name: appsTable.name }).from(appsTable).where(eq(appsTable.id, cycle.appId)).limit(1);
+  if (!app) return;
+
+  let team: TeamResult;
+  try {
+    team = await ensureCycleTeam(cycle, app);
+  } catch (err) {
+    const msg = ruleMessage(err);
+    if (msg === null) throw err;
+    const [closed] = await db
+      .update(evolutionRoundsTable)
+      .set({ status: "blocked", outcome: truncate(msg), finishedAt: new Date() })
+      .where(and(eq(evolutionRoundsTable.id, roundId), eq(evolutionRoundsTable.status, "implementing")))
+      .returning({ id: evolutionRoundsTable.id });
+    if (closed) await pauseCycle(cycle.id, truncate(msg));
+    logger.warn({ cycleId: cycle.id, roundId }, "Squadra del ciclo non disponibile");
+    return;
+  }
+
+  const items = round.itemIds.length === 0
+    ? []
+    : await db
+        .select({ id: analysisItemsTable.id, chapter: analysisItemsTable.chapter, payload: analysisItemsTable.payload, issueNumber: analysisItemsTable.issueNumber })
+        .from(analysisItemsTable)
+        .where(inArray(analysisItemsTable.id, round.itemIds));
+  const byId = new Map(items.map((i) => [i.id, i]));
+  const ordered = round.itemIds
+    .map((id) => byId.get(id))
+    .filter((i): i is NonNullable<typeof i> => i !== undefined)
+    .map((i) => ({ id: i.id, title: itemTitle(i.chapter as Parameters<typeof itemTitle>[0], i.payload), issueNumber: i.issueNumber }));
+  const text = implementMessage(app.name, ordered, round.number);
+
+  const sent = await db.transaction(async (tx) => {
+    const [updated] = await tx
+      .update(evolutionRoundsTable)
+      .set({ teamInstanceId: team.id, implementationStartedAt: sql`now()` })
+      .where(and(eq(evolutionRoundsTable.id, roundId), eq(evolutionRoundsTable.status, "implementing"), sql`${evolutionRoundsTable.implementationStartedAt} is null`))
+      .returning({ id: evolutionRoundsTable.id });
+    if (!updated) return false;
+    await enqueueTurnReason(team.id, { type: "request", text }, tx);
+    await cycleEvent({ teamInstanceId: team.id }, `Giro ${round.number} del ciclo di evoluzione: ${implementingOutcome(ordered.length)}.`, tx);
+    return true;
+  });
+  if (!sent) return;
+  if (team.activate) {
+    try {
+      await activateInstance(cycle.activatedBy, team.id);
+    } catch (err) {
+      // Già attiva (corsa con un altro processo): il turno parte comunque
+      logger.warn({ cycleId: cycle.id, instanceId: team.id, errName: err instanceof Error ? err.name : "unknown" }, "Attivazione della squadra del ciclo non riuscita");
+      notifyTurnQueued(team.id);
+    }
+  } else {
+    notifyTurnQueued(team.id);
+  }
+  logger.info({ cycleId: cycle.id, roundId, instanceId: team.id, items: ordered.length }, "Voci del giro affidate alla squadra del ciclo");
+}
+
+async function closeTeamRound(round: EvolutionRound, status: "done" | "blocked", outcome: string): Promise<boolean> {
+  const [closed] = await db
+    .update(evolutionRoundsTable)
+    .set({ status, outcome: truncate(outcome), finishedAt: new Date() })
+    .where(and(eq(evolutionRoundsTable.id, round.id), inArray(evolutionRoundsTable.status, [...TEAM_STATUSES])))
+    .returning({ id: evolutionRoundsTable.id });
+  if (!closed) return false;
+  const [cycle] = await db.select().from(evolutionCyclesTable).where(eq(evolutionCyclesTable.id, round.cycleId)).limit(1);
+  if (cycle) {
+    if (status === "done") {
+      await db
+        .update(evolutionCyclesTable)
+        .set({ consecutiveErrors: 0, lastError: null, nextAttemptAt: null, updatedAt: new Date() })
+        .where(eq(evolutionCyclesTable.id, cycle.id));
+    }
+    await cycleEvent(cycle, `Giro ${round.number} del ciclo di evoluzione chiuso: ${outcome}.`);
+  }
+  logger.info({ cycleId: round.cycleId, roundId: round.id, status }, "Giro del ciclo di evoluzione chiuso");
+  return true;
+}
+
+/** Giro `implementing` da oltre 72 ore (orologio del DB) con il ciclo attivo → `blocked` «giro scaduto». */
+async function expireIfStale(round: EvolutionRound): Promise<void> {
+  const [stale] = await db
+    .select({ id: evolutionRoundsTable.id })
+    .from(evolutionRoundsTable)
+    .innerJoin(evolutionCyclesTable, eq(evolutionCyclesTable.id, evolutionRoundsTable.cycleId))
+    .where(
+      and(
+        eq(evolutionRoundsTable.id, round.id),
+        eq(evolutionRoundsTable.status, "implementing"),
+        eq(evolutionCyclesTable.status, "active"),
+        sql`${evolutionRoundsTable.implementationStartedAt} < now() - make_interval(hours => ${IMPLEMENTING_MAX_HOURS})`,
+      ),
+    )
+    .limit(1);
+  if (stale) await closeTeamRound(round, "blocked", EVOLUTION_MESSAGES.roundExpired);
+}
+
+/**
+ * Lavoro del giro: quello già legato, altrimenti il primo lavoro della squadra creato dopo il messaggio «Implementa» e non
+ * seguito da un altro giro.
+ */
+async function roundWork(round: EvolutionRound): Promise<TeamWork | null> {
+  if (round.workId !== null) {
+    const [work] = await db.select().from(teamWorksTable).where(eq(teamWorksTable.id, round.workId)).limit(1);
+    return work ?? null;
+  }
+  if (round.teamInstanceId === null || round.implementationStartedAt === null) return null;
+  const [work] = await db
+    .select()
+    .from(teamWorksTable)
+    // Confronto tutto nel DB (stesso orologio, nessuna data JavaScript come parametro di un `timestamp` senza fuso)
+    .where(
+      and(
+        eq(teamWorksTable.instanceId, round.teamInstanceId),
+        sql`${teamWorksTable.createdAt} >= (select r.implementation_started_at from evolution_rounds r where r.id = ${round.id})`,
+        // Un lavoro già seguito da un altro giro non si riprende
+        sql`not exists (select 1 from evolution_rounds r where r.work_id = ${teamWorksTable.id})`,
+      ),
+    )
+    .orderBy(teamWorksTable.number)
+    .limit(1);
+  if (!work) return null;
+  await db
+    .update(evolutionRoundsTable)
+    .set({ workId: work.id })
+    .where(and(eq(evolutionRoundsTable.id, round.id), sql`${evolutionRoundsTable.workId} is null`));
+  return work;
+}
+
+/**
+ * Fa seguire al giro il lavoro della squadra del ciclo (spec §15.8), con UPDATE condizionati: lavoro in prova con la voce
+ * «Porta in produzione» → `awaiting_release`; in produzione → `done`; abbandonato → `blocked` «nessuna voce completata»;
+ * di nuovo aperto dopo la prova → `implementing` (timer ripartito), con la nota se l'utente ha rifiutato la voce. Un giro
+ * `implementing` senza messaggio al capo lo riprova; senza lavoro o con il lavoro aperto scade dopo 72 ore.
+ */
+export async function syncRound(roundId: number): Promise<void> {
+  const [round] = await db.select().from(evolutionRoundsTable).where(eq(evolutionRoundsTable.id, roundId)).limit(1);
+  if (!round || (round.status !== "implementing" && round.status !== "awaiting_release")) return;
+  if (round.status === "implementing" && round.implementationStartedAt === null) {
+    await startImplementation(round.id);
+    return;
+  }
+  const work = await roundWork(round);
+  if (!work) {
+    await expireIfStale(round);
+    return;
+  }
+  switch (work.status) {
+    case "open": {
+      if (round.status === "implementing") {
+        await expireIfStale(round);
+        return;
+      }
+      // Voce rifiutata dall'utente (con la sua nota) o rilascio non riuscito: il lavoro riprende
+      const [item] =
+        round.pendingActionId === null
+          ? []
+          : await db
+              .select({ status: pendingActionsTable.status, note: pendingActionsTable.decisionNote, decidedBy: pendingActionsTable.decidedBy })
+              .from(pendingActionsTable)
+              .where(eq(pendingActionsTable.id, round.pendingActionId))
+              .limit(1);
+      const note = item?.status === "rejected" && item.decidedBy !== null && item.note?.trim() ? item.note.trim().slice(0, 500) : null;
+      const [back] = await db
+        .update(evolutionRoundsTable)
+        .set({
+          status: "implementing",
+          pendingActionId: null,
+          implementationStartedAt: sql`now()`,
+          outcome: truncate(item?.status === "rejected" ? "Porta in produzione rifiutata: il lavoro riprende" : "Porta in produzione non riuscita: il lavoro riprende"),
+          ...(note !== null ? { rejectionNote: note } : {}),
+        })
+        .where(and(eq(evolutionRoundsTable.id, round.id), eq(evolutionRoundsTable.status, "awaiting_release")))
+        .returning({ id: evolutionRoundsTable.id });
+      if (back) logger.info({ cycleId: round.cycleId, roundId: round.id, note: note !== null }, "Giro del ciclo di nuovo in implementazione");
+      return;
+    }
+    case "awaiting_release":
+    case "releasing": {
+      if (work.pendingActionId === null) return;
+      if (round.status === "awaiting_release" && round.pendingActionId === work.pendingActionId) return;
+      const [moved] = await db
+        .update(evolutionRoundsTable)
+        .set({ status: "awaiting_release", pendingActionId: work.pendingActionId, outcome: awaitingReleaseOutcome(work.number) })
+        .where(and(eq(evolutionRoundsTable.id, round.id), inArray(evolutionRoundsTable.status, [...TEAM_STATUSES])))
+        .returning({ id: evolutionRoundsTable.id });
+      if (moved && round.status === "implementing") {
+        const [cycle] = await db.select().from(evolutionCyclesTable).where(eq(evolutionCyclesTable.id, round.cycleId)).limit(1);
+        if (cycle) await cycleEvent(cycle, `Giro ${round.number} del ciclo di evoluzione: ${awaitingReleaseOutcome(work.number)}.`);
+      }
+      return;
+    }
+    case "released":
+      await closeTeamRound(round, "done", releasedOutcome(work.number));
+      return;
+    case "abandoned":
+      await closeTeamRound(round, "blocked", EVOLUTION_MESSAGES.nothingCompleted);
+      return;
+  }
+}
+
+/** Cambio di stato di un lavoro della squadra: fa avanzare i giri aperti che la seguono. */
+export async function syncTeamRounds(instanceId: number): Promise<void> {
+  const rows = await db
+    .select({ id: evolutionRoundsTable.id })
+    .from(evolutionRoundsTable)
+    .where(and(eq(evolutionRoundsTable.teamInstanceId, instanceId), inArray(evolutionRoundsTable.status, [...TEAM_STATUSES])));
+  for (const r of rows) await syncRound(r.id);
+}
+
+/** Controllo periodico dei giri che seguono la squadra (al più `limit`). */
+export async function syncOpenTeamRounds(limit = 20): Promise<void> {
+  const rows = await db
+    .select({ id: evolutionRoundsTable.id })
+    .from(evolutionRoundsTable)
+    .where(inArray(evolutionRoundsTable.status, [...TEAM_STATUSES]))
+    .limit(limit);
+  for (const r of rows) {
+    try {
+      await syncRound(r.id);
+    } catch (err) {
+      logger.error({ roundId: r.id, errName: err instanceof Error ? err.name : "unknown" }, "Avanzamento del giro con la squadra non riuscito");
     }
   }
 }
@@ -577,12 +870,15 @@ export async function failInterruptedRounds(): Promise<number> {
 // --- Ferma, Riprendi, elimina ---
 
 /**
- * Ferma il ciclo (spec §8): pausa «fermato dall'utente», giro aperto `stopped`, analisi del giro fermata (in questo
- * processo col segnale, altrimenti chiusa nel DB se ancora in coda o in corso).
+ * Ferma il ciclo (spec §8 e §15.8): pausa «fermato dall'utente»; giro `analyzing|approving` → `stopped` con l'analisi fermata
+ * (in questo processo col segnale, altrimenti chiusa nel DB se ancora in coda o in corso). Un giro che segue la squadra
+ * (`implementing|awaiting_release`) resta aperto e riprende con «Riprendi». Squadra del ciclo: compiti in coda e in attesa del
+ * nodo annullati (nel PLAN `failed` «ciclo di evoluzione fermato»); turni, compiti e merge automatici restano fermi finché il
+ * ciclo è in pausa (`cyclePausedForTeam`). La voce «Porta in produzione» aperta resta decidibile.
  */
 export async function stopCycle(appId: number): Promise<EvolutionCycle> {
   const cycle = await requireCycle(appId);
-  const { updated, analysisIds } = await db.transaction(async (tx) => {
+  const { updated, analysisIds, cancelled } = await db.transaction(async (tx) => {
     const now = new Date();
     const [row] = await tx
       .update(evolutionCyclesTable)
@@ -592,9 +888,22 @@ export async function stopCycle(appId: number): Promise<EvolutionCycle> {
     const stopped = await tx
       .update(evolutionRoundsTable)
       .set({ status: "stopped", outcome: EVOLUTION_MESSAGES.stoppedByUser, finishedAt: now })
-      .where(and(eq(evolutionRoundsTable.cycleId, cycle.id), inArray(evolutionRoundsTable.status, [...OPEN_STATUSES])))
+      .where(and(eq(evolutionRoundsTable.cycleId, cycle.id), inArray(evolutionRoundsTable.status, ["analyzing", "approving"])))
       .returning({ analysisId: evolutionRoundsTable.analysisId });
-    return { updated: row!, analysisIds: stopped.map((s) => s.analysisId).filter((id): id is number => id !== null) };
+    const tasks =
+      row!.teamInstanceId === null
+        ? []
+        : await tx
+            .update(teamTasksTable)
+            .set({ status: "cancelled", outcome: EVOLUTION_MESSAGES.cyclePaused, finishedAt: now })
+            .where(and(eq(teamTasksTable.instanceId, row!.teamInstanceId), inArray(teamTasksTable.status, ["queued", "waiting_node"])))
+            .returning({ planTaskId: teamTasksTable.planTaskId });
+    if (row!.teamInstanceId !== null) await cycleEvent(row!, `Ciclo di evoluzione in pausa: ${EVOLUTION_MESSAGES.stoppedByUser}`, tx);
+    return {
+      updated: row!,
+      analysisIds: stopped.map((s) => s.analysisId).filter((id): id is number => id !== null),
+      cancelled: tasks.map((t) => t.planTaskId),
+    };
   });
   for (const id of analysisIds) {
     if (abortAnalysis(id)) continue;
@@ -603,13 +912,20 @@ export async function stopCycle(appId: number): Promise<EvolutionCycle> {
       .set({ status: "failed", error: EVOLUTION_MESSAGES.analysisStopped, finishedAt: new Date() })
       .where(and(eq(analysesTable.id, id), inArray(analysesTable.status, ["queued", "running"])));
   }
-  logger.info({ cycleId: cycle.id, rounds: analysisIds.length }, "Ciclo di evoluzione fermato");
+  // Dopo il commit, come nella chiusura della squadra: i compiti annullati non restano «in corso» nel PLAN
+  if (updated.teamInstanceId !== null && cancelled.length > 0) {
+    await patchPlan(updated.teamInstanceId, {
+      tasks: cancelled.map((id) => ({ id, status: "failed" as const, outcome: EVOLUTION_MESSAGES.cyclePaused })),
+    });
+  }
+  logger.info({ cycleId: cycle.id, rounds: analysisIds.length, tasks: cancelled.length }, "Ciclo di evoluzione fermato");
   return updated;
 }
 
 /**
  * Riprende il ciclo: serve un consenso valido dato da chi riprende (chi paga resta chi ha acconsentito), altrimenti
- * «consenso da rinnovare». Errori azzerati e giro dovuto subito.
+ * «consenso da rinnovare». Errori azzerati e giro dovuto subito. Con la squadra del ciclo attiva: il timer del giro che la
+ * segue riparte, il capo riceve «riprendi il lavoro» (con i motivi accumulati nel turno in coda) e ripartono i compiti in coda.
  */
 export async function resumeCycle(appId: number, userId: number): Promise<EvolutionCycle> {
   const cycle = await requireCycle(appId);
@@ -628,14 +944,42 @@ export async function resumeCycle(appId: number, userId: number): Promise<Evolut
     })
     .where(eq(evolutionCyclesTable.id, cycle.id))
     .returning();
+  if (row!.teamInstanceId !== null) {
+    const teamId = row!.teamInstanceId;
+    await db
+      .update(evolutionRoundsTable)
+      .set({ implementationStartedAt: sql`now()` })
+      .where(
+        and(
+          eq(evolutionRoundsTable.cycleId, cycle.id),
+          eq(evolutionRoundsTable.status, "implementing"),
+          sql`${evolutionRoundsTable.implementationStartedAt} is not null`,
+        ),
+      );
+    const [team] = await db.select({ status: teamInstancesTable.status }).from(teamInstancesTable).where(eq(teamInstancesTable.id, teamId)).limit(1);
+    if (team?.status === "active") {
+      await enqueueTurnReason(teamId, { type: "request", text: EVOLUTION_MESSAGES.resumeRequest });
+      void pumpTasks(teamId).catch((err: unknown) =>
+        logger.error({ instanceId: teamId, errName: err instanceof Error ? err.name : "unknown" }, "Ripresa dei compiti della squadra del ciclo non riuscita"),
+      );
+    }
+  }
   logger.info({ cycleId: cycle.id }, "Ciclo di evoluzione ripreso");
   return row!;
 }
 
-/** Elimina il ciclo e i suoi giri; un ciclo attivo o con un giro aperto va prima fermato. */
+/**
+ * Elimina il ciclo e i suoi giri; un ciclo attivo o con un giro `analyzing|approving` va prima fermato. La squadra del ciclo
+ * resta (si chiude a mano) e, senza ciclo, torna al suo tetto di squadra.
+ */
 export async function deleteCycle(appId: number): Promise<void> {
   const cycle = await requireCycle(appId);
-  if (cycle.status === "active" || (await hasOpenRound(cycle.id))) throw new EvolutionError(409, EVOLUTION_MESSAGES.stopBeforeDelete);
+  const [analyzing] = await db
+    .select({ id: evolutionRoundsTable.id })
+    .from(evolutionRoundsTable)
+    .where(and(eq(evolutionRoundsTable.cycleId, cycle.id), inArray(evolutionRoundsTable.status, ["analyzing", "approving"])))
+    .limit(1);
+  if (cycle.status === "active" || analyzing) throw new EvolutionError(409, EVOLUTION_MESSAGES.stopBeforeDelete);
   await db
     .delete(evolutionCyclesTable)
     .where(and(eq(evolutionCyclesTable.id, cycle.id), eq(evolutionCyclesTable.status, "paused")));

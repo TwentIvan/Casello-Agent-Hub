@@ -14,6 +14,10 @@ import {
   evolutionCyclesTable,
   evolutionRoundsTable,
   githubInstallationsTable,
+  pendingActionsTable,
+  teamInstancesTable,
+  teamTurnsTable,
+  teamWorksTable,
   usersTable,
 } from "@workspace/db";
 import { startFakeGithub, type FakeGithub } from "./fake-github";
@@ -27,11 +31,19 @@ import { CONSENT_VERSION } from "../src/lib/evolution/consent";
 import { EVOLUTION_MESSAGES, roundOutcome } from "../src/lib/evolution/messages";
 import { handleAnalysisFinished, trackBackground, waitEvolutionIdleForTests } from "../src/lib/evolution/service";
 import { runEvolutionTick } from "../src/lib/evolution/scheduler";
+import { syncTeamRounds } from "../src/lib/evolution/service";
+import { enqueueReleaseItem } from "../src/lib/actions/queue";
+import { pumpTurnInBackground, settleTurnExecutions } from "../src/lib/teams/turn-runner";
+import { setOnTurnQueued } from "../src/lib/teams/turn-queue";
+import { notifyWorkChanged, setOnWorkChanged } from "../src/lib/teams/work-hooks";
 
 // Prova di flusso del ciclo di evoluzione automatica (3a): route vere con il login di sviluppo, analisi vera in modalità
 // `evolution` con il finto provider (consegna completion ed evolution), finto GitHub per il codice e le issue, PGlite.
 // Attivazione con consenso → giro dal tick → 3 voci approvate dal ciclo con le loro issue → nessun giro prima della
 // frequenza → «Esegui ora» con la voce rifiutata nel prompt → «Ferma» durante l'analisi.
+// 3c: con un modello di squadra il giro crea la squadra del ciclo, il capo vero (finto provider) riceve «Implementa» e
+// propone il PLAN, che il ciclo approva da solo; il giro segue il lavoro fino a «Porta in produzione», rifiutata con una nota
+// dalla route vera, e la nota entra nell'analisi del giro dopo.
 
 const REPO = "dev/botcave";
 const INST = 11;
@@ -94,8 +106,24 @@ const userPrompt = (b: Body) => String(b.messages.find((m) => m.role === "user")
 const phaseOf = (b: Body) => (/FASE 5/.test(userPrompt(b)) ? "completion" : /FASE 6/.test(userPrompt(b)) ? "evolution" : "altro");
 const chatBodies = () => fake.requests.filter((r) => r.path.endsWith("/chat/completions")).map((r) => r.body as Body);
 
-/** Il modello consegna subito l'esito della fase. */
+type LeadBody = Body & { tools?: { function: { name: string } }[] };
+const isLeadTurn = (b: LeadBody) => (b.tools ?? []).some((t) => t.function.name === "proponi_piano");
+const leadBodies = () => fake.requests.filter((r) => r.path.endsWith("/chat/completions")).map((r) => r.body as LeadBody).filter(isLeadTurn);
+
+/** Il capo: al messaggio «Implementa» propone un PLAN con un compito per lo sviluppatore, poi chiude il turno. */
+function leadReply(b: LeadBody): FakeChatReply {
+  const sawTool = b.messages.some((m) => m.role === "tool");
+  const implement = b.messages.some((m) => m.role === "user" && String(m.content ?? "").includes("Implementa il piano di sviluppo"));
+  if (!sawTool && implement) {
+    const args = { objective: "Voci del giro", constraints: [], openPoints: [], tasks: [{ title: "Classifica", roleKey: "dev", instructions: "Implementa la classifica" }] };
+    return { content: null, toolCalls: [{ id: "lead_1", name: "proponi_piano", arguments: JSON.stringify(args) }], usage: { prompt_tokens: 500, completion_tokens: 50 } };
+  }
+  return { content: "Fatto.", toolCalls: [], usage: { prompt_tokens: 300, completion_tokens: 20 } };
+}
+
+/** Il modello consegna subito l'esito della fase (o risponde come capo della squadra del ciclo). */
 function deliver(raw: unknown): FakeChatReply {
+  if (isLeadTurn(raw as LeadBody)) return leadReply(raw as LeadBody);
   const phase = phaseOf(raw as Body);
   const result = phase === "completion" ? RESULTS.completion : phase === "evolution" ? RESULTS.evolution : { items: [] };
   return {
@@ -154,12 +182,16 @@ beforeAll(async () => {
   await ensureProviderRegistry();
   server = http.createServer(app);
   base = `http://127.0.0.1:${await listen(server)}`;
-  // Come lo schedulatore: la fine di ogni analisi fa avanzare il suo giro
+  // Come lo schedulatore: la fine di ogni analisi e ogni cambio di stato di un lavoro fanno avanzare il giro; i turni del capo partono
   onAnalysisFinished((analysisId) => trackBackground(handleAnalysisFinished(analysisId)));
+  setOnWorkChanged((instanceId) => void trackBackground(syncTeamRounds(instanceId)));
+  setOnTurnQueued(pumpTurnInBackground);
 });
 
 afterAll(async () => {
   clearAnalysisFinishedListeners();
+  setOnWorkChanged(null);
+  setOnTurnQueued(() => {});
   server.closeAllConnections();
   await new Promise<void>((r) => server.close(() => r()));
   await gh.close();
@@ -211,6 +243,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  await settleTurnExecutions();
   await waitEvolutionIdleForTests();
   await fake.close();
 });
@@ -408,4 +441,94 @@ describe("ciclo di evoluzione automatica: flusso completo", () => {
     expect([resume.status, resume.json.error]).toEqual([400, EVOLUTION_MESSAGES.consentRenew]);
     expect(chatBodies()).toHaveLength(0);
   });
+  it("3c: squadra del ciclo, PLAN approvato dal ciclo, giro che segue il lavoro, rifiuto con nota nell'analisi dopo", async () => {
+    // Modello di squadra: capo cloud e sviluppatore che scrive codice
+    const tpl = await api("POST", "/team-templates", {
+      name: "Sviluppo del ciclo",
+      roles: [
+        { key: "capo", name: "Capo", task: "Coordina", isLead: true, runsOn: "cloud", aiModelId: modelId, tools: [], code: "none", skills: [] },
+        { key: "dev", name: "Sviluppatore", task: "Scrive codice", isLead: false, runsOn: "cloud", aiModelId: modelId, tools: [], code: "write", skills: [] },
+      ],
+    });
+    expect([tpl.status, tpl.json]).toEqual([201, expect.anything()]);
+    const put = await api("PUT", `/apps/${appId}/evolution`, {
+      frequency: "weekly",
+      itemsPerRound: 2,
+      analysisAiModelId: modelId,
+      teamTemplateId: tpl.json.id,
+      monthlyBudgetUsd: 10,
+      consent: { accepted: true, appSlug: "botcave", version: CONSENT_VERSION },
+    });
+    expect(put.status).toBe(200);
+    expect(put.json).toMatchObject({ teamTemplateId: tpl.json.id, teamInstanceId: null, mergeMode: "direct" });
+
+    // 1. Giro: analisi, 2 voci approvate, squadra creata e attivata, il capo riceve «Implementa» e propone il PLAN
+    expect(await runEvolutionTick()).toBe(1);
+    await waitFor(async () => (await rounds())[0]?.status === "implementing", "giro in implementazione");
+    await waitEvolutionIdleForTests();
+    await waitFor(async () => leadBodies().length >= 2, "turno del capo");
+    await settleTurnExecutions();
+    const view = (await api("GET", `/apps/${appId}/evolution`)).json;
+    expect(view).toMatchObject({ teamName: "Evoluzione di Botcave", openRound: { number: 1, status: "implementing" } });
+    const teamId: number = view.teamInstanceId;
+    const [team] = await db.select().from(teamInstancesTable).where(eq(teamInstancesTable.id, teamId));
+    expect(team).toMatchObject({ status: "active", activatedBy: devId, refType: "evoluzione", monthlyBudgetUsd: "10.00" });
+    const firstLead = leadBodies()[0]!;
+    const implementText = firstLead.messages.map((m) => String(m.content ?? "")).join("\n");
+    for (const id of view.openRound.itemIds as number[]) expect(implementText).toContain(`#${id} `);
+
+    // Il PLAN proposto dal capo è approvato dal ciclo, non dall'utente
+    const planItems = await db.select().from(pendingActionsTable).where(eq(pendingActionsTable.teamInstanceId, teamId));
+    expect(planItems).toHaveLength(1);
+    expect(planItems[0]).toMatchObject({ kind: "plan", status: "done", decidedByCycle: true, decidedBy: devId });
+    expect((await api("GET", `/team-instances/${teamId}/plan`)).json).toMatchObject({ status: "approved" });
+    const bulletin = (await api("GET", `/team-instances/${teamId}/events`)).json as { type: string }[];
+    expect(bulletin.some((e) => e.type === "giro_evoluzione")).toBe(true);
+
+    // 2. Il lavoro della squadra arriva in prova con la voce «Porta in produzione»: il giro la aspetta
+    const [work] = await db
+      .insert(teamWorksTable)
+      .values({ instanceId: teamId, number: 1, status: "awaiting_release", repo: REPO, branch: `botcave/lavoro-${teamId}-1`, baseBranch: "main", baseSha: "a".repeat(40) })
+      .returning();
+    const queued = await enqueueReleaseItem({ userId: devId, instanceId: teamId, recipient: REPO, summary: "Porta in produzione il lavoro 1 di Evoluzione di Botcave", detail: { workId: work!.id } });
+    if (!queued.ok) throw new Error(queued.message);
+    const [release] = await db.select().from(pendingActionsTable).where(and(eq(pendingActionsTable.userId, devId), eq(pendingActionsTable.number, queued.number)));
+    await db.update(teamWorksTable).set({ pendingActionId: release!.id }).where(eq(teamWorksTable.id, work!.id));
+    notifyWorkChanged(teamId);
+    await waitEvolutionIdleForTests();
+    expect((await api("GET", `/apps/${appId}/evolution`)).json.openRound).toMatchObject({ status: "awaiting_release", releaseActionNumber: queued.number, workId: work!.id });
+
+    // 3. L'utente rifiuta con una nota dalla route vera: lavoro di nuovo aperto, giro di nuovo in implementazione con la nota
+    const reject = await api("POST", `/pending-actions/${queued.number}/reject`, { note: "Manca la paginazione" });
+    expect(reject.status).toBe(200);
+    await waitEvolutionIdleForTests();
+    await settleTurnExecutions();
+    expect((await api("GET", `/apps/${appId}/evolution`)).json.openRound).toMatchObject({ status: "implementing", rejectionNote: "Manca la paginazione" });
+    const turns = await db.select().from(teamTurnsTable).where(eq(teamTurnsTable.instanceId, teamId));
+    expect(turns.some((t) => t.reasons.some((r) => r.type === "request" && r.text.includes("Manca la paginazione")))).toBe(true);
+    // Nessun giro nuovo finché il lavoro non è chiuso
+    const busy = await api("POST", `/apps/${appId}/evolution/run-now`);
+    expect([busy.status, busy.json.error]).toEqual([409, EVOLUTION_MESSAGES.roundRunning]);
+
+    // 4. Il lavoro va in produzione: giro concluso
+    await db.update(teamWorksTable).set({ status: "released", finishedAt: new Date() }).where(eq(teamWorksTable.id, work!.id));
+    notifyWorkChanged(teamId);
+    await waitEvolutionIdleForTests();
+    const [closed] = await rounds();
+    expect(closed).toMatchObject({ number: 1, status: "done", outcome: "lavoro 1 in produzione", rejectionNote: "Manca la paginazione" });
+
+    // 5. Il giro dopo riceve la nota del rifiuto nel prompt dell'analisi e riusa la stessa squadra
+    const before = chatBodies().filter((b) => !isLeadTurn(b as LeadBody)).length;
+    const runNow = await api("POST", `/apps/${appId}/evolution/run-now`);
+    expect(runNow.status).toBe(202);
+    await waitFor(() => chatBodies().filter((b) => !isLeadTurn(b as LeadBody)).length > before, "prima chiamata del secondo giro");
+    const prompt2 = userPrompt(chatBodies().filter((b) => !isLeadTurn(b as LeadBody))[before]!);
+    expect(prompt2).toContain("Nota dell'utente sull'ultimo lavoro del ciclo");
+    expect(prompt2).toContain("Manca la paginazione");
+    await waitFor(async () => (await rounds())[0]?.status !== "analyzing", "fine del secondo giro");
+    await waitEvolutionIdleForTests();
+    await settleTurnExecutions();
+    const [second] = await rounds();
+    expect(second).toMatchObject({ number: 2, teamInstanceId: teamId });
+  }, 60_000);
 });

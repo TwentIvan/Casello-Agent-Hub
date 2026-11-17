@@ -1,9 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { consentHash, consentRequired, consentText, CONSENT_VERSION, type ConsentSettings } from "./consent";
+import type { EvolutionCycle } from "@workspace/db";
+import { consentHash, consentRequired, consentText, consentValid, CONSENT_VERSION, type ConsentSettings } from "./consent";
 
 const base: ConsentSettings = {
-  mergeMode: "staging",
-  stagingBranch: "staging",
   teamTemplateId: 4,
   analysisAiModelId: 7,
   itemsPerRound: 3,
@@ -12,12 +11,10 @@ const base: ConsentSettings = {
 
 describe("consenso", () => {
   it("l'impronta è stabile e cambia con ogni campo", () => {
-    expect(CONSENT_VERSION).toBe("2026-11-16");
+    expect(CONSENT_VERSION).toBe("2026-11-17");
     expect(consentHash(base)).toBe(consentHash({ ...base }));
     expect(consentHash(base)).toMatch(/^[0-9a-f]{64}$/);
     const variants: ConsentSettings[] = [
-      { ...base, mergeMode: "direct" },
-      { ...base, stagingBranch: "x" },
       { ...base, teamTemplateId: null },
       { ...base, analysisAiModelId: 8 },
       { ...base, itemsPerRound: 4 },
@@ -31,17 +28,19 @@ describe("consenso", () => {
     expect(consentRequired(base, { ...base })).toBe(false);
     expect(consentRequired(base, { ...base, analysisAiModelId: 8 })).toBe(true);
     expect(consentRequired(base, { ...base, itemsPerRound: 5 })).toBe(true);
-    expect(consentRequired(base, { ...base, mergeMode: "direct" })).toBe(true);
-    expect(consentRequired(base, { ...base, stagingBranch: "x" })).toBe(true);
     expect(consentRequired(base, { ...base, teamTemplateId: 9 })).toBe(true);
     expect(consentRequired(base, { ...base, monthlyBudgetUsd: 80 })).toBe(true);
     expect(consentRequired({ ...base, monthlyBudgetUsd: 80 }, base)).toBe(false);
   });
 
-  it("il testo in modalità direct cita il branch base e il deploy in produzione", () => {
-    const text = consentText({ ...base, mergeMode: "direct", appName: "Mister", baseBranch: "main" }).join("\n");
+  it("con il modello di squadra il testo elenca squadra, PLAN, merge sul lavoro, branch di prova e lascia all'utente la produzione", () => {
+    const text = consentText({ ...base, appName: "Mister", baseBranch: "main" }).join("\n");
+    expect(text).toContain("squadra");
+    expect(text).toContain("PLAN");
+    expect(text).toContain("branch del lavoro");
+    expect(text).toContain("branch di prova");
+    expect(text).toContain("Porta in produzione");
     expect(text).toContain("main");
-    expect(text).toContain("deploy in produzione");
     expect(text).toContain("a tuo rischio");
     expect(text).toContain("50");
     expect(text).not.toContain("!");
@@ -49,8 +48,27 @@ describe("consenso", () => {
   });
 
   it("senza squadra le righe su squadra e merge mancano", () => {
-    const text = consentText({ ...base, teamTemplateId: null, mergeMode: "direct", appName: "Mister", baseBranch: "main" }).join("\n");
-    expect(text).not.toContain("deploy in produzione");
+    const text = consentText({ ...base, teamTemplateId: null, appName: "Mister", baseBranch: "main" }).join("\n");
     expect(text).not.toContain("PLAN");
+    expect(text).not.toContain("branch del lavoro");
+    expect(text).toContain("Implementa");
+  });
+
+  it("consenso valido solo con la versione attuale e l'impronta delle impostazioni salvate", () => {
+    const cycle = {
+      teamTemplateId: 4,
+      analysisAiModelId: 7,
+      itemsPerRound: 3,
+      monthlyBudgetUsd: "50.00",
+      consentAt: new Date(),
+      activatedBy: 1,
+      consentVersion: CONSENT_VERSION,
+      consentHash: consentHash(base),
+    } as unknown as EvolutionCycle;
+    expect(consentValid(cycle)).toBe(true);
+    expect(consentValid({ ...cycle, consentVersion: "2026-11-16" })).toBe(false);
+    expect(consentValid({ ...cycle, itemsPerRound: 4 })).toBe(false);
+    expect(consentValid({ ...cycle, analysisAiModelId: null })).toBe(false);
+    expect(consentValid({ ...cycle, activatedBy: null })).toBe(false);
   });
 });

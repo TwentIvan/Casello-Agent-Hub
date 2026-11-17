@@ -1,4 +1,4 @@
-import { pgTable, serial, integer, text, timestamp, pgEnum, jsonb, unique, index, check } from "drizzle-orm/pg-core";
+import { pgTable, serial, integer, text, timestamp, pgEnum, jsonb, unique, index, check, boolean } from "drizzle-orm/pg-core";
 import { usersTable } from "./users";
 import { appsTable } from "./apps";
 import { appToolsTable } from "./app-tools";
@@ -48,6 +48,8 @@ export const pendingActionsTable = pgTable(
     errorMessage: text("error_message"),
     decidedBy: integer("decided_by").references(() => usersTable.id, { onDelete: "set null" }),
     decisionNote: text("decision_note"),
+    // Voce `plan`/`plan_change` della squadra di un ciclo di evoluzione approvata dal ciclo, non da un clic
+    decidedByCycle: boolean("decided_by_cycle").notNull().default(false),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     decidedAt: timestamp("decided_at"),
     finishedAt: timestamp("finished_at"),

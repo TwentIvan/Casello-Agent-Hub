@@ -1487,6 +1487,26 @@ export const EvolutionRoundViewStatus = {
 } as const;
 
 export interface EvolutionRoundView {
+  /**
+     * Squadra del ciclo a cui il giro ha affidato le voci (3c)
+     * @nullable
+     */
+  teamInstanceId: number | null;
+  /**
+     * Lavoro su branch unico della squadra che il giro segue
+     * @nullable
+     */
+  workId: number | null;
+  /**
+     * Numero della voce «Porta in produzione» del lavoro, mentre il giro la aspetta
+     * @nullable
+     */
+  releaseActionNumber: number | null;
+  /**
+     * Nota dell'utente sull'ultimo rifiuto di «Porta in produzione»; entra nell'analisi del giro dopo
+     * @nullable
+     */
+  rejectionNote: string | null;
   id: number;
   number: number;
   status: EvolutionRoundViewStatus;
@@ -1508,6 +1528,9 @@ export const EvolutionCycleViewStatus = {
   paused: 'paused',
 } as const;
 
+/**
+ * Non decide più nulla (3c); resta per compatibilità
+ */
 export type EvolutionCycleViewMergeMode = typeof EvolutionCycleViewMergeMode[keyof typeof EvolutionCycleViewMergeMode];
 
 
@@ -1517,6 +1540,13 @@ export const EvolutionCycleViewMergeMode = {
 } as const;
 
 export interface EvolutionCycleView {
+  /**
+     * Squadra del ciclo (creata al primo giro con voci dal modello scelto)
+     * @nullable
+     */
+  teamInstanceId: number | null;
+  /** @nullable */
+  teamName: string | null;
   appId: number;
   status: EvolutionCycleViewStatus;
   /** @nullable */
@@ -1529,13 +1559,14 @@ export interface EvolutionCycleView {
   analysisModelName: string | null;
   /** @nullable */
   teamTemplateId: number | null;
+  /** Non decide più nulla (3c); resta per compatibilità */
   mergeMode: EvolutionCycleViewMergeMode;
   /** @nullable */
   stagingBranch: string | null;
   /** @nullable */
   stagingUrl: string | null;
   monthlyBudgetUsd: number;
-  /** Spesa del mese */
+  /** Spesa del mese (analisi del ciclo più turni e compiti delle sue squadre) */
   spentUsd: number;
   unpricedCount: number;
   /** @nullable */
@@ -1567,17 +1598,20 @@ export type EvolutionCycleInputConsent = {
   directMerge?: boolean;
 };
 
+/**
+ * mergeMode, stagingBranch e stagingUrl non decidono più nulla (3c) e sono facoltativi
+ */
 export interface EvolutionCycleInput {
   frequency: EvolutionFrequency;
   itemsPerRound: number;
   analysisAiModelId: number;
   /** @nullable */
   teamTemplateId: number | null;
-  mergeMode: EvolutionCycleInputMergeMode;
+  mergeMode?: EvolutionCycleInputMergeMode;
   /** @nullable */
-  stagingBranch: string | null;
+  stagingBranch?: string | null;
   /** @nullable */
-  stagingUrl: string | null;
+  stagingUrl?: string | null;
   monthlyBudgetUsd: number;
   consent?: EvolutionCycleInputConsent;
 }
@@ -1763,6 +1797,8 @@ export interface QueuedAction {
   errorMessage: string | null;
   /** @nullable */
   decisionNote: string | null;
+  /** Voce di piano approvata dal ciclo di evoluzione della squadra, non da un clic */
+  decidedByCycle?: boolean;
   createdAt: string;
   /** @nullable */
   decidedAt: string | null;
@@ -5014,6 +5050,8 @@ export const TeamEventType = {
   lavoro_finito: 'lavoro_finito',
   interrotto: 'interrotto',
   risposta_capo: 'risposta_capo',
+  lavoro_in_prova: 'lavoro_in_prova',
+  giro_evoluzione: 'giro_evoluzione',
 } as const;
 
 export interface TeamEvent {
@@ -5168,7 +5206,10 @@ status?: EmbedBugStatus;
 };
 
 export type GetAppEvolutionConsentTextParams = {
-mergeMode: GetAppEvolutionConsentTextMergeMode;
+/**
+ * Non decide più nulla (3c); ignorato
+ */
+mergeMode?: GetAppEvolutionConsentTextMergeMode;
 stagingBranch?: string;
 teamTemplateId?: number;
 analysisAiModelId: number;

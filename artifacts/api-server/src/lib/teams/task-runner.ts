@@ -41,6 +41,7 @@ import {
 } from "./role-tools";
 import { TeamRuleError } from "./rules";
 import { teamBudgetBlock } from "./team-budget";
+import { cyclePausedForTeam } from "../evolution/cycle-team";
 import { enqueueTurnReason } from "./turn-queue";
 
 // Compiti dei ruoli cloud: ogni compito esegue il ciclo dell'agente con il prompt del ruolo, le sue skill, il PLAN
@@ -445,6 +446,8 @@ async function claimNext(instanceId: number): Promise<TeamTaskRow | null> {
 /** Porta a `running` fino a MAX_RUNNING_TASKS compiti in coda e li esegue in background; restituisce quelli presi. */
 export async function pumpTasks(instanceId: number): Promise<TeamTaskRow[]> {
   const claimed: TeamTaskRow[] = [];
+  // Squadra di un ciclo di evoluzione fermato: i compiti restano in coda fino a «Riprendi»
+  if (await cyclePausedForTeam(instanceId)) return claimed;
   for (;;) {
     const row = await claimNext(instanceId);
     if (!row) return claimed;

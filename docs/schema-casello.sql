@@ -1765,3 +1765,28 @@ DO $$ BEGIN
   ALTER TABLE "team_code_tasks" ADD CONSTRAINT "team_code_tasks_work_id_team_works_id_fk" FOREIGN KEY ("work_id") REFERENCES "public"."team_works"("id") ON DELETE set null ON UPDATE no action;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
+
+-- Squadra del ciclo di evoluzione (docs/migrations/2026-11-17-evoluzione-squadra.sql)
+ALTER TYPE "public"."team_event_type" ADD VALUE IF NOT EXISTS 'giro_evoluzione';
+
+ALTER TABLE "pending_actions" ADD COLUMN IF NOT EXISTS "decided_by_cycle" boolean DEFAULT false NOT NULL;
+
+ALTER TABLE "evolution_rounds" ADD COLUMN IF NOT EXISTS "team_instance_id" integer;
+ALTER TABLE "evolution_rounds" ADD COLUMN IF NOT EXISTS "work_id" integer;
+ALTER TABLE "evolution_rounds" ADD COLUMN IF NOT EXISTS "pending_action_id" integer;
+ALTER TABLE "evolution_rounds" ADD COLUMN IF NOT EXISTS "implementation_started_at" timestamp;
+
+DO $$ BEGIN
+  ALTER TABLE "evolution_rounds" ADD CONSTRAINT "evolution_rounds_team_instance_id_team_instances_id_fk" FOREIGN KEY ("team_instance_id") REFERENCES "public"."team_instances"("id") ON DELETE set null ON UPDATE no action;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "evolution_rounds" ADD CONSTRAINT "evolution_rounds_work_id_team_works_id_fk" FOREIGN KEY ("work_id") REFERENCES "public"."team_works"("id") ON DELETE set null ON UPDATE no action;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+
+DO $$ BEGIN
+  ALTER TABLE "evolution_rounds" ADD CONSTRAINT "evolution_rounds_pending_action_id_pending_actions_id_fk" FOREIGN KEY ("pending_action_id") REFERENCES "public"."pending_actions"("id") ON DELETE set null ON UPDATE no action;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;

@@ -39,6 +39,8 @@ export interface QueuedAction {
   errorMessage: string | null;
   /** @nullable */
   decisionNote: string | null;
+  /** Voce di piano approvata dal ciclo di evoluzione della squadra, non da un clic */
+  decidedByCycle?: boolean;
   createdAt: Date;
   /** @nullable */
   decidedAt: Date | null;

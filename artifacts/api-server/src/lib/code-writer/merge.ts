@@ -1,4 +1,6 @@
 import { and, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
+import { cyclePausedForTeam } from "../evolution/cycle-team";
+import { EVOLUTION_MESSAGES } from "../evolution/messages";
 import { appsTable, db, pendingActionsTable, teamCodeTasksTable, teamInstancesTable, teamWorksTable, type PendingActionRow, type TeamCodeTaskRow } from "@workspace/db";
 import { githubConfig } from "../github/config";
 import { userHasInstallation } from "../github/installations";
@@ -298,6 +300,8 @@ async function openMergeItem(userId: number, instanceId: number, taskCodeId: num
 export async function mergeTeamPull(instanceId: number, args: Record<string, unknown>): Promise<ToolResult> {
   const target = parseMergeArgs(args);
   if (!target) return { ok: false, content: MERGE_MESSAGES.badArgs };
+  // Squadra di un ciclo di evoluzione fermato: niente merge finché il ciclo non riprende
+  if (await cyclePausedForTeam(instanceId)) return { ok: false, content: EVOLUTION_MESSAGES.cyclePaused };
   try {
     const ctx =
       "compito" in target
@@ -423,6 +427,8 @@ export async function notifyMergeRejected(action: PendingActionRow): Promise<voi
  */
 export async function mergeIntoWork(code: TeamCodeTaskRow): Promise<"merged" | "skipped" | { refused: string }> {
   if (code.workId === null) return "skipped";
+  // Ciclo di evoluzione fermato: il merge sul branch del lavoro aspetta «Riprendi» (la sorveglianza riprova a ogni giro)
+  if (await cyclePausedForTeam(code.instanceId)) return "skipped";
   try {
     const ctx = await loadContext(code.instanceId, (t) => eq(t.id, code.id), `il compito ${code.planTaskId}`);
     const [work] = await db.select().from(teamWorksTable).where(eq(teamWorksTable.id, code.workId)).limit(1);

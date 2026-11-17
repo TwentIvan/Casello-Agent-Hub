@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
-import { db, aiModelsTable, appsTable, usersTable, type EvolutionCycle, type EvolutionRound } from "@workspace/db";
+import { db, aiModelsTable, appsTable, pendingActionsTable, teamInstancesTable, usersTable, type EvolutionCycle, type EvolutionRound } from "@workspace/db";
 import {
   GetAppEvolutionParams,
   GetAppEvolutionResponse,
@@ -43,7 +43,11 @@ const router: IRouter = Router();
 // Giri aperti: se ne mostra uno nella vista del ciclo
 const OPEN_STATUSES = new Set(["analyzing", "approving", "implementing", "awaiting_release"]);
 
-function roundView(r: EvolutionRound) {
+async function roundView(r: EvolutionRound) {
+  const [release] =
+    r.pendingActionId === null || r.status !== "awaiting_release"
+      ? []
+      : await db.select({ number: pendingActionsTable.number }).from(pendingActionsTable).where(eq(pendingActionsTable.id, r.pendingActionId)).limit(1);
   return {
     id: r.id,
     number: r.number,
@@ -53,6 +57,10 @@ function roundView(r: EvolutionRound) {
     outcome: r.outcome,
     startedAt: r.startedAt,
     finishedAt: r.finishedAt,
+    teamInstanceId: r.teamInstanceId,
+    workId: r.workId,
+    releaseActionNumber: release?.number ?? null,
+    rejectionNote: r.rejectionNote,
   };
 }
 
@@ -65,6 +73,10 @@ async function cycleView(cycle: EvolutionCycle, userId: number) {
     cycle.activatedBy === null
       ? []
       : await db.select({ name: usersTable.name }).from(usersTable).where(eq(usersTable.id, cycle.activatedBy)).limit(1);
+  const [team] =
+    cycle.teamInstanceId === null
+      ? []
+      : await db.select({ name: teamInstancesTable.name }).from(teamInstancesTable).where(eq(teamInstancesTable.id, cycle.teamInstanceId)).limit(1);
   const spend = await cycleSpend(cycle.appId);
   const rounds = await listRounds(cycle.appId);
   const open = rounds.find((r) => OPEN_STATUSES.has(r.status));
@@ -77,6 +89,8 @@ async function cycleView(cycle: EvolutionCycle, userId: number) {
     analysisAiModelId: cycle.analysisAiModelId,
     analysisModelName: model?.name ?? null,
     teamTemplateId: cycle.teamTemplateId,
+    teamInstanceId: cycle.teamInstanceId,
+    teamName: team?.name ?? null,
     mergeMode: cycle.mergeMode,
     stagingBranch: cycle.stagingBranch,
     stagingUrl: cycle.stagingUrl,
@@ -89,7 +103,7 @@ async function cycleView(cycle: EvolutionCycle, userId: number) {
     consentValid: consentValid(cycle),
     nextRoundAt: cycle.nextRoundAt,
     lastError: cycle.lastError,
-    openRound: open ? roundView(open) : null,
+    openRound: open ? await roundView(open) : null,
   };
 }
 
@@ -117,8 +131,6 @@ router.get("/apps/:id/evolution/consent-text", async (req, res) => {
     return;
   }
   const lines = consentText({
-    mergeMode: query.mergeMode,
-    stagingBranch: query.stagingBranch ?? null,
     teamTemplateId: query.teamTemplateId ?? null,
     analysisAiModelId: query.analysisAiModelId,
     itemsPerRound: query.itemsPerRound,
@@ -199,7 +211,7 @@ router.post("/apps/:id/evolution/run-now", sessionOnly, async (req, res) => {
   }
   try {
     const round = await startRound(cycle.id, { manual: true });
-    res.status(202).json(RunAppEvolutionNowResponse.parse(roundView(round)));
+    res.status(202).json(RunAppEvolutionNowResponse.parse(await roundView(round)));
   } catch (err) {
     if (!handleEvolutionError(err, res)) throw err;
   }
@@ -211,7 +223,7 @@ router.get("/apps/:id/evolution/rounds", async (req, res) => {
     res.status(404).json({ error: EVOLUTION_MESSAGES.appNotFound });
     return;
   }
-  res.json(ListAppEvolutionRoundsResponse.parse((await listRounds(id)).map(roundView)));
+  res.json(ListAppEvolutionRoundsResponse.parse(await Promise.all((await listRounds(id)).map(roundView))));
 });
 
 export default router;

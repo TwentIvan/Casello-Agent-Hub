@@ -59,8 +59,12 @@ export function EvolutionCard({ app }: { app: App }) {
   const led: LedState = cycle ? cycleLed(cycle) : "idle";
   const ledLabel = !cycle
     ? "Non attivo"
-    : cycle.openRound
-      ? "Giro in corso"
+    : cycle.openRound?.status === "awaiting_release"
+      ? "Porta in produzione da decidere"
+      : cycle.openRound
+        ? cycle.status === "active"
+          ? "Giro in corso"
+          : "In pausa, giro aperto"
       : cycle.status === "active"
         ? "Attivo, in attesa del prossimo giro"
         : "In pausa";
@@ -70,7 +74,7 @@ export function EvolutionCard({ app }: { app: App }) {
       <CardHeader>
         <CardTitle>Evoluzione automatica</CardTitle>
         <CardDescription>
-          Botcave analizza l'app a intervalli, sceglie alcune voci del piano e le fa implementare alla squadra.
+          Botcave analizza l'app a intervalli, sceglie alcune voci del piano e le fa implementare alla squadra del ciclo.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -101,6 +105,22 @@ export function EvolutionCard({ app }: { app: App }) {
                 <span className="text-ink-muted">prossimo giro {formatRelative(cycle.nextRoundAt)}</span>
               )}
             </div>
+            {cycle.teamInstanceId != null && (
+              <p className="text-sm">
+                Squadra del ciclo:{" "}
+                <Link href={`/teams/${cycle.teamInstanceId}`} className="underline underline-offset-2 break-words">
+                  {cycle.teamName ?? `#${cycle.teamInstanceId}`}
+                </Link>
+              </p>
+            )}
+            {cycle.openRound?.releaseActionNumber != null && (
+              <p className="text-sm">
+                Il lavoro del giro {cycle.openRound.number} è in prova:{" "}
+                <Link href="/pending-actions" className="text-accent-text underline underline-offset-2">
+                  decidi «Porta in produzione» (voce n. {cycle.openRound.releaseActionNumber})
+                </Link>
+              </p>
+            )}
             {cycle.unpricedCount > 0 && (
               <p className="text-xs text-ink-muted">
                 {cycle.unpricedCount} esecuzioni senza prezzo: la spesa è parziale.
@@ -162,6 +182,9 @@ export function EvolutionCard({ app }: { app: App }) {
                   </Link>
                 )}
                 {round.outcome && <span className="min-w-0 break-words text-ink-muted">{round.outcome}</span>}
+                {round.rejectionNote && (
+                  <span className="min-w-0 basis-full break-words text-xs text-ink-muted">Nota del rifiuto: {round.rejectionNote}</span>
+                )}
               </li>
             ))}
           </ul>

@@ -2010,7 +2010,8 @@ paths:
         - $ref: "#/components/parameters/IdParam"
         - name: mergeMode
           in: query
-          required: true
+          required: false
+          description: Non decide più nulla (3c); ignorato
           schema:
             type: string
             enum: [staging, direct]
@@ -8062,8 +8063,20 @@ components:
 
     EvolutionRoundView:
       type: object
-      required: [id, number, status, analysisId, itemIds, outcome, startedAt, finishedAt]
+      required: [id, number, status, analysisId, itemIds, outcome, startedAt, finishedAt, teamInstanceId, workId, releaseActionNumber, rejectionNote]
       properties:
+        teamInstanceId:
+          type: ["integer", "null"]
+          description: Squadra del ciclo a cui il giro ha affidato le voci (3c)
+        workId:
+          type: ["integer", "null"]
+          description: Lavoro su branch unico della squadra che il giro segue
+        releaseActionNumber:
+          type: ["integer", "null"]
+          description: Numero della voce «Porta in produzione» del lavoro, mentre il giro la aspetta
+        rejectionNote:
+          type: ["string", "null"]
+          description: Nota dell'utente sull'ultimo rifiuto di «Porta in produzione»; entra nell'analisi del giro dopo
         id:
           type: integer
         number:
@@ -8088,8 +8101,13 @@ components:
 
     EvolutionCycleView:
       type: object
-      required: [appId, status, pausedReason, frequency, itemsPerRound, analysisAiModelId, analysisModelName, teamTemplateId, mergeMode, stagingBranch, stagingUrl, monthlyBudgetUsd, spentUsd, unpricedCount, activatedByName, isPayer, consentAt, consentValid, nextRoundAt, lastError, openRound]
+      required: [appId, status, pausedReason, frequency, itemsPerRound, analysisAiModelId, analysisModelName, teamTemplateId, teamInstanceId, teamName, mergeMode, stagingBranch, stagingUrl, monthlyBudgetUsd, spentUsd, unpricedCount, activatedByName, isPayer, consentAt, consentValid, nextRoundAt, lastError, openRound]
       properties:
+        teamInstanceId:
+          type: ["integer", "null"]
+          description: Squadra del ciclo (creata al primo giro con voci dal modello scelto)
+        teamName:
+          type: ["string", "null"]
         appId:
           type: integer
         status:
@@ -8110,6 +8128,7 @@ components:
         mergeMode:
           type: string
           enum: [staging, direct]
+          description: Non decide più nulla (3c); resta per compatibilità
         stagingBranch:
           type: ["string", "null"]
         stagingUrl:
@@ -8118,7 +8137,7 @@ components:
           type: number
         spentUsd:
           type: number
-          description: Spesa del mese
+          description: Spesa del mese (analisi del ciclo più turni e compiti delle sue squadre)
         unpricedCount:
           type: integer
         activatedByName:
@@ -8143,7 +8162,8 @@ components:
 
     EvolutionCycleInput:
       type: object
-      required: [frequency, itemsPerRound, analysisAiModelId, teamTemplateId, mergeMode, stagingBranch, stagingUrl, monthlyBudgetUsd]
+      required: [frequency, itemsPerRound, analysisAiModelId, teamTemplateId, monthlyBudgetUsd]
+      description: mergeMode, stagingBranch e stagingUrl non decidono più nulla (3c) e sono facoltativi
       properties:
         frequency:
           $ref: "#/components/schemas/EvolutionFrequency"
@@ -8312,6 +8332,9 @@ components:
           type: ["string", "null"]
         decisionNote:
           type: ["string", "null"]
+        decidedByCycle:
+          type: boolean
+          description: Voce di piano approvata dal ciclo di evoluzione della squadra, non da un clic
         createdAt:
           type: string
           format: date-time
@@ -12098,7 +12121,7 @@ components:
           type: integer
         type:
           type: string
-          enum: [piano_proposto, compito_finito, bloccato, decisione_richiesta, azione_manuale_richiesta, lavoro_finito, interrotto, risposta_capo]
+          enum: [piano_proposto, compito_finito, bloccato, decisione_richiesta, azione_manuale_richiesta, lavoro_finito, interrotto, risposta_capo, lavoro_in_prova, giro_evoluzione]
         taskId:
           type: ["integer", "null"]
         bulletin:

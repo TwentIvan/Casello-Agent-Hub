@@ -20,6 +20,8 @@ import { InstanceRoleSchema, type InstanceRole, type TemplateRole } from "./mani
 import { TEAM_MESSAGES, TeamRuleError, validateRoles, type ValidateRolesInput } from "./rules";
 import { SKILL_CODE, SKILL_MESSAGES, validateSkillContent, type Executor, type SkillKind } from "./skills";
 import { teamSpend } from "./team-budget";
+import { cycleForTeam } from "../evolution/cycle-team";
+import { EVOLUTION_MESSAGES } from "../evolution/messages";
 import { TEMPLATE_MESSAGES, TemplateError, describeRoles, getTemplateVersion, type LocalSkillInfo, type RoleView } from "./templates";
 import { enqueueTurnReason } from "./turn-queue";
 
@@ -374,6 +376,8 @@ export const BUDGET_RESUME_REQUEST = "Il tetto di spesa della squadra è stato a
  * lascia margine (nessun tetto o sopra la spesa del mese), il capo riceve un turno `request` per riprendere il lavoro.
  */
 export async function setInstanceBudget(id: number, monthlyBudgetUsd: number | null): Promise<InstanceView> {
+  // La squadra di un ciclo di evoluzione usa il tetto del ciclo (spec §15.8)
+  if (await cycleForTeam(id)) throw new InstanceError(409, EVOLUTION_MESSAGES.teamBudgetFromCycle);
   const updated = await db
     .update(teamInstancesTable)
     .set({ monthlyBudgetUsd: monthlyBudgetUsd === null ? null : String(monthlyBudgetUsd), updatedAt: new Date() })

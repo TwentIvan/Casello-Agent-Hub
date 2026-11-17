@@ -25,7 +25,8 @@ import { describeRunStep } from "../turn-progress/describe";
 import { PROGRESS_MAX_STEPS, type TurnProgressView } from "../turn-progress/progress";
 import { consumeLeadChatMessage } from "../../middlewares/rate-limit";
 import { LEAD_CHAT_LIMITS, leadChatRunInput, parseLeadPage, type LeadExchange, type LeadPage } from "./input";
-import { LEAD_CHAT_MESSAGES, LeadChatError } from "./messages";
+import { resolveBotNames } from "../apps/bot-names";
+import { LEAD_CHAT_MESSAGES, LeadChatError, leadChatMessages } from "./messages";
 
 export const LEAD_CONVERSATIONS_MAX = 100;
 const TITLE_MAX = 80;
@@ -84,6 +85,12 @@ async function userOwnsModel(userId: number, aiModelId: number): Promise<{ name:
 }
 
 /** Il Responsabile di Botcave è usabile dall'utente? App `casello` attiva, `general` attivo, modello di un suo account. */
+/** Testi fissi col nome del Responsabile dell'App di default. */
+async function leadMessages() {
+  const [app] = await db.select().from(appsTable).where(eq(appsTable.slug, DEFAULT_LEAD_APP_SLUG)).limit(1);
+  return leadChatMessages(app ? resolveBotNames(app).lead : "Barbara");
+}
+
 export async function resolveLeadChat(userId: number): Promise<LeadChatAvailability> {
   const [app] = await db.select().from(appsTable).where(eq(appsTable.slug, DEFAULT_LEAD_APP_SLUG)).limit(1);
   if (!app || app.status !== "active") return { available: false, reason: LEAD_CHAT_MESSAGES.noApp, agentId: null };
@@ -93,9 +100,10 @@ export async function resolveLeadChat(userId: number): Promise<LeadChatAvailabil
     .where(and(eq(agentsTable.appId, app.id), eq(agentsTable.role, "general")))
     .orderBy(asc(agentsTable.id))
     .limit(1);
-  if (!lead || lead.status !== "active") return { available: false, reason: LEAD_CHAT_MESSAGES.inactive, agentId: lead?.id ?? null };
+  const msgs = leadChatMessages(resolveBotNames(app).lead);
+  if (!lead || lead.status !== "active") return { available: false, reason: msgs.inactive, agentId: lead?.id ?? null };
   const model = lead.aiModelId === null ? null : await userOwnsModel(userId, lead.aiModelId);
-  if (!model || lead.aiModelId === null) return { available: false, reason: LEAD_CHAT_MESSAGES.noModel, agentId: lead.id };
+  if (!model || lead.aiModelId === null) return { available: false, reason: msgs.noModel, agentId: lead.id };
   return { available: true, agentId: lead.id, agentName: lead.name, appName: app.name, aiModelId: lead.aiModelId, modelName: model.name };
 }
 
@@ -204,12 +212,13 @@ export async function sendLeadMessage(
     .where(eq(leadMessagesTable.conversationId, conv.id))
     .orderBy(desc(leadMessagesTable.id))
     .limit(LEAD_CHAT_LIMITS.historyTurns);
+  const msgs = await leadMessages();
   const last = previous[0];
-  if (last?.run && OPEN_STATUSES.has(last.run.status)) throw new LeadChatError(409, LEAD_CHAT_MESSAGES.busy);
+  if (last?.run && OPEN_STATUSES.has(last.run.status)) throw new LeadChatError(409, msgs.busy);
 
   if (!consumeLeadChatMessage(userId)) throw new LeadChatError(429, LEAD_CHAT_MESSAGES.tooMany);
   const [agent] = await db.select().from(agentsTable).where(eq(agentsTable.id, a.agentId)).limit(1);
-  if (!agent) throw new LeadChatError(409, LEAD_CHAT_MESSAGES.inactive);
+  if (!agent) throw new LeadChatError(409, msgs.inactive);
   const blocked = await runBudgetBlock(agent);
   if (blocked) throw new LeadChatError(409, blocked);
 
@@ -231,7 +240,7 @@ export async function sendLeadMessage(
       .where(eq(leadMessagesTable.conversationId, conv.id))
       .orderBy(desc(leadMessagesTable.id))
       .limit(1);
-    if (lastNow?.status && OPEN_STATUSES.has(lastNow.status)) throw new LeadChatError(409, LEAD_CHAT_MESSAGES.busy);
+    if (lastNow?.status && OPEN_STATUSES.has(lastNow.status)) throw new LeadChatError(409, msgs.busy);
     const created = await createQueuedRun({ agent, input: runInput, tx });
     if (!created.ok) return null;
     const [message] = await tx
@@ -242,7 +251,7 @@ export async function sendLeadMessage(
     await tx.update(leadConversationsTable).set({ title, updatedAt: new Date() }).where(eq(leadConversationsTable.id, conv.id));
     return { messageId: message!.id, runId: created.run.id };
   });
-  if (!result) throw new LeadChatError(429, LEAD_CHAT_MESSAGES.queueFull);
+  if (!result) throw new LeadChatError(429, msgs.queueFull);
   void scheduleRuns();
   return result;
 }

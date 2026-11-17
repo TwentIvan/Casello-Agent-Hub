@@ -17,6 +17,27 @@ export const LEAD_CHAT_MESSAGES = {
   gone: "risposta non più disponibile",
 } as const;
 
+/**
+ * Testi che nominano il Responsabile. Per «Barbara» (App `casello`) restano quelli di sempre, con «la Responsabile di
+ * Botcave»; per ogni altro nome sono neutri.
+ */
+export function leadChatMessages(name: string) {
+  if (name === "Barbara") {
+    return {
+      inactive: LEAD_CHAT_MESSAGES.inactive,
+      noModel: LEAD_CHAT_MESSAGES.noModel,
+      busy: LEAD_CHAT_MESSAGES.busy,
+      queueFull: LEAD_CHAT_MESSAGES.queueFull,
+    };
+  }
+  return {
+    inactive: `${name} non è attivo`,
+    noModel: `scegli per ${name} un modello di uno dei tuoi account AI`,
+    busy: `${name} sta già rispondendo`,
+    queueFull: `troppe run in attesa per ${name}`,
+  };
+}
+
 /** Errore con stato HTTP: le route lo traducono direttamente in `{error}`. */
 export class LeadChatError extends Error {
   readonly status: number;

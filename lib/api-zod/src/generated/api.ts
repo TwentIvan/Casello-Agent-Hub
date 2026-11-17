@@ -1675,6 +1675,14 @@ export const ListAppsResponseItem = zod.object({
   "functionalDescription": zod.string().nullable().describe('Descrizione funzionale dell\'app per l\'architetto'),
   "architectureRefresh": zod.enum(['off', 'hourly', '6h', 'daily', 'weekly']).describe('Frequenza di controllo della sintesi dell\'architettura'),
   "stagingBranch": zod.string().nullable().describe('Branch di prova dell\'App, riscritto da Botcave a ogni lavoro delle squadre (null = nessuna versione di prova)'),
+  "alfredName": zod.string().nullable().describe('Nome scelto per Alfred in questa App (null = predefinito)'),
+  "luciusName": zod.string().nullable().describe('Nome scelto per Lucius in questa App (null = predefinito)'),
+  "leadName": zod.string().nullable().describe('Nome scelto per il Responsabile in questa App (null = predefinito)'),
+  "botNames": zod.object({
+  "alfred": zod.string(),
+  "lucius": zod.string(),
+  "lead": zod.string()
+}).describe('Nomi effettivi dei bot dell\'App (scelti o predefiniti)'),
   "stagingUrl": zod.string().nullable().describe('Indirizzo https dove la CI dell\'App pubblica il branch di prova'),
   "status": zod.enum(['active', 'inactive']),
   "createdAt": zod.coerce.date(),
@@ -1758,6 +1766,14 @@ export const CreateAppResponse = zod.object({
   "functionalDescription": zod.string().nullable().describe('Descrizione funzionale dell\'app per l\'architetto'),
   "architectureRefresh": zod.enum(['off', 'hourly', '6h', 'daily', 'weekly']).describe('Frequenza di controllo della sintesi dell\'architettura'),
   "stagingBranch": zod.string().nullable().describe('Branch di prova dell\'App, riscritto da Botcave a ogni lavoro delle squadre (null = nessuna versione di prova)'),
+  "alfredName": zod.string().nullable().describe('Nome scelto per Alfred in questa App (null = predefinito)'),
+  "luciusName": zod.string().nullable().describe('Nome scelto per Lucius in questa App (null = predefinito)'),
+  "leadName": zod.string().nullable().describe('Nome scelto per il Responsabile in questa App (null = predefinito)'),
+  "botNames": zod.object({
+  "alfred": zod.string(),
+  "lucius": zod.string(),
+  "lead": zod.string()
+}).describe('Nomi effettivi dei bot dell\'App (scelti o predefiniti)'),
   "stagingUrl": zod.string().nullable().describe('Indirizzo https dove la CI dell\'App pubblica il branch di prova'),
   "status": zod.enum(['active', 'inactive']),
   "createdAt": zod.coerce.date(),
@@ -1808,6 +1824,14 @@ export const GetAppResponse = zod.object({
   "functionalDescription": zod.string().nullable().describe('Descrizione funzionale dell\'app per l\'architetto'),
   "architectureRefresh": zod.enum(['off', 'hourly', '6h', 'daily', 'weekly']).describe('Frequenza di controllo della sintesi dell\'architettura'),
   "stagingBranch": zod.string().nullable().describe('Branch di prova dell\'App, riscritto da Botcave a ogni lavoro delle squadre (null = nessuna versione di prova)'),
+  "alfredName": zod.string().nullable().describe('Nome scelto per Alfred in questa App (null = predefinito)'),
+  "luciusName": zod.string().nullable().describe('Nome scelto per Lucius in questa App (null = predefinito)'),
+  "leadName": zod.string().nullable().describe('Nome scelto per il Responsabile in questa App (null = predefinito)'),
+  "botNames": zod.object({
+  "alfred": zod.string(),
+  "lucius": zod.string(),
+  "lead": zod.string()
+}).describe('Nomi effettivi dei bot dell\'App (scelti o predefiniti)'),
   "stagingUrl": zod.string().nullable().describe('Indirizzo https dove la CI dell\'App pubblica il branch di prova'),
   "status": zod.enum(['active', 'inactive']),
   "createdAt": zod.coerce.date(),
@@ -1825,6 +1849,12 @@ export const UpdateAppParams = zod.object({
 
 
 
+
+export const updateAppBodyAlfredNameMax = 40;
+
+export const updateAppBodyLuciusNameMax = 40;
+
+export const updateAppBodyLeadNameMax = 40;
 
 
 
@@ -1856,6 +1886,9 @@ export const UpdateAppBody = zod.object({
   "functionalDescription": zod.string().nullish(),
   "architectureRefresh": zod.enum(['off', 'hourly', '6h', 'daily', 'weekly']).optional().describe('Frequenza di controllo della sintesi dell\'architettura'),
   "stagingBranch": zod.string().nullish().describe('Branch di prova (non il base, non main\/master, non botcave\/…); null lo toglie'),
+  "alfredName": zod.string().max(updateAppBodyAlfredNameMax).nullish().describe('Nome di Alfred in questa App; null torna al predefinito'),
+  "luciusName": zod.string().max(updateAppBodyLuciusNameMax).nullish().describe('Nome di Lucius in questa App; null torna al predefinito'),
+  "leadName": zod.string().max(updateAppBodyLeadNameMax).nullish().describe('Nome del Responsabile in questa App; null torna al predefinito'),
   "stagingUrl": zod.string().nullish().describe('Indirizzo https della versione di prova; null lo toglie'),
   "status": zod.enum(['active', 'inactive']).optional()
 })
@@ -1896,6 +1929,14 @@ export const UpdateAppResponse = zod.object({
   "functionalDescription": zod.string().nullable().describe('Descrizione funzionale dell\'app per l\'architetto'),
   "architectureRefresh": zod.enum(['off', 'hourly', '6h', 'daily', 'weekly']).describe('Frequenza di controllo della sintesi dell\'architettura'),
   "stagingBranch": zod.string().nullable().describe('Branch di prova dell\'App, riscritto da Botcave a ogni lavoro delle squadre (null = nessuna versione di prova)'),
+  "alfredName": zod.string().nullable().describe('Nome scelto per Alfred in questa App (null = predefinito)'),
+  "luciusName": zod.string().nullable().describe('Nome scelto per Lucius in questa App (null = predefinito)'),
+  "leadName": zod.string().nullable().describe('Nome scelto per il Responsabile in questa App (null = predefinito)'),
+  "botNames": zod.object({
+  "alfred": zod.string(),
+  "lucius": zod.string(),
+  "lead": zod.string()
+}).describe('Nomi effettivi dei bot dell\'App (scelti o predefiniti)'),
   "stagingUrl": zod.string().nullable().describe('Indirizzo https dove la CI dell\'App pubblica il branch di prova'),
   "status": zod.enum(['active', 'inactive']),
   "createdAt": zod.coerce.date(),

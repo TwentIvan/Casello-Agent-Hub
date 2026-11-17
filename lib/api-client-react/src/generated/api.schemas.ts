@@ -447,6 +447,15 @@ export interface AppArchitectureVersion {
   summary?: string;
 }
 
+/**
+ * Nomi effettivi dei bot dell'App (scelti o predefiniti)
+ */
+export type AppBotNames = {
+  alfred: string;
+  lucius: string;
+  lead: string;
+};
+
 export interface App {
   id: number;
   name: string;
@@ -504,6 +513,23 @@ export interface App {
      * @nullable
      */
   stagingBranch: string | null;
+  /**
+     * Nome scelto per Alfred in questa App (null = predefinito)
+     * @nullable
+     */
+  alfredName: string | null;
+  /**
+     * Nome scelto per Lucius in questa App (null = predefinito)
+     * @nullable
+     */
+  luciusName: string | null;
+  /**
+     * Nome scelto per il Responsabile in questa App (null = predefinito)
+     * @nullable
+     */
+  leadName: string | null;
+  /** Nomi effettivi dei bot dell'App (scelti o predefiniti) */
+  botNames: AppBotNames;
   /**
      * Indirizzo https dove la CI dell'App pubblica il branch di prova
      * @nullable
@@ -881,6 +907,24 @@ export interface AppUpdate {
      * @nullable
      */
   stagingBranch?: string | null;
+  /**
+     * Nome di Alfred in questa App; null torna al predefinito
+     * @maxLength 40
+     * @nullable
+     */
+  alfredName?: string | null;
+  /**
+     * Nome di Lucius in questa App; null torna al predefinito
+     * @maxLength 40
+     * @nullable
+     */
+  luciusName?: string | null;
+  /**
+     * Nome del Responsabile in questa App; null torna al predefinito
+     * @maxLength 40
+     * @nullable
+     */
+  leadName?: string | null;
   /**
      * Indirizzo https della versione di prova; null lo toglie
      * @nullable

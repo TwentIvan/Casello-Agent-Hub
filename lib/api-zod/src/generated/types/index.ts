@@ -83,6 +83,7 @@ export * from './app';
 export * from './appArchitecture';
 export * from './appArchitectureStatus';
 export * from './appArchitectureVersion';
+export * from './appBotNames';
 export * from './appInput';
 export * from './appPlan';
 export * from './approveActionRequest';

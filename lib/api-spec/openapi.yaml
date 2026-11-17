@@ -6816,7 +6816,7 @@ components:
 
     App:
       type: object
-      required: [id, name, slug, baseUrl, status, serviceSecretSet, extraHeaders, sourceType, sourceRepo, sourceBranch, sourceTokenSet, sourceInstallationId, openapiUrl, functionalDescription, architectureRefresh, stagingBranch, stagingUrl, createdAt, updatedAt]
+      required: [id, name, slug, baseUrl, status, serviceSecretSet, extraHeaders, sourceType, sourceRepo, sourceBranch, sourceTokenSet, sourceInstallationId, openapiUrl, functionalDescription, architectureRefresh, stagingBranch, stagingUrl, alfredName, luciusName, leadName, botNames, createdAt, updatedAt]
       properties:
         id:
           type: integer
@@ -6877,6 +6877,26 @@ components:
         stagingBranch:
           type: ["string", "null"]
           description: Branch di prova dell'App, riscritto da Botcave a ogni lavoro delle squadre (null = nessuna versione di prova)
+        alfredName:
+          type: ["string", "null"]
+          description: Nome scelto per Alfred in questa App (null = predefinito)
+        luciusName:
+          type: ["string", "null"]
+          description: Nome scelto per Lucius in questa App (null = predefinito)
+        leadName:
+          type: ["string", "null"]
+          description: Nome scelto per il Responsabile in questa App (null = predefinito)
+        botNames:
+          type: object
+          description: Nomi effettivi dei bot dell'App (scelti o predefiniti)
+          required: [alfred, lucius, lead]
+          properties:
+            alfred:
+              type: string
+            lucius:
+              type: string
+            lead:
+              type: string
         stagingUrl:
           type: ["string", "null"]
           description: Indirizzo https dove la CI dell'App pubblica il branch di prova
@@ -7341,6 +7361,18 @@ components:
         stagingBranch:
           type: ["string", "null"]
           description: Branch di prova (non il base, non main/master, non botcave/…); null lo toglie
+        alfredName:
+          type: ["string", "null"]
+          maxLength: 40
+          description: Nome di Alfred in questa App; null torna al predefinito
+        luciusName:
+          type: ["string", "null"]
+          maxLength: 40
+          description: Nome di Lucius in questa App; null torna al predefinito
+        leadName:
+          type: ["string", "null"]
+          maxLength: 40
+          description: Nome del Responsabile in questa App; null torna al predefinito
         stagingUrl:
           type: ["string", "null"]
           description: Indirizzo https della versione di prova; null lo toglie

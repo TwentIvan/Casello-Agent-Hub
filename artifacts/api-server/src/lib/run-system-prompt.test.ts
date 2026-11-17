@@ -20,6 +20,18 @@ describe("buildSystemPrompt", () => {
   });
 });
 
+describe("buildSystemPrompt: nome del bot", () => {
+  const named = { ...app, slug: "hub", leadName: "Bea" } as App;
+  it("il Responsabile (general) sa come si chiama in questa app", () => {
+    const lead = { name: "Responsabile di prodotto", systemPrompt: "Istruzioni", role: "general" } as Agent;
+    expect(buildSystemPrompt(lead, named)).toContain("In questa app ti chiami Bea.");
+  });
+  it("un agente di area non riceve la riga", () => {
+    const area = { name: "Area", systemPrompt: "Istruzioni", role: "area" } as Agent;
+    expect(buildSystemPrompt(area, named)).not.toContain("ti chiami");
+  });
+});
+
 describe("runLimitsFor", () => {
   it("il Responsabile (general) ha limiti più ampi, gli agenti di area quelli di sempre", async () => {
     const { runLimitsFor, PRODUCT_LEAD_LIMITS } = await import("./run-executor");

@@ -12,6 +12,7 @@ import { classifyLivePull } from "../code-writer/merge";
 import { ciState, failedNames } from "../code-writer/ci-state";
 import { getPullDetail, mergeBranches, mergeCommit, openReleasePull, readCi, type RepoRef } from "../code-writer/github-git";
 import { codeErrorMessage } from "../code-writer/session";
+import { CodeWriteError } from "../code-writer/messages";
 import { enqueueTurnReason, notifyTurnQueued } from "./turn-queue";
 import { emitEvent } from "./events";
 import { WORK_MESSAGES, workRepo } from "./works";
@@ -209,10 +210,17 @@ async function watchRelease(work: TeamWork, now: Date): Promise<void> {
     if (since > RELEASE_CI_TIMEOUT_MS) await failRelease(work, RELEASE_MESSAGES.ciTimeout);
     return;
   }
-  // CI verde: workflow e meccanismo delle migrazioni restano rifiutati, gli script -post sono ammessi (l'utente li ha visti)
-  const cls = await classifyLivePull(ctx.ref, pull);
-  if (cls.kind === "refuse") return failRelease(work, cls.message);
-  const merged = await mergeCommit(ctx.ref, pull.number, { sha: pull.headSha, title: `Lavoro ${work.number} di ${ctx.instance.name} (#${pull.number})`.slice(0, 250) });
+  // CI verde: workflow e meccanismo delle migrazioni restano rifiutati, gli script -post sono ammessi (l'utente li ha visti).
+  // Un rifiuto di GitHub (regole del branch, commit di merge non ammessi, testa cambiata) chiude il rilascio con il messaggio fisso
+  let merged: { sha: string };
+  try {
+    const cls = await classifyLivePull(ctx.ref, pull);
+    if (cls.kind === "refuse") return failRelease(work, cls.message);
+    merged = await mergeCommit(ctx.ref, pull.number, { sha: pull.headSha, title: `Lavoro ${work.number} di ${ctx.instance.name} (#${pull.number})`.slice(0, 250) });
+  } catch (err) {
+    if (err instanceof CodeWriteError && err.status !== null && err.status < 500) return failRelease(work, err.message);
+    throw err;
+  }
   logger.info({ instanceId: work.instanceId, work: work.number, pr: pull.number, sha: merged.sha.slice(0, 7) }, "Lavoro portato in produzione");
   await finishReleased(work, ctx.instance.refAppId);
 }

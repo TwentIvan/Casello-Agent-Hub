@@ -183,3 +183,55 @@ describe("chiusura del lavoro", () => {
     expect((await items())[0]!.argsPublic).toMatchObject({ stagingNote: WORK_MESSAGES.noStaging });
   });
 });
+
+describe("correzioni della revisione finale", () => {
+  it("I6: branch di prova uguale al base attuale dell'App (cambiato a metà lavoro): nessuna scrittura forzata", async () => {
+    await setStaging("produzione");
+    await db.update(appsTable).set({ sourceBranch: "produzione" });
+    gh.git.get(REPO)!.refs.set("heads/produzione", gh.git.get(REPO)!.refs.get("heads/main")!);
+    const before = gh.git.get(REPO)!.refs.get("heads/produzione");
+    await taskPull({ "b.txt": "due" });
+    await db.update(teamCodeTasksTable).set({ prState: "merged" });
+    await closeWorkIfDone(instanceId);
+    expect(gh.git.get(REPO)!.refs.get("heads/produzione")).toBe(before);
+    expect((await items())[0]!.argsPublic).toMatchObject({ stagingNote: WORK_MESSAGES.noStaging });
+  });
+
+  it("I8: branch di prova che non si scrive: voce accodata con l'avviso ed evento bloccato", async () => {
+    await setStaging("staging");
+    await taskPull({ "b.txt": "due" });
+    await db.update(teamCodeTasksTable).set({ prState: "merged" });
+    gh.failWith = (req) => (req.path.includes("/git/refs/heads/staging") ? 403 : null);
+    await closeWorkIfDone(instanceId);
+    gh.failWith = null;
+    const queued = await items();
+    expect(queued).toHaveLength(1);
+    expect(queued[0]!.argsPublic).toMatchObject({ stagingUrl: null, stagingNote: WORK_MESSAGES.stagingFailed });
+    const ev = await events();
+    expect(ev.some((e) => e.type === "bloccato" && e.bulletin === `Lavoro 1: ${WORK_MESSAGES.stagingFailed}`)).toBe(true);
+    expect(ev.some((e) => e.type === "lavoro_in_prova")).toBe(false);
+  });
+
+  it("I8: con la voce non accodabile il giro dopo non riemette lavoro_in_prova", async () => {
+    await setStaging("staging");
+    await taskPull({ "b.txt": "due" });
+    await db.update(teamCodeTasksTable).set({ prState: "merged" });
+    const { ensureReleaseItem } = await import("./works");
+    await closeWorkIfDone(instanceId);
+    await db.update(teamWorksTable).set({ pendingActionId: null }).where(eq(teamWorksTable.id, workId));
+    await ensureReleaseItem(workId);
+    expect((await events()).filter((e) => e.type === "lavoro_in_prova")).toHaveLength(1);
+  });
+
+  it("I9: l'esito del revisore (ruolo con il codice in lettura) entra nella voce", async () => {
+    const [inst] = await db.select().from(teamInstancesTable).where(eq(teamInstancesTable.id, instanceId));
+    const rev = { key: "rev", name: "Revisore", task: "", isLead: false, runsOn: "cloud", aiModelId: null, tools: [], skills: [], localSkills: [], code: "read" };
+    await db.update(teamInstancesTable).set({ roles: [...(inst!.roles as never[]), rev] as never }).where(eq(teamInstancesTable.id, instanceId));
+    const { teamTasksTable } = await import("@workspace/db");
+    await db.insert(teamTasksTable).values({ instanceId, planTaskId: "r1", roleKey: "rev", instructions: "", status: "done", outcome: "Branch rivisto: nessun problema", finishedAt: new Date() });
+    await taskPull({ "b.txt": "due" });
+    await db.update(teamCodeTasksTable).set({ prState: "merged" }).where(eq(teamCodeTasksTable.planTaskId, "t1"));
+    await closeWorkIfDone(instanceId, { fromLead: true });
+    expect((await items())[0]!.argsPublic).toMatchObject({ review: { roleKey: "rev", roleName: "Revisore", outcome: "Branch rivisto: nessun problema" } });
+  });
+});

@@ -53,11 +53,20 @@ describe("readReleaseArgs", () => {
         { id: "t2", title: "Logout", issue: null, prNumber: 8, prUrl: null },
       ],
       postScripts: ["docs/migrations/2026-11-17-x-post.sql"],
+      review: null,
     });
   });
 
   it("argomenti assenti: valori vuoti", () => {
     expect(readReleaseArgs(null)).toMatchObject({ number: null, tasks: [], postScripts: [], stagingUrl: null });
+  });
+});
+
+describe("readReleaseArgs: esito del revisore", () => {
+  it("legge l'esito del revisore se c'è", () => {
+    expect(readReleaseArgs({ review: { roleKey: "rev", roleName: "Revisore", outcome: "ok" } }).review).toEqual({ roleKey: "rev", roleName: "Revisore", outcome: "ok" });
+    expect(readReleaseArgs({ review: { roleKey: 3 } }).review).toBeNull();
+    expect(readReleaseArgs({}).review).toBeNull();
   });
 });
 

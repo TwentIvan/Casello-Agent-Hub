@@ -51,6 +51,15 @@ export function ReleaseDetail({ args, status }: { args: unknown; status: string 
           ))}
         </ul>
       )}
+      <p className="break-words">
+        {r.review ? (
+          <>
+            Revisione ({r.review.roleName}): <span className="whitespace-pre-wrap">{r.review.outcome}</span>
+          </>
+        ) : (
+          <span className="text-ink-muted">Nessuna revisione del lavoro da un ruolo con il codice in lettura.</span>
+        )}
+      </p>
       {r.postScripts.length > 0 && (
         <div className="space-y-1 rounded-md border border-border p-2">
           <p className="text-xs text-ink-muted">Da applicare su Neon dopo il deploy</p>

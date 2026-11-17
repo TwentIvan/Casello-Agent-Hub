@@ -173,3 +173,25 @@ describe("freno dei fallimenti", () => {
     expect(isEnvironmentFailure(WORK_MESSAGES.noCi)).toBe(true);
   });
 });
+
+describe("I1: merge ritentato", () => {
+  it("un merge non riuscito al primo giro (lavoro momentaneamente non aperto) si ritenta ai giri dopo", async () => {
+    await taskPull({ "b.txt": "due" });
+    ciGreen();
+    await db.update(teamWorksTable).set({ status: "awaiting_release" }).where(eq(teamWorksTable.id, workId));
+    await watchCodeTasksOnce(at(60_000));
+    expect(gh.pulls.get(REPO)![0]!.merged).toBe(false);
+    await db.update(teamWorksTable).set({ status: "open" }).where(eq(teamWorksTable.id, workId));
+    await watchCodeTasksOnce(at(120_000));
+    expect(gh.pulls.get(REPO)![0]!.merged).toBe(true);
+  });
+
+  it("un rifiuto si notifica una volta sola, anche se il merge si ritenta", async () => {
+    await taskPull({ ".github/workflows/ci.yml": "on: push" });
+    ciGreen();
+    await watchCodeTasksOnce(at(60_000));
+    await watchCodeTasksOnce(at(120_000));
+    const ev = await events();
+    expect(ev.filter((e) => e.type === "bloccato" && e.detail === MERGE_MESSAGES.workflows)).toHaveLength(1);
+  });
+});

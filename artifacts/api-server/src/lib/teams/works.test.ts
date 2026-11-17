@@ -8,7 +8,7 @@ import { createNode } from "../nodes/nodes";
 import { claimTask, heartbeat } from "../nodes/protocol";
 import { upsertCodeTask } from "../code-writer/code-tasks";
 import { startTask } from "./task-runner";
-import { WORK_MESSAGES, codeQueueBlock, ensureWorkForCodeTask, getOpenWork, workBranch } from "./works";
+import { WORK_MESSAGES, codeQueueBlock, ensureWorkForCodeTask, getOpenWork, workBaseFor, workBranch } from "./works";
 
 // Lavoro su branch unico: apertura del branch dalla testa del base, fila dei compiti con codice, base dei compiti node
 // (PGlite + finto GitHub)
@@ -163,5 +163,59 @@ describe("assegna_compito con il lavoro su branch unico", () => {
     expect(second).toMatchObject({ ok: false, content: WORK_MESSAGES.queueBusy });
     const doc = await assign(instanceId, "t3");
     expect(doc.ok, doc.content).toBe(true);
+  });
+});
+
+describe("correzioni della revisione finale", () => {
+  async function lead(instanceId: number, name: string, args: Record<string, unknown>) {
+    const { LEAD_TOOLS, leadToolHandler } = await import("./lead-tools");
+    return leadToolHandler({ instanceId, userId, teamName: "Squadra WI", roleKeys: ["dev", "dev2", "doc"] })(LEAD_TOOLS.find((t) => t.name === name)!, args);
+  }
+
+  it("C1: la PR aperta di un compito non blocca la sua riassegnazione, blocca gli altri", async () => {
+    const instanceId = await team();
+    const work = await ensureWorkForCodeTask((await instanceRow(instanceId))!);
+    await upsertCodeTask({ instanceId, planTaskId: "t1", repo: REPO, branch: `botcave/${instanceId}-t1`, baseBranch: work.branch, headSha: mainSha, pr: { number: 5, url: "u" } });
+    const row = (await instanceRow(instanceId))!;
+    expect(await db.transaction((tx) => codeQueueBlock(row, work.id, tx, "t1"))).toBeNull();
+    expect(await db.transaction((tx) => codeQueueBlock(row, work.id, tx, "t2"))).toBe(WORK_MESSAGES.queueBusy);
+    const again = await lead(instanceId, "assegna_compito", { taskId: "t1" });
+    expect(again.ok, again.content).toBe(true);
+  });
+
+  it("I2: con il lavoro in attesa di Porta in produzione non si assegnano compiti con codice", async () => {
+    const instanceId = await team();
+    const work = await ensureWorkForCodeTask((await instanceRow(instanceId))!);
+    await db.update(teamWorksTable).set({ status: "awaiting_release" }).where(eq(teamWorksTable.id, work.id));
+    expect(await lead(instanceId, "assegna_compito", { taskId: "t1" })).toMatchObject({ ok: false, content: WORK_MESSAGES.workNotOpen });
+    // Un compito senza codice parte comunque
+    expect((await lead(instanceId, "assegna_compito", { taskId: "t3" })).ok).toBe(true);
+  });
+
+  it("I2: chiudi_lavoro con un compito con codice ancora in corso è rifiutato", async () => {
+    const instanceId = await team();
+    await ensureWorkForCodeTask((await instanceRow(instanceId))!);
+    await startTask(instanceId, "t1");
+    expect(await lead(instanceId, "chiudi_lavoro", { bulletin: "fatto" })).toMatchObject({ ok: false, content: WORK_MESSAGES.closeBusy });
+    expect((await getOpenWork(instanceId))!.status).toBe("open");
+  });
+
+  it("I4: un compito con una PR di prima della 3b (verso main) resta sul base e non apre un lavoro", async () => {
+    const instanceId = await team();
+    await upsertCodeTask({ instanceId, planTaskId: "t1", repo: REPO, branch: `botcave/${instanceId}-t1`, baseBranch: "main", headSha: mainSha, pr: { number: 6, url: "u" } });
+    expect(await workBaseFor(instanceId, "t1")).toBe("main");
+    const out = await lead(instanceId, "assegna_compito", { taskId: "t1" });
+    expect(out.ok, out.content).toBe(true);
+    expect(await getOpenWork(instanceId)).toBeNull();
+    const { node } = await createNode(userId, "Mac");
+    await heartbeat(node.id, { version: "0.4.0", executor: "claude-code", skills: ["sap:abap-developer"], workspaceRoot: "/w", maxConcurrent: 1 });
+    expect((await claimTask(node.id))!.git?.baseBranch).toBe("main");
+  });
+
+  it("I5: senza l'installazione di chi ha attivato la squadra niente lavoro né branch", async () => {
+    const instanceId = await team();
+    await db.delete(githubInstallationsTable);
+    await expect(ensureWorkForCodeTask((await instanceRow(instanceId))!)).rejects.toThrow(WORK_MESSAGES.noAccess);
+    expect(gh.git.get(REPO)!.refs.get(`heads/${workBranch(instanceId, 1)}`)).toBeUndefined();
   });
 });

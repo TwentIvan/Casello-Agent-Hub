@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
-import { WORK_MESSAGES, WorkError, closeWorkIfDone, codeQueueBlock, ensureWorkForCodeTask, getOpenWork, roleWritesCode, workSummary, type WorkSummary } from "./works";
+import { WORK_MESSAGES, WorkError, closeWorkIfDone, codeQueueBlock, ensureWorkForCodeTask, getOpenWork, isLegacyCodeTask, roleWritesCode, workSummary, writerTaskActive, type WorkSummary } from "./works";
 import { codeErrorMessage } from "../code-writer/session";
 import { z } from "zod";
 import { db, pendingActionsTable, teamCodeTasksTable, teamInstancesTable, teamPlanVersionsTable, teamTasksTable } from "@workspace/db";
@@ -619,7 +619,8 @@ async function assignTask(ctx: LeadContext, args: Record<string, unknown>): Prom
   let guard: Parameters<typeof startTask>[3] = {};
   const [instance] = await db.select().from(teamInstancesTable).where(eq(teamInstancesTable.id, ctx.instanceId)).limit(1);
   const roleKey = approved.tasks.find((t) => t.id === taskId)!.roleKey;
-  if (instance && roleWritesCode(instance, roleKey)) {
+  // Un compito con una PR di prima della 3b (verso il base) continua come prima: niente lavoro né fila
+  if (instance && roleWritesCode(instance, roleKey) && !(await isLegacyCodeTask(ctx.instanceId, taskId))) {
     let work;
     try {
       work = await ensureWorkForCodeTask(instance);
@@ -629,9 +630,10 @@ async function assignTask(ctx: LeadContext, args: Record<string, unknown>): Prom
       if (message !== null) return fail(message);
       throw err;
     }
+    if (work.status !== "open") return fail(WORK_MESSAGES.workNotOpen);
     guard = {
       guard: async (tx) => {
-        const blocked = await codeQueueBlock(instance, work.id, tx);
+        const blocked = await codeQueueBlock(instance, work.id, tx, taskId);
         if (blocked) throw new TeamRuleError(blocked);
       },
     };
@@ -734,6 +736,9 @@ async function closeWork(ctx: LeadContext, args: Record<string, unknown>): Promi
   const work = await getOpenWork(ctx.instanceId);
   if (work && work.status !== "open") return fail(WORK_MESSAGES.alreadyClosed);
   if (work) {
+    const [instance] = await db.select().from(teamInstancesTable).where(eq(teamInstancesTable.id, ctx.instanceId)).limit(1);
+    // Un compito con codice ancora in corso finirebbe fuori dal lavoro: si chiude dopo il suo esito
+    if (instance && (await writerTaskActive(instance))) return fail(WORK_MESSAGES.closeBusy);
     await lockActiveInstanceOnce(ctx.instanceId);
     const result = await closeWorkIfDone(ctx.instanceId, { fromLead: true, bulletin: parsed.data.bulletin });
     if (result === "already") return fail(WORK_MESSAGES.alreadyClosed);

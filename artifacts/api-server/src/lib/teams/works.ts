@@ -2,7 +2,7 @@
 // codice apre il lavoro e il suo branch dalla testa del base dell'App; i compiti con codice partono dal branch del lavoro e
 // vanno in fila (uno alla volta, il successivo dopo il merge della PR del precedente). Log: id, numeri e sha a 7.
 
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, sql } from "drizzle-orm";
 import {
   db,
   appsTable,
@@ -23,6 +23,7 @@ import { getApprovedPlan, getPlan } from "./plan";
 import { checkStagingBranch } from "./staging";
 import { isUniqueViolation } from "../pg-errors";
 import { codeWrites } from "./manifest";
+import { userHasInstallation } from "../github/installations";
 
 export const WORK_MESSAGES = {
   queueBusy: "un compito con codice è già in corso nel lavoro: aspetta che la sua PR sia unita",
@@ -32,6 +33,9 @@ export const WORK_MESSAGES = {
   workPull: "le PR del lavoro le unisce Botcave quando la CI è verde",
   noStaging: "nessuna versione di prova configurata per l'App",
   noAccess: "accesso al repository non disponibile",
+  workNotOpen: "il lavoro è in attesa di Porta in produzione: aspetta la decisione dell'utente prima di assegnare compiti con codice",
+  stagingFailed: "versione di prova non aggiornata: GitHub ha rifiutato la scrittura del branch di prova",
+  closeBusy: "un compito con codice è ancora in corso: aspetta il suo esito prima di chiudere il lavoro",
 } as const;
 
 /** Stati di un lavoro non ancora chiuso (indice unico parziale `team_works_one_open`). */
@@ -67,6 +71,8 @@ export async function workRepo(instance: TeamInstanceRow): Promise<{ ref: RepoRe
   const [app] = await db.select().from(appsTable).where(eq(appsTable.id, instance.refAppId)).limit(1);
   const cfg = githubConfig();
   if (!app || !cfg || app.sourceType !== "github" || !app.sourceRepo || app.sourceInstallationId === null) return null;
+  // Ogni scrittura del lavoro (branch, versione di prova) vuole l'installazione di chi ha attivato la squadra
+  if (instance.activatedBy === null || !(await userHasInstallation(instance.activatedBy, app.sourceInstallationId))) return null;
   return {
     ref: { cfg, installationId: app.sourceInstallationId, repo: app.sourceRepo },
     sourceBranch: app.sourceBranch,
@@ -113,7 +119,10 @@ export async function ensureWorkForCodeTask(instance: TeamInstanceRow): Promise<
  * Fila dei compiti con codice (da chiamare con la squadra bloccata): il messaggio fisso se c'è già un compito di un ruolo
  * che scrive codice in coda, in corso o in attesa del nodo, oppure una PR del lavoro ancora aperta.
  */
-export async function codeQueueBlock(instance: TeamInstanceRow, workId: number, tx: Executor): Promise<string | null> {
+export async function codeQueueBlock(instance: TeamInstanceRow, workId: number, tx: Executor, planTaskId: string | null = null): Promise<string | null> {
+  // Il lavoro deve essere ancora aperto (non in prova né in rilascio)
+  const [work] = await tx.select({ status: teamWorksTable.status }).from(teamWorksTable).where(eq(teamWorksTable.id, workId)).limit(1);
+  if (work && work.status !== "open") return WORK_MESSAGES.workNotOpen;
   const writers = instance.roles.filter((r) => codeWrites(r.code ?? "none")).map((r) => r.key);
   if (writers.length > 0) {
     const [busy] = await tx
@@ -132,9 +141,60 @@ export async function codeQueueBlock(instance: TeamInstanceRow, workId: number, 
   const [open] = await tx
     .select({ id: teamCodeTasksTable.id })
     .from(teamCodeTasksTable)
-    .where(and(eq(teamCodeTasksTable.workId, workId), eq(teamCodeTasksTable.prState, "open")))
+    .where(
+      and(
+        eq(teamCodeTasksTable.workId, workId),
+        eq(teamCodeTasksTable.prState, "open"),
+        // La PR del compito che si riassegna non lo blocca: riparte dal suo branch (CI rossa, CI assente, merge rifiutato)
+        ...(planTaskId !== null ? [sql`${teamCodeTasksTable.planTaskId} <> ${planTaskId}`] : []),
+      ),
+    )
     .limit(1);
   return open ? WORK_MESSAGES.queueBusy : null;
+}
+
+/**
+ * Riga di `team_code_tasks` di prima del lavoro su branch unico (PR verso il base, `work_id` nullo): il compito continua
+ * come prima, sul base registrato, senza lavoro né fila.
+ */
+async function legacyCodeTask(instanceId: number, planTaskId: string): Promise<{ baseBranch: string } | null> {
+  const [row] = await db
+    .select({ baseBranch: teamCodeTasksTable.baseBranch })
+    .from(teamCodeTasksTable)
+    .where(
+      and(
+        eq(teamCodeTasksTable.instanceId, instanceId),
+        eq(teamCodeTasksTable.planTaskId, planTaskId),
+        sql`${teamCodeTasksTable.workId} is null`,
+        sql`${teamCodeTasksTable.prNumber} is not null`,
+      ),
+    )
+    .limit(1);
+  return row ?? null;
+}
+
+export async function isLegacyCodeTask(instanceId: number, planTaskId: string): Promise<boolean> {
+  return (await legacyCodeTask(instanceId, planTaskId)) !== null;
+}
+
+/** Base di un compito con codice: quello registrato per un compito di prima della 3b, altrimenti il branch del lavoro aperto (null = base dell'App). */
+export async function workBaseFor(instanceId: number, planTaskId: string): Promise<string | null> {
+  const legacy = await legacyCodeTask(instanceId, planTaskId);
+  if (legacy) return legacy.baseBranch;
+  const work = await getOpenWork(instanceId);
+  return work?.status === "open" ? work.branch : null;
+}
+
+/** Un compito di un ruolo che scrive codice è in coda, in corso o in attesa del nodo. */
+export async function writerTaskActive(instance: TeamInstanceRow): Promise<boolean> {
+  const writers = instance.roles.filter((r) => codeWrites(r.code ?? "none")).map((r) => r.key);
+  if (writers.length === 0) return false;
+  const [busy] = await db
+    .select({ id: teamTasksTable.id })
+    .from(teamTasksTable)
+    .where(and(eq(teamTasksTable.instanceId, instance.id), inArray(teamTasksTable.roleKey, writers), inArray(teamTasksTable.status, ["queued", "running", "waiting_node"])))
+    .limit(1);
+  return busy !== undefined;
 }
 
 // --- Chiusura del lavoro, versione di prova e voce «Porta in produzione» (§15.3) ----------------------------------------
@@ -216,15 +276,30 @@ export async function ensureReleaseItem(workId: number): Promise<void> {
   const repo = await workRepo(instance);
   if (!repo) return;
   const head = (await getBranchHead(repo.ref, work.branch)) ?? work.headSha ?? work.baseSha;
-  const staging =
-    repo.stagingBranch !== null && checkStagingBranch(repo.stagingBranch, work.baseBranch) === null ? { branch: repo.stagingBranch, url: repo.stagingUrl } : null;
+  // Il branch di prova non è mai il base del lavoro né il base attuale dell'App (che può essere cambiato a metà lavoro)
+  const currentBase = repo.sourceBranch ?? (await getDefaultBranch(repo.ref));
+  let staging =
+    repo.stagingBranch !== null && checkStagingBranch(repo.stagingBranch, work.baseBranch) === null && checkStagingBranch(repo.stagingBranch, currentBase) === null
+      ? { branch: repo.stagingBranch, url: repo.stagingUrl }
+      : null;
+  let stagingNote: string | null = staging ? null : WORK_MESSAGES.noStaging;
   if (staging) {
-    await forceUpdateRef(repo.ref, staging.branch, head);
-    await emitEvent({
-      instanceId: instance.id,
-      type: "lavoro_in_prova",
-      bulletin: `Lavoro ${work.number} in prova${staging.url ? ` su ${staging.url}` : ` sul branch ${staging.branch}`}`.slice(0, 300),
-    });
+    try {
+      // Idempotente: con il branch di prova già sulla testa del lavoro (giro ripetuto, coda piena) niente scrittura né evento
+      if ((await getBranchHead(repo.ref, staging.branch)) !== head) {
+        await forceUpdateRef(repo.ref, staging.branch, head);
+        await emitEvent({
+          instanceId: instance.id,
+          type: "lavoro_in_prova",
+          bulletin: `Lavoro ${work.number} in prova${staging.url ? ` su ${staging.url}` : ` sul branch ${staging.branch}`}`.slice(0, 300),
+        });
+      }
+    } catch (err) {
+      logger.warn({ instanceId: instance.id, work: work.number, errName: err instanceof Error ? err.name : "Error" }, "Branch di prova non aggiornato");
+      staging = null;
+      stagingNote = WORK_MESSAGES.stagingFailed;
+      await emitEvent({ instanceId: instance.id, type: "bloccato", bulletin: `Lavoro ${work.number}: ${WORK_MESSAGES.stagingFailed}`.slice(0, 300) });
+    }
   }
   const pulls = await db
     .select({ planTaskId: teamCodeTasksTable.planTaskId, prNumber: teamCodeTasksTable.prNumber, prUrl: teamCodeTasksTable.prUrl })
@@ -244,8 +319,9 @@ export async function ensureReleaseItem(workId: number): Promise<void> {
     headSha: head,
     stagingBranch: staging?.branch ?? null,
     stagingUrl: staging?.url ?? null,
-    stagingNote: staging ? null : WORK_MESSAGES.noStaging,
+    stagingNote,
     tasks,
+    review: await reviewOutcome(instance, work),
     postScripts: work.postScripts,
   };
   await db.transaction(async (tx) => {
@@ -266,6 +342,31 @@ export async function ensureReleaseItem(workId: number): Promise<void> {
       .limit(1);
     await tx.update(teamWorksTable).set({ pendingActionId: item!.id, headSha: head, updatedAt: new Date() }).where(eq(teamWorksTable.id, work.id));
   });
+}
+
+/** Esito dell'ultima revisione del lavoro: compito finito di un ruolo con il codice in lettura, creato dopo l'apertura del lavoro. */
+async function reviewOutcome(instance: TeamInstanceRow, work: TeamWork): Promise<{ roleKey: string; roleName: string; outcome: string } | null> {
+  const readers = instance.roles.filter((r) => !r.isLead && (r.code ?? "none") === "read");
+  if (readers.length === 0) return null;
+  const [row] = await db
+    .select({ roleKey: teamTasksTable.roleKey, outcome: teamTasksTable.outcome })
+    .from(teamTasksTable)
+    .where(
+      and(
+        eq(teamTasksTable.instanceId, instance.id),
+        inArray(
+          teamTasksTable.roleKey,
+          readers.map((r) => r.key),
+        ),
+        eq(teamTasksTable.status, "done"),
+        // Stesso orologio (default del DB) per il compito e per il lavoro
+        gte(teamTasksTable.createdAt, work.createdAt),
+      ),
+    )
+    .orderBy(sql`${teamTasksTable.finishedAt} desc`)
+    .limit(1);
+  if (!row) return null;
+  return { roleKey: row.roleKey, roleName: readers.find((r) => r.key === row.roleKey)?.name ?? row.roleKey, outcome: (row.outcome ?? "").slice(0, 300) };
 }
 
 /** Giro della sorveglianza: chiude i lavori aperti finiti e completa quelli in attesa senza voce (al più 20 squadre attive). */

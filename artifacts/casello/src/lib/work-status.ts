@@ -44,6 +44,13 @@ const str = (v: unknown): string | null => (typeof v === "string" ? v : null);
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isInteger(v) ? v : null);
 const https = (v: unknown): string | null => (typeof v === "string" && /^https:\/\//.test(v) ? v : null);
 
+/** Esito dell'ultima revisione del lavoro (ruolo con il codice in lettura), se c'è. */
+function readReview(v: unknown): { roleKey: string; roleName: string; outcome: string } | null {
+  const o = v && typeof v === "object" ? (v as Record<string, unknown>) : null;
+  if (!o || typeof o.roleKey !== "string" || typeof o.outcome !== "string") return null;
+  return { roleKey: o.roleKey, roleName: str(o.roleName) ?? o.roleKey, outcome: o.outcome };
+}
+
 /** Dati pubblici della voce `release` (vedi `ensureReleaseItem` dell'API); i link non https si scartano. */
 export function readReleaseArgs(args: unknown) {
   const a = (args && typeof args === "object" ? args : {}) as Record<string, unknown>;
@@ -65,5 +72,6 @@ export function readReleaseArgs(args: unknown) {
     stagingNote: str(a.stagingNote),
     tasks,
     postScripts: Array.isArray(a.postScripts) ? a.postScripts.filter((p): p is string => typeof p === "string") : [],
+    review: readReview(a.review),
   };
 }

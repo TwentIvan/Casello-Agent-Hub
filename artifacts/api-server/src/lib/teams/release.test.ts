@@ -240,4 +240,14 @@ describe("Porta in produzione", () => {
     expect((await item()).status).toBe("failed");
     expect(releasePull().merged).toBe(false);
   });
+
+  it("I7: CI verde ma PR non unibile (es. regole del branch): voce failed e lavoro di nuovo aperto", async () => {
+    const n = await readyWork();
+    await approveAction(userIdOf, n);
+    releasePull().draft = true;
+    greenOn(gh.git.get(REPO)!.refs.get(`heads/${workBranchName}`)!);
+    await watchReleasesOnce(at(5 * 60_000));
+    expect((await item()).status).toBe("failed");
+    expect((await workRow()).status).toBe("open");
+  });
 });

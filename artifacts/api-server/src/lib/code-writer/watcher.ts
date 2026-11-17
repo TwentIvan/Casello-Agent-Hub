@@ -149,13 +149,15 @@ async function watchRow(code: TeamCodeTaskRow, r: RepoRef, now: Date): Promise<v
   });
   if (won && notify) notifyTurnQueued(code.instanceId);
   // Lavoro su branch unico: con la CI verde Botcave unisce la PR sul branch del lavoro (il pr_closed arriva al giro dopo)
-  if (won && notify && state === "success" && code.workId !== null) await mergeWorkPull({ ...code, headSha }, taskId);
+  // Merge già tentato su questa testa senza riuscire (rifiuto, errore, lavoro non aperto): si ritenta a ogni giro, in silenzio
+  const retry = !notify && state === "success" && code.workId !== null && pull.headSha === code.ciNotifiedSha;
+  if (won && state === "success" && code.workId !== null && (notify || retry)) await mergeWorkPull({ ...code, headSha }, taskId, notify);
 }
 
-/** Merge automatico sul branch del lavoro; un rifiuto blocca il compito con il messaggio fisso e lo dice al capo. */
-async function mergeWorkPull(code: TeamCodeTaskRow, taskId: number | undefined): Promise<void> {
+/** Merge automatico sul branch del lavoro; un rifiuto blocca il compito con il messaggio fisso e lo dice al capo (solo la prima volta per testa). */
+async function mergeWorkPull(code: TeamCodeTaskRow, taskId: number | undefined, report: boolean): Promise<void> {
   const result = await mergeIntoWork(code);
-  if (result === "merged" || result === "skipped") return;
+  if (result === "merged" || result === "skipped" || !report) return;
   await db.transaction(async (tx) => {
     await emitEvent({ instanceId: code.instanceId, type: "bloccato", taskId, bulletin: `Compito ${code.planTaskId}: PR #${code.prNumber} non unita nel lavoro`, detail: result.refused }, tx);
     await patchPlan(code.instanceId, { tasks: [{ id: code.planTaskId, status: "blocked", outcome: result.refused }] }, tx);

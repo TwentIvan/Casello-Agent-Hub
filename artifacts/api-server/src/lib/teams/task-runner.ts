@@ -1,5 +1,5 @@
 import { and, asc, count, eq, gt, inArray, isNull, lte, sql, type SQL } from "drizzle-orm";
-import { getOpenWork } from "./works";
+import { workBaseFor } from "./works";
 import { z } from "zod";
 import {
   appsTable,
@@ -270,7 +270,8 @@ async function openCodeSession(
       issue,
       mode: mode === "read" ? "read" : "write",
       // Lavoro su branch unico: con un lavoro aperto il base del compito è il suo branch
-      baseBranch: (await getOpenWork(instance.id))?.branch ?? app.sourceBranch,
+      // (un compito di prima della 3b resta sul base registrato)
+      baseBranch: (await workBaseFor(instance.id, task.planTaskId)) ?? app.sourceBranch,
     });
     return { session, repo: app.sourceRepo };
   } catch (err) {

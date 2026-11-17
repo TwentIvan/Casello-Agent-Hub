@@ -7483,10 +7483,11 @@ components:
           enum: [pending, executing, done, failed, rejected]
         kind:
           type: string
-          enum: [action, plan, plan_change, proposal, merge]
+          enum: [action, plan, plan_change, proposal, merge, bug]
           description: >-
             Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure
-            proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima)
+            proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima),
+            oppure segnalazione di un bug da affidare alla squadra per i bug dell'App
         proposal:
           description: Passi della proposta; null per le voci che non sono una proposta
           oneOf:
@@ -10714,6 +10715,11 @@ components:
           description: >-
             Spazio di lavoro sul nodo: percorso relativo, solo lettere, cifre, `._ -` e `/`, senza `/` iniziale né
             `..` (altrimenti 400 «spazio di lavoro non valido»). Omesso = invariato, null = tolto.
+        bugTeam:
+          type: boolean
+          description: >-
+            Squadra per i bug dell'App di riferimento: omesso = invariato. Un'altra squadra non chiusa già designata per la
+            stessa App → 409 «l'App ha già una squadra per i bug: <nome>».
 
     TeamAttachment:
       type: object
@@ -10966,7 +10972,7 @@ components:
 
     TeamInstance:
       type: object
-      required: [id, name, status, template, ref, roles, localSkills, createdAt, updatedAt, closedAt, activatedBy, monthlyBudgetUsd, lastTurnAt, nodeWorkspace]
+      required: [id, name, status, template, ref, roles, localSkills, createdAt, updatedAt, closedAt, activatedBy, monthlyBudgetUsd, lastTurnAt, nodeWorkspace, bugTeam]
       properties:
         id:
           type: integer
@@ -11049,6 +11055,9 @@ components:
           type: string
           nullable: true
           description: Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)
+        bugTeam:
+          type: boolean
+          description: Squadra per i bug dell'App di riferimento (riceve le segnalazioni approvate)
 
     TeamMessageInput:
       type: object

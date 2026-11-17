@@ -1367,7 +1367,7 @@ export const QueuedActionStatus = {
 } as const;
 
 /**
- * Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima)
+ * Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima), oppure segnalazione di un bug da affidare alla squadra per i bug dell'App
  */
 export type QueuedActionKind = typeof QueuedActionKind[keyof typeof QueuedActionKind];
 
@@ -1378,6 +1378,7 @@ export const QueuedActionKind = {
   plan_change: 'plan_change',
   proposal: 'proposal',
   merge: 'merge',
+  bug: 'bug',
 } as const;
 
 /**
@@ -1462,7 +1463,7 @@ export interface QueuedProposal {
 export interface QueuedAction {
   number: number;
   status: QueuedActionStatus;
-  /** Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima) */
+  /** Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima), oppure segnalazione di un bug da affidare alla squadra per i bug dell'App */
   kind: QueuedActionKind;
   /** Passi della proposta; null per le voci che non sono una proposta */
   proposal: QueuedProposal | null;
@@ -4220,6 +4221,8 @@ export interface TeamInstanceSave {
      * @maxLength 300
      */
   nodeWorkspace?: string | null;
+  /** Squadra per i bug dell'App di riferimento: omesso = invariato. Un'altra squadra non chiusa già designata per la stessa App → 409 «l'App ha già una squadra per i bug: <nome>». */
+  bugTeam?: boolean;
 }
 
 export interface TeamAttachment {
@@ -4503,6 +4506,8 @@ export interface TeamInstance {
   lastTurnAt: string | null;
   /** Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato) */
   nodeWorkspace: string | null;
+  /** Squadra per i bug dell'App di riferimento (riceve le segnalazioni approvate) */
+  bugTeam: boolean;
 }
 
 export interface TeamMessageInput {

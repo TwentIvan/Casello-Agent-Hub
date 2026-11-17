@@ -6,6 +6,7 @@ import { loadAppConnection, resolveCompositeTools, toCatalogTool } from "../tool
 import { executeTool, redact } from "../tools/executor";
 import { effectiveLevel } from "../tools/levels";
 import { approveMerge, notifyMergeRejected } from "../code-writer/merge";
+import { approveBug, lockBugReportFor, rejectBug } from "../bugs/approval";
 import { decidePlanItem } from "../teams/plan-decisions";
 import { PROPOSAL_MESSAGES } from "./proposal";
 import { approveProposal } from "./proposal-exec";
@@ -84,6 +85,8 @@ export async function approveAction(
   if (action.kind === "proposal") return approveProposal(userId, action, exclude);
   // Merge di una PR di una squadra (migrazioni applicate dall'utente): stessi controlli dello strumento `unisci_pr`
   if (action.kind === "merge") return approveMerge(userId, action);
+  // Segnalazione di un bug: si affida alla squadra per i bug dell'App (nessun token utente)
+  if (action.kind === "bug") return approveBug(userId, action);
   const { toolId, appId } = action;
   if (toolId === null || appId === null) return fail(409, ACTION_MESSAGES.notExecutable);
 
@@ -151,13 +154,15 @@ export async function approveAction(
 }
 
 export async function rejectAction(userId: number, number: number, note: string | null): Promise<DecideResult> {
-  const [planItem] = await db
+  const [item] = await db
     .select()
     .from(pendingActionsTable)
-    .where(and(eq(pendingActionsTable.userId, userId), eq(pendingActionsTable.number, number), inArray(pendingActionsTable.kind, ["plan", "plan_change"])))
+    .where(and(eq(pendingActionsTable.userId, userId), eq(pendingActionsTable.number, number)))
     .limit(1);
-  if (planItem) return decidePlanItem(planItem, false, note);
+  if (item && (item.kind === "plan" || item.kind === "plan_change")) return decidePlanItem(item, false, note);
   const row = await db.transaction(async (tx) => {
+    // Segnalazione prima della voce: stesso ordine dei lock dell'approvazione
+    if (item) await lockBugReportFor(tx, item);
     const [rejected] = await tx
       .update(pendingActionsTable)
       .set({ status: "rejected", decidedBy: userId, decidedAt: new Date(), decisionNote: note })
@@ -169,6 +174,8 @@ export async function rejectAction(userId: number, number: number, note: string 
         ),
       )
       .returning();
+    // Segnalazione rifiutata nella stessa transazione: la nota (o la frase fissa) è il messaggio per l'utente
+    if (rejected?.kind === "bug") await rejectBug(rejected, note, tx);
     // Proposta rifiutata: nessun passo verrà eseguito (console e `leggi_proposta` non mostrano «da eseguire»)
     if (rejected?.kind === "proposal") {
       await tx

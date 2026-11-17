@@ -7,7 +7,7 @@
  */
 
 /**
- * Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima)
+ * Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima), oppure segnalazione di un bug da affidare alla squadra per i bug dell'App
  */
 export type QueuedActionKind = typeof QueuedActionKind[keyof typeof QueuedActionKind];
 
@@ -18,4 +18,5 @@ export const QueuedActionKind = {
   plan_change: 'plan_change',
   proposal: 'proposal',
   merge: 'merge',
+  bug: 'bug',
 } as const;

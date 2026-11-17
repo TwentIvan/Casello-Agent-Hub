@@ -4095,7 +4095,8 @@ export const ListTeamInstancesResponseItem = zod.object({
   "activatedBy": zod.number().nullable().describe('Utente che ha attivato la squadra (riceve le voci in coda)'),
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto mensile in USD di turni e compiti (null = nessun tetto)'),
   "lastTurnAt": zod.coerce.date().nullable(),
-  "nodeWorkspace": zod.string().nullable().describe('Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)')
+  "nodeWorkspace": zod.string().nullable().describe('Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)'),
+  "bugTeam": zod.boolean().describe('Squadra per i bug dell\'App di riferimento (riceve le segnalazioni approvate)')
 })
 export const ListTeamInstancesResponse = zod.array(ListTeamInstancesResponseItem)
 
@@ -4207,7 +4208,8 @@ export const CreateTeamInstanceResponse = zod.object({
   "activatedBy": zod.number().nullable().describe('Utente che ha attivato la squadra (riceve le voci in coda)'),
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto mensile in USD di turni e compiti (null = nessun tetto)'),
   "lastTurnAt": zod.coerce.date().nullable(),
-  "nodeWorkspace": zod.string().nullable().describe('Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)')
+  "nodeWorkspace": zod.string().nullable().describe('Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)'),
+  "bugTeam": zod.boolean().describe('Squadra per i bug dell\'App di riferimento (riceve le segnalazioni approvate)')
 })
 
 
@@ -4277,7 +4279,8 @@ export const GetTeamInstanceResponse = zod.object({
   "activatedBy": zod.number().nullable().describe('Utente che ha attivato la squadra (riceve le voci in coda)'),
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto mensile in USD di turni e compiti (null = nessun tetto)'),
   "lastTurnAt": zod.coerce.date().nullable(),
-  "nodeWorkspace": zod.string().nullable().describe('Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)')
+  "nodeWorkspace": zod.string().nullable().describe('Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)'),
+  "bugTeam": zod.boolean().describe('Squadra per i bug dell\'App di riferimento (riceve le segnalazioni approvate)')
 })
 
 
@@ -4335,7 +4338,8 @@ export const SaveTeamInstanceBody = zod.object({
   "toolHints": zod.array(zod.string()).optional()
 }).describe('Skill specializzata di una sola squadra')),
   "status": zod.enum(['draft', 'active']).optional().describe('Facoltativo e solo uguale allo stato attuale: si attiva con `POST \/team-instances\/{id}\/activate` e una squadra attiva non torna in bozza.'),
-  "nodeWorkspace": zod.string().max(saveTeamInstanceBodyNodeWorkspaceMax).nullish().describe('Spazio di lavoro sul nodo: percorso relativo, solo lettere, cifre, `._ -` e `\/`, senza `\/` iniziale né `..` (altrimenti 400 «spazio di lavoro non valido»). Omesso = invariato, null = tolto.')
+  "nodeWorkspace": zod.string().max(saveTeamInstanceBodyNodeWorkspaceMax).nullish().describe('Spazio di lavoro sul nodo: percorso relativo, solo lettere, cifre, `._ -` e `\/`, senza `\/` iniziale né `..` (altrimenti 400 «spazio di lavoro non valido»). Omesso = invariato, null = tolto.'),
+  "bugTeam": zod.boolean().optional().describe('Squadra per i bug dell\'App di riferimento: omesso = invariato. Un\'altra squadra non chiusa già designata per la stessa App → 409 «l\'App ha già una squadra per i bug: <nome>».')
 })
 
 export const saveTeamInstanceResponseRolesItemCodeDefault = `none`;
@@ -4397,7 +4401,8 @@ export const SaveTeamInstanceResponse = zod.object({
   "activatedBy": zod.number().nullable().describe('Utente che ha attivato la squadra (riceve le voci in coda)'),
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto mensile in USD di turni e compiti (null = nessun tetto)'),
   "lastTurnAt": zod.coerce.date().nullable(),
-  "nodeWorkspace": zod.string().nullable().describe('Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)')
+  "nodeWorkspace": zod.string().nullable().describe('Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)'),
+  "bugTeam": zod.boolean().describe('Squadra per i bug dell\'App di riferimento (riceve le segnalazioni approvate)')
 })
 
 
@@ -4531,7 +4536,8 @@ export const CloseTeamInstanceResponse = zod.object({
   "activatedBy": zod.number().nullable().describe('Utente che ha attivato la squadra (riceve le voci in coda)'),
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto mensile in USD di turni e compiti (null = nessun tetto)'),
   "lastTurnAt": zod.coerce.date().nullable(),
-  "nodeWorkspace": zod.string().nullable().describe('Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)')
+  "nodeWorkspace": zod.string().nullable().describe('Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)'),
+  "bugTeam": zod.boolean().describe('Squadra per i bug dell\'App di riferimento (riceve le segnalazioni approvate)')
 })
 
 
@@ -4658,7 +4664,8 @@ export const ApplyTeamInstanceUpdatesResponse = zod.object({
   "activatedBy": zod.number().nullable().describe('Utente che ha attivato la squadra (riceve le voci in coda)'),
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto mensile in USD di turni e compiti (null = nessun tetto)'),
   "lastTurnAt": zod.coerce.date().nullable(),
-  "nodeWorkspace": zod.string().nullable().describe('Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)')
+  "nodeWorkspace": zod.string().nullable().describe('Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)'),
+  "bugTeam": zod.boolean().describe('Squadra per i bug dell\'App di riferimento (riceve le segnalazioni approvate)')
 })
 
 
@@ -5042,7 +5049,8 @@ export const ActivateTeamInstanceResponse = zod.object({
   "activatedBy": zod.number().nullable().describe('Utente che ha attivato la squadra (riceve le voci in coda)'),
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto mensile in USD di turni e compiti (null = nessun tetto)'),
   "lastTurnAt": zod.coerce.date().nullable(),
-  "nodeWorkspace": zod.string().nullable().describe('Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)')
+  "nodeWorkspace": zod.string().nullable().describe('Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)'),
+  "bugTeam": zod.boolean().describe('Squadra per i bug dell\'App di riferimento (riceve le segnalazioni approvate)')
 })
 
 
@@ -5143,7 +5151,8 @@ export const SetTeamBudgetResponse = zod.object({
   "activatedBy": zod.number().nullable().describe('Utente che ha attivato la squadra (riceve le voci in coda)'),
   "monthlyBudgetUsd": zod.number().nullable().describe('Tetto mensile in USD di turni e compiti (null = nessun tetto)'),
   "lastTurnAt": zod.coerce.date().nullable(),
-  "nodeWorkspace": zod.string().nullable().describe('Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)')
+  "nodeWorkspace": zod.string().nullable().describe('Spazio di lavoro sul nodo locale, percorso relativo alla radice del nodo (null = non impostato)'),
+  "bugTeam": zod.boolean().describe('Squadra per i bug dell\'App di riferimento (riceve le segnalazioni approvate)')
 })
 
 
@@ -7641,7 +7650,7 @@ export const ListPendingActionsResponse = zod.object({
   "actions": zod.array(zod.object({
   "number": zod.number(),
   "status": zod.enum(['pending', 'executing', 'done', 'failed', 'rejected']),
-  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal', 'merge']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima)'),
+  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal', 'merge', 'bug']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima), oppure segnalazione di un bug da affidare alla squadra per i bug dell\'App'),
   "proposal": zod.union([zod.object({
   "title": zod.string(),
   "reason": zod.string().nullable(),
@@ -7699,7 +7708,7 @@ export const GetPendingActionParams = zod.object({
 export const GetPendingActionResponse = zod.object({
   "number": zod.number(),
   "status": zod.enum(['pending', 'executing', 'done', 'failed', 'rejected']),
-  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal', 'merge']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima)'),
+  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal', 'merge', 'bug']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima), oppure segnalazione di un bug da affidare alla squadra per i bug dell\'App'),
   "proposal": zod.union([zod.object({
   "title": zod.string(),
   "reason": zod.string().nullable(),
@@ -7770,7 +7779,7 @@ export const ApprovePendingActionBody = zod.object({
 export const ApprovePendingActionResponse = zod.object({
   "number": zod.number(),
   "status": zod.enum(['pending', 'executing', 'done', 'failed', 'rejected']),
-  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal', 'merge']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima)'),
+  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal', 'merge', 'bug']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima), oppure segnalazione di un bug da affidare alla squadra per i bug dell\'App'),
   "proposal": zod.union([zod.object({
   "title": zod.string(),
   "reason": zod.string().nullable(),
@@ -7835,7 +7844,7 @@ export const RejectPendingActionBody = zod.object({
 export const RejectPendingActionResponse = zod.object({
   "number": zod.number(),
   "status": zod.enum(['pending', 'executing', 'done', 'failed', 'rejected']),
-  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal', 'merge']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima)'),
+  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal', 'merge', 'bug']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima), oppure segnalazione di un bug da affidare alla squadra per i bug dell\'App'),
   "proposal": zod.union([zod.object({
   "title": zod.string(),
   "reason": zod.string().nullable(),

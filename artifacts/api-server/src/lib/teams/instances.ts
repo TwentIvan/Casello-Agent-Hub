@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, ne } from "drizzle-orm";
 import {
   db,
   appsTable,
@@ -12,6 +12,8 @@ import {
   type TeamInstanceRow,
 } from "@workspace/db";
 import { isExhausted } from "../budget";
+import { BUG_MESSAGES } from "../bugs/messages";
+import { isUniqueViolation } from "../pg-errors";
 import { validateNodeWorkspace } from "./attachments";
 import { patchPlan } from "./plan";
 import { InstanceRoleSchema, type InstanceRole, type TemplateRole } from "./manifest";
@@ -68,6 +70,8 @@ export type InstanceView = {
   monthlyBudgetUsd: number | null;
   lastTurnAt: Date | null;
   nodeWorkspace: string | null;
+  /** Squadra per i bug dell'App di riferimento */
+  bugTeam: boolean;
 };
 
 export type CreateInstanceInput = {
@@ -85,6 +89,8 @@ export type SaveInstanceInput = {
   status?: "draft" | "active";
   /** Spazio di lavoro sul nodo (relativo alla radice del nodo): omesso = invariato, null = tolto */
   nodeWorkspace?: string | null;
+  /** Squadra per i bug dell'App di riferimento: omesso = invariato */
+  bugTeam?: boolean;
 };
 
 export type InstanceFilter = { status?: "draft" | "active" | "closed"; appId?: number; refType?: string; refId?: string };
@@ -117,6 +123,7 @@ async function toView(row: TeamInstanceRow): Promise<InstanceView> {
     monthlyBudgetUsd: row.monthlyBudgetUsd === null ? null : Number(row.monthlyBudgetUsd),
     lastTurnAt: row.lastTurnAt,
     nodeWorkspace: row.nodeWorkspace,
+    bugTeam: row.bugTeam,
   };
 }
 
@@ -243,12 +250,40 @@ export async function saveInstance(
   const previous = InstanceRoleSchema.array().parse(current.roles);
   await validateRoles({ roles: input.roles, mode: "instance", userId, previous, localSkillCodes, refApp: await loadRefApp(current.refAppId) });
 
+  try {
+    await saveLocked(id, input, executor, guard);
+  } catch (err) {
+    // Due designazioni concorrenti sfuggite al lock dell'App: l'indice unico decide, il messaggio dice chi ha vinto
+    if (!isUniqueViolation(err, BUG_TEAM_INDEX)) throw err;
+    throw new InstanceError(409, BUG_MESSAGES.bugTeamTaken(await otherBugTeamName(db, current.refAppId, id)));
+  }
+  return getInstance(id);
+}
+
+const BUG_TEAM_INDEX = "team_instances_bug_team_uidx";
+
+async function otherBugTeamName(tx: Executor, appId: number, id: number): Promise<string> {
+  const [other] = await tx
+    .select({ name: teamInstancesTable.name })
+    .from(teamInstancesTable)
+    .where(and(eq(teamInstancesTable.refAppId, appId), eq(teamInstancesTable.bugTeam, true), ne(teamInstancesTable.status, "closed"), ne(teamInstancesTable.id, id)))
+    .limit(1);
+  return other?.name ?? "";
+}
+
+async function saveLocked(id: number, input: SaveInstanceInput, executor: Executor, guard?: SaveInstanceGuard): Promise<void> {
   await executor.transaction(async (tx) => {
     const [locked] = await tx.select().from(teamInstancesTable).where(eq(teamInstancesTable.id, id)).limit(1).for("update");
     if (!locked) throw new InstanceError(404, INSTANCE_MESSAGES.notFound);
     if (locked.status === "closed") throw new InstanceError(409, INSTANCE_MESSAGES.closed);
     checkStatusChange(locked.status, input.status);
     if (guard) await guard(tx, locked);
+    if (input.bugTeam === true && !locked.bugTeam) {
+      // Lock della riga dell'App: due designazioni per la stessa App si serializzano
+      await tx.select({ id: appsTable.id }).from(appsTable).where(eq(appsTable.id, locked.refAppId)).for("update");
+      const other = await otherBugTeamName(tx, locked.refAppId, id);
+      if (other) throw new InstanceError(409, BUG_MESSAGES.bugTeamTaken(other));
+    }
     await tx.delete(teamInstanceSkillsTable).where(eq(teamInstanceSkillsTable.instanceId, id));
     if (input.localSkills.length > 0) {
       await tx.insert(teamInstanceSkillsTable).values(
@@ -269,11 +304,11 @@ export async function saveInstance(
         refTitle: input.refTitle ?? locked.refTitle,
         roles: input.roles,
         nodeWorkspace: input.nodeWorkspace === undefined ? locked.nodeWorkspace : input.nodeWorkspace,
+        bugTeam: input.bugTeam === undefined ? locked.bugTeam : input.bugTeam,
         updatedAt: new Date(),
       })
       .where(eq(teamInstancesTable.id, id));
   });
-  return getInstance(id);
 }
 
 export const CLOSE_MESSAGES = {

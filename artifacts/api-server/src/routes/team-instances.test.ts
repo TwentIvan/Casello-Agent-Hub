@@ -210,6 +210,35 @@ describe("route delle squadre", () => {
     expect((await api("DELETE", `/apps/${appId}`)).status).toBe(204);
   });
 
+  it("squadra per i bug: una sola non chiusa per App (409 col nome), libera dopo la chiusura", async () => {
+    const mk = async (name: string) => {
+      const made = await api("POST", "/team-instances", { name, ref: { appId, type: "wi", id: name }, roles: [role()] });
+      expect(made.status, made.text).toBe(201);
+      expect(made.json.bugTeam).toBe(false);
+      return made.json.id as number;
+    };
+    const first = await mk("Prima");
+    const second = await mk("Seconda");
+    const save = (id: number, name: string, bugTeam?: boolean) =>
+      api("PUT", `/team-instances/${id}`, { name, roles: [role()], localSkills: [], ...(bugTeam === undefined ? {} : { bugTeam }) });
+
+    const ok = await save(first, "Prima", true);
+    expect(ok.status, ok.text).toBe(200);
+    expect(ok.json.bugTeam).toBe(true);
+    // Omesso = invariato
+    expect((await save(first, "Prima")).json.bugTeam).toBe(true);
+    const taken = await save(second, "Seconda", true);
+    expect(taken.status).toBe(409);
+    expect(taken.json.error).toBe("l'App ha già una squadra per i bug: Prima");
+    expect((await api("GET", `/team-instances/${second}`)).json.bugTeam).toBe(false);
+
+    expect((await api("POST", `/team-instances/${first}/close`)).status).toBe(200);
+    const after = await save(second, "Seconda", true);
+    expect(after.status, after.text).toBe(200);
+    expect(after.json.bugTeam).toBe(true);
+    expect((await save(second, "Seconda", false)).json.bugTeam).toBe(false);
+  });
+
   it("con un token: GET con api:read, scrittura solo con api:write", async () => {
     const rt = (await createApiToken(userId, "lettura", 30, ["api:read"])).token;
     const wt = (await createApiToken(userId, "scrittura", 30, ["api:write"])).token;

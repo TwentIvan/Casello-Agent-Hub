@@ -1,7 +1,6 @@
 import {
   db,
   agentsTable,
-  aiAccountsTable,
   aiModelsTable,
   appArchitectureTable,
   appsTable,
@@ -32,6 +31,7 @@ import {
   type StepRecord,
 } from "./agent-loop";
 import { resolveModel, type ResolvedModel } from "./ai/executor";
+import { aiModelOwner } from "./ai/model-owner";
 import { runBudgetBlock } from "./budget";
 import { delegateTurn } from "./node-turns/delegate";
 import { logger } from "./logger";
@@ -398,7 +398,7 @@ function runToolDeps(
   const runId = ctx.run.id;
   let owner: Promise<number | null> | null = null;
   const ownerOf = async (): Promise<number | null> => {
-    owner ??= modelOwner(aiModelId);
+    owner ??= aiModelOwner(aiModelId);
     try {
       return await owner;
     } catch (err) {
@@ -789,17 +789,6 @@ export async function startRun(runId: number, opts: RunOptions = {}): Promise<vo
   } finally {
     untrackRun(runId, abort);
   }
-}
-
-/** Utente che possiede l'account AI del modello; null se il modello o l'account non ci sono più. */
-async function modelOwner(aiModelId: number): Promise<number | null> {
-  const [row] = await db
-    .select({ userId: aiAccountsTable.userId })
-    .from(aiModelsTable)
-    .innerJoin(aiAccountsTable, eq(aiModelsTable.accountId, aiAccountsTable.id))
-    .where(eq(aiModelsTable.id, aiModelId))
-    .limit(1);
-  return row?.userId ?? null;
 }
 
 /**

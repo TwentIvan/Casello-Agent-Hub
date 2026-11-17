@@ -1,6 +1,6 @@
 // Caricatore del pannello Botcave incorporabile: un solo file, nessuna dipendenza.
 import { contextMessage, parseFromFrame, type EmbedTab, type HostContextMsg, type ToFrame } from "../protocol";
-import { fetchIdentity, identityPath, refreshDelayMs, tokenExpiry } from "./identity";
+import { IDENTITY_MIN_INTERVAL_MS, createRequestGate, fetchIdentity, identityPath, refreshDelayMs, tokenExpiry } from "./identity";
 import { createOutbox } from "./queue";
 import { readHostTheme } from "./read-theme";
 import { themeToCss } from "../theme";
@@ -154,8 +154,10 @@ function start(): void {
     // Identità: richiesta all'apertura, a ogni identity_request e prima della scadenza del token.
     let identityTimer: ReturnType<typeof setTimeout> | undefined;
     let identityBusy = false;
-    const refreshIdentity = async () => {
-      if (!identityUrl || identityBusy) return;
+    const gate = createRequestGate(IDENTITY_MIN_INTERVAL_MS);
+    // `force` solo per il giro pianificato dal timer; apertura e identity_request rispettano l'intervallo minimo.
+    const refreshIdentity = async (force = false) => {
+      if (!identityUrl || identityBusy || !gate.allow(force)) return;
       identityBusy = true;
       try {
         const token = await fetchIdentity(identityUrl);
@@ -163,7 +165,7 @@ function start(): void {
         if (!iframe) return;
         outbox.send({ botcave: 1, type: "identity", payload: { token } });
         const delay = token ? refreshDelayMs(tokenExpiry(token), Date.now()) : null;
-        if (delay !== null) identityTimer = setTimeout(() => void refreshIdentity(), delay);
+        if (delay !== null) identityTimer = setTimeout(() => void refreshIdentity(true), delay);
       } finally {
         identityBusy = false;
       }
@@ -180,12 +182,15 @@ function start(): void {
       panel.replaceChildren(f);
       sendTheme();
       timer = setTimeout(() => showMessage(MSG_DISABLED, false), READY_TIMEOUT_MS);
-      void refreshIdentity();
+      void refreshIdentity(true);
     };
 
     const setOpen = (open: boolean) => {
       panel.classList.toggle("open", open);
-      if (open) ensureFrame();
+      if (open) {
+        if (iframe) void refreshIdentity();
+        else ensureFrame();
+      }
     };
 
     window.addEventListener("message", (ev: MessageEvent) => {

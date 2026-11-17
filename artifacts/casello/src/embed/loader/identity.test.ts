@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { fetchIdentity, identityPath, refreshDelayMs, tokenExpiry } from "./identity";
+import { createRequestGate, fetchIdentity, identityPath, refreshDelayMs, tokenExpiry } from "./identity";
 
 const b64 = (o: unknown) => btoa(JSON.stringify(o)).replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
 const jwt = (payload: unknown) => `${b64({ alg: "HS256" })}.${b64(payload)}.sig`;
@@ -29,6 +29,15 @@ describe("tokenExpiry e refreshDelayMs", () => {
     expect(refreshDelayMs(1000, 999_000)).toBe(5_000);
     expect(refreshDelayMs(null, 0)).toBeNull();
   });
+  it("il ritardo resta in [5 s, 600 s]", () => {
+    const now = 1_700_000_000_000;
+    for (const exp of [now, now * 1000, 1e300, 0, -5, Infinity]) {
+      const d = refreshDelayMs(exp, now);
+      expect(d).not.toBeNull();
+      expect(d!).toBeGreaterThanOrEqual(5_000);
+      expect(d!).toBeLessThanOrEqual(600_000);
+    }
+  });
 });
 
 describe("fetchIdentity", () => {
@@ -44,6 +53,14 @@ describe("fetchIdentity", () => {
     expect(w).not.toHaveBeenCalled();
     w.mockRestore();
   });
+  it("niente redirect e token malformato", async () => {
+    const w = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const f = res(200, JSON.stringify({ token: "a b" }));
+    expect(await fetchIdentity("/id", f as unknown as typeof fetch)).toBeNull();
+    expect(f).toHaveBeenCalledWith("/id", expect.objectContaining({ redirect: "error" }));
+    expect(w).toHaveBeenCalledTimes(1);
+    w.mockRestore();
+  });
   it("altri casi: null con avviso, mai il token", async () => {
     const w = vi.spyOn(console, "warn").mockImplementation(() => {});
     expect(await fetchIdentity("/id", res(500) as never)).toBeNull();
@@ -55,5 +72,20 @@ describe("fetchIdentity", () => {
     expect(w).toHaveBeenCalledTimes(5);
     expect(JSON.stringify(w.mock.calls)).not.toContain(long);
     w.mockRestore();
+  });
+});
+
+describe("createRequestGate", () => {
+  it("limita le richieste non pianificate a una ogni 10 s", () => {
+    vi.useFakeTimers();
+    const g = createRequestGate(10_000);
+    expect(g.allow()).toBe(true);
+    vi.advanceTimersByTime(9_000);
+    expect(g.allow()).toBe(false);
+    vi.advanceTimersByTime(1_000);
+    expect(g.allow()).toBe(true);
+    expect(g.allow(true)).toBe(true);
+    expect(g.allow()).toBe(false);
+    vi.useRealTimers();
   });
 });

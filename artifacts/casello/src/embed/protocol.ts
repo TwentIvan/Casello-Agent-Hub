@@ -25,6 +25,11 @@ const TABS: readonly string[] = ["alfred", "pending", "bulletin", "lucius", "bug
 const TOKEN_RE = /^[A-Za-z0-9_.-]{1,4096}$/;
 const ID_RE = /^[A-Za-z0-9._:-]{1,40}$/;
 
+/** Il token d'identità come lo accetta l'iframe: base64url e punti, 1..4096 caratteri. */
+export function isIdentityToken(v: unknown): v is string {
+  return typeof v === "string" && TOKEN_RE.test(v);
+}
+
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
@@ -86,7 +91,7 @@ export function parseToFrame(data: unknown): ToFrame | null {
       if (!isRecord(data.payload)) return null;
       const token = data.payload.token;
       if (token === null) return { botcave: 1, type: "identity", payload: { token: null } };
-      if (typeof token !== "string" || !TOKEN_RE.test(token)) return null;
+      if (!isIdentityToken(token)) return null;
       return { botcave: 1, type: "identity", payload: { token } };
     }
     default:

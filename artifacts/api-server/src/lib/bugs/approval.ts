@@ -56,7 +56,7 @@ export async function designatedBugTeam(appId: number, executor: Executor = db):
 }
 
 /** Chi decide le segnalazioni dell'App: proprietario del modello del Responsabile, altrimenti chi ha attivato la squadra designata. */
-async function approverFor(appId: number): Promise<{ userId: number; team: DesignatedBugTeam | null } | null> {
+export async function approverFor(appId: number): Promise<{ userId: number; team: DesignatedBugTeam | null } | null> {
   const team = await designatedBugTeam(appId);
   const [lead] = await db
     .select({ aiModelId: agentsTable.aiModelId })
@@ -68,20 +68,38 @@ async function approverFor(appId: number): Promise<{ userId: number; team: Desig
   return userId === null ? null : { userId, team };
 }
 
+/** Avviso «nessuno può approvare» al più una volta all'ora per App (in memoria, per processo). */
+const NO_APPROVER_WARN_MS = 3_600_000;
+const noApproverWarnedAt = new Map<number, number>();
+
+function warnNoApprover(reportId: number, appId: number): void {
+  const last = noApproverWarnedAt.get(appId);
+  if (last !== undefined && Date.now() - last < NO_APPROVER_WARN_MS) return;
+  noApproverWarnedAt.set(appId, Date.now());
+  logger.warn({ reportId, appId }, "Segnalazione senza nessuno che possa approvarla");
+}
+
+/** Solo per i test: dimentica gli avvisi già dati. */
+export function resetNoApproverWarnings(): void {
+  noApproverWarnedAt.clear();
+}
+
+export type ApprovalItemOutcome = "queued" | "no_approver" | "full" | "skip";
+
 /**
  * Voce `bug` in «Da confermare» per una segnalazione in `pending_approval` che non ne ha ancora una. Nessuno che possa
  * decidere o coda piena: la segnalazione resta senza voce e lo sweeper riprova. Idempotente.
  */
-export async function ensureApprovalItem(reportId: number): Promise<void> {
+export async function ensureApprovalItem(reportId: number): Promise<ApprovalItemOutcome> {
   const [report] = await db.select().from(bugReportsTable).where(eq(bugReportsTable.id, reportId));
-  if (!report || report.status !== "pending_approval" || report.pendingActionId !== null) return;
+  if (!report || report.status !== "pending_approval" || report.pendingActionId !== null) return "skip";
   const approver = await approverFor(report.appId);
   if (!approver) {
-    logger.warn({ reportId, appId: report.appId }, "Segnalazione senza nessuno che possa approvarla");
-    return;
+    warnNoApprover(reportId, report.appId);
+    return "no_approver";
   }
   const [app] = await db.select({ name: appsTable.name }).from(appsTable).where(eq(appsTable.id, report.appId));
-  if (!app) return;
+  if (!app) return "skip";
 
   const outcome = await db.transaction(async (tx) => {
     const [locked] = await tx.select().from(bugReportsTable).where(eq(bugReportsTable.id, reportId)).for("update");
@@ -116,6 +134,7 @@ export async function ensureApprovalItem(reportId: number): Promise<void> {
     return "queued" as const;
   });
   if (outcome === "full") logger.warn({ reportId, appId: report.appId }, "Voce della segnalazione non accodata: coda piena");
+  return outcome;
 }
 
 const ZWSP = "​";

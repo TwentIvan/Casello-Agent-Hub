@@ -9,7 +9,7 @@ import {
   type BugTriage,
 } from "@workspace/db";
 import { productLead } from "../escalation";
-import { stripTags } from "../lead-chat/input";
+import { LEAD_CHAT_INPUT_MARKER, LEAD_INPUT_MARKER, stripTags } from "../lead-chat/input";
 import { logger } from "../logger";
 import { ensureApprovalItem } from "./approval";
 import { BUG_LIMITS, BUG_MESSAGES, type BugReportStatus } from "./messages";
@@ -33,7 +33,23 @@ const MSG_OPEN = "<messaggi>";
 const MSG_CLOSE = "</messaggi>";
 const OPEN_OPEN = "<segnalazioni_aperte>";
 const OPEN_CLOSE = "</segnalazioni_aperte>";
-const INPUT_TAGS = [SEG_OPEN, SEG_CLOSE, MSG_OPEN, MSG_CLOSE, OPEN_OPEN, OPEN_CLOSE, BUG_TRIAGE_INPUT_MARKER] as const;
+// Anche i marcatori delle richieste ai Responsabili: un testo che li contiene farebbe passare la run di vaglio per una
+// richiesta tramite Alfred (novità a voce, `leggi_run` senza id) o dal pannello
+const INPUT_TAGS = [
+  SEG_OPEN,
+  SEG_CLOSE,
+  MSG_OPEN,
+  MSG_CLOSE,
+  OPEN_OPEN,
+  OPEN_CLOSE,
+  BUG_TRIAGE_INPUT_MARKER,
+  LEAD_INPUT_MARKER,
+  LEAD_CHAT_INPUT_MARKER,
+] as const;
+
+/** Regola fissa delle run di vaglio: quello che il Responsabile scrive per l'utente esce dal team. */
+export const TRIAGE_CONFIDENTIALITY =
+  "domanda e messaggio_utente li legge chi ha segnalato, che non fa parte del team: non riportare dati di altri utenti, configurazioni, nomi di file, dettagli interni dell'architettura né il contenuto di strumenti; scrivi solo ciò che serve a capire il problema.";
 
 const ACTIVE_RUN_STATUSES = ["pending", "running", "awaiting_client"] as const;
 const AUTHOR_LABELS: Record<BugReportMessageRow["author"], string> = {
@@ -54,6 +70,7 @@ export function triageRunInput(report: BugReportRow, messages: Pick<BugReportMes
     BUG_TRIAGE_INPUT_MARKER,
     `Vaglia la segnalazione n. ${report.number}: con ${ELENCA_SEGNALAZIONI} riconosci i doppioni, poi registra una sola volta l'esito con ${ESITO_VAGLIO}.`,
     `Domande già fatte all'utente: ${asked} di ${BUG_LIMITS.maxQuestionRounds}.`,
+    `Attenzione: ${TRIAGE_CONFIDENTIALITY}`,
   ].join("\n");
 
   const ctx = report.pageContext;

@@ -1,7 +1,7 @@
-import { and, eq, isNull, lt, notInArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, lt, notInArray, or, sql } from "drizzle-orm";
 import { db, bugReportsTable, pendingActionsTable, runsTable } from "@workspace/db";
 import { logger } from "../logger";
-import { ensureApprovalItem, releaseStaleApprovalItem } from "./approval";
+import { ensureApprovalItem, releaseStaleApprovalItem, resetNoApproverWarnings } from "./approval";
 import { finalizeReport, startTriage } from "./triage";
 
 // Controllo periodico delle segnalazioni: chiude i vagli con la run finita altrove (riavvio, annullo, altro
@@ -12,19 +12,34 @@ const SWEEP_MS = 60_000;
 const BATCH = 100;
 /** Una segnalazione `received` più vecchia di così ha perso l'avvio del vaglio (errore dopo il commit). */
 const RECEIVED_GRACE_MS = 60_000;
-const FINAL_RUN_STATUSES = new Set(["succeeded", "failed", "cancelled"]);
+const FINAL_RUN_STATUSES = ["succeeded", "failed", "cancelled"] as const;
+/** Un'App senza nessuno che possa approvare si salta per questo tempo: le sue segnalazioni non riempiono il lotto. */
+const NO_APPROVER_SKIP_MS = 10 * 60_000;
+const noApproverUntil = new Map<number, number>();
+
+/** Solo per i test: dimentica le App saltate e gli avvisi già dati. */
+export function resetBugSweeperMemory(): void {
+  noApproverUntil.clear();
+  resetNoApproverWarnings();
+}
 
 const errName = (err: unknown) => (err instanceof Error ? err.name : typeof err);
 
 export async function sweepBugsOnce(): Promise<void> {
+  // Solo i vagli con la run finita o sparita, i meno recenti prima: quelli ancora in corso non occupano il lotto
   const inTriage = await db
-    .select({ id: bugReportsTable.id, runId: bugReportsTable.triageRunId, runStatus: runsTable.status })
+    .select({ id: bugReportsTable.id, runId: bugReportsTable.triageRunId })
     .from(bugReportsTable)
     .leftJoin(runsTable, eq(runsTable.id, bugReportsTable.triageRunId))
-    .where(eq(bugReportsTable.status, "triage"))
+    .where(
+      and(
+        eq(bugReportsTable.status, "triage"),
+        or(isNull(runsTable.id), inArray(runsTable.status, [...FINAL_RUN_STATUSES])),
+      ),
+    )
+    .orderBy(asc(bugReportsTable.updatedAt), asc(bugReportsTable.id))
     .limit(BATCH);
   for (const row of inTriage) {
-    if (row.runId !== null && row.runStatus !== null && !FINAL_RUN_STATUSES.has(row.runStatus)) continue;
     try {
       await finalizeReport(row.id, row.runId);
     } catch (err) {
@@ -60,14 +75,27 @@ export async function sweepBugsOnce(): Promise<void> {
     }
   }
 
+  // Voci da creare, le meno recenti prima; le App rimaste senza approvatore si saltano per un po'
+  const now = Date.now();
+  for (const [appId, until] of noApproverUntil) if (until <= now) noApproverUntil.delete(appId);
+  const skippedApps = [...noApproverUntil.keys()];
   const waiting = await db
-    .select({ id: bugReportsTable.id })
+    .select({ id: bugReportsTable.id, appId: bugReportsTable.appId })
     .from(bugReportsTable)
-    .where(and(eq(bugReportsTable.status, "pending_approval"), isNull(bugReportsTable.pendingActionId)))
+    .where(
+      and(
+        eq(bugReportsTable.status, "pending_approval"),
+        isNull(bugReportsTable.pendingActionId),
+        ...(skippedApps.length > 0 ? [notInArray(bugReportsTable.appId, skippedApps)] : []),
+      ),
+    )
+    .orderBy(asc(bugReportsTable.updatedAt), asc(bugReportsTable.id))
     .limit(BATCH);
   for (const row of waiting) {
+    if (noApproverUntil.has(row.appId)) continue;
     try {
-      await ensureApprovalItem(row.id);
+      const outcome = await ensureApprovalItem(row.id);
+      if (outcome === "no_approver") noApproverUntil.set(row.appId, Date.now() + NO_APPROVER_SKIP_MS);
     } catch (err) {
       logger.error({ reportId: row.id, errName: errName(err) }, "Voce di approvazione della segnalazione non creata");
     }

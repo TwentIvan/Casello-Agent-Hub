@@ -239,6 +239,14 @@ async function loadContext(run: Run): Promise<RunContext & { app: App }> {
   if (!agent) throw new Error(`agente ${run.agentId} non trovato`);
   const [app] = await db.select().from(appsTable).where(eq(appsTable.id, agent.appId)).limit(1);
   if (!app) throw new Error(`app ${agent.appId} non trovata`);
+  // Run di vaglio di una segnalazione: il testo arriva da un visitatore anonimo e domanda e messaggio_utente tornano a
+  // lui. Solo gli strumenti di vaglio e `leggi_architettura` limitata all'App della run: niente tool dell'App, niente
+  // `proponi` né segnalazione (vale anche sul nodo, che usa gli stessi strumenti)
+  const bugReport = agent.role === "general" ? await triageReportForRun(run.id) : null;
+  if (bugReport) {
+    const conn = await loadAppConnection(app.id);
+    return { run, agent, app, tools: [...triageTools(), architectureTool()], baseTools: [], conn, bugReport };
+  }
   const [loaded, conn] = await Promise.all([
     loadAgentTools(agent.id, { includeUi: run.clientTools }),
     loadAppConnection(app.id),
@@ -261,12 +269,7 @@ async function loadContext(run: Run): Promise<RunContext & { app: App }> {
   if (agent.role === "general") {
     tools = [...tools.filter((t) => t.name !== ARCHITECTURE_TOOL_NAME), architectureTool()];
   }
-  // Strumenti di vaglio: solo al Responsabile nella run di vaglio di una segnalazione; vincono su tool omonimi
-  const bugReport = agent.role === "general" ? await triageReportForRun(run.id) : null;
-  if (bugReport) {
-    tools = [...tools.filter((t) => !isTriageToolName(t.name)), ...triageTools()];
-  }
-  return { run, agent, app, tools, baseTools: loaded, conn, bugReport };
+  return { run, agent, app, tools, baseTools: loaded, conn, bugReport: null };
 }
 
 async function nextPosition(runId: number): Promise<number> {
@@ -443,7 +446,9 @@ function runToolDeps(
           args,
         );
       }
-      if (tool.name === ARCHITECTURE_TOOL_NAME) return handleReadArchitecture(ctx.app, args);
+      if (tool.name === ARCHITECTURE_TOOL_NAME) {
+        return handleReadArchitecture(ctx.app, args, { onlyOwnApp: Boolean(ctx.bugReport) });
+      }
       if (isTriageToolName(tool.name) && ctx.bugReport) return handleTriageTool(ctx.run, ctx.bugReport, tool.name, args);
       return handleEscalation(ctx.run, ctx.agent, args);
     },

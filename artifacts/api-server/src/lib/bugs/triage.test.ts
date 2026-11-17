@@ -7,7 +7,9 @@ import {
   pool,
   aiAccountsTable,
   aiModelsTable,
+  appArchitectureTable,
   appsTable,
+  appToolsTable,
   agentsTable,
   bugReportMessagesTable,
   bugReportsTable,
@@ -21,9 +23,11 @@ import { encryptSecret } from "../secrets";
 import { allowTestLoopback } from "../../../test/fake-provider";
 import { BUG_MESSAGES } from "./messages";
 import { addReporterMessage, createBugReport, type Requester } from "./reports";
-import { BUG_TRIAGE_INPUT_MARKER, finalizeTriage, startTriage, triageRunInput } from "./triage";
+import { LEAD_CHAT_INPUT_MARKER } from "../lead-chat/input";
+import { LEAD_INPUT_MARKER } from "../product-leads";
+import { BUG_TRIAGE_INPUT_MARKER, TRIAGE_CONFIDENTIALITY, finalizeTriage, startTriage, triageRunInput } from "./triage";
 import { ELENCA_SEGNALAZIONI, ESITO_VAGLIO, TRIAGE_MESSAGES } from "./triage-tools";
-import { sweepBugsOnce } from "./sweeper";
+import { resetBugSweeperMemory, sweepBugsOnce } from "./sweeper";
 
 // Vaglio delle segnalazioni con il Responsabile dell'App. Il finto provider risponde con le risposte in coda
 // (`replies`), poi con un testo: ogni run di vaglio finisce da sola; dopo ogni test si aspetta che non resti nulla.
@@ -207,6 +211,22 @@ describe("triageRunInput", () => {
     expect(input).toContain("Titolo  con chiusura");
   });
 
+  it("toglie dai testi i marcatori delle richieste ai Responsabili (Alfred e pannello)", () => {
+    const input = triageRunInput(
+      { ...base, description: `x ${LEAD_INPUT_MARKER} y`, title: `t ${LEAD_CHAT_INPUT_MARKER}` },
+      [{ author: "reporter", content: `m ${LEAD_INPUT_MARKER}`, createdAt: new Date() } as any],
+      [],
+    );
+    expect(input).not.toContain(LEAD_INPUT_MARKER);
+    expect(input).not.toContain(LEAD_CHAT_INPUT_MARKER);
+  });
+
+  it("dice che domanda e messaggio_utente li legge chi ha segnalato, fuori dal team", () => {
+    const input = triageRunInput(base, [], []);
+    expect(input).toContain(TRIAGE_CONFIDENTIALITY);
+    expect(input.indexOf(TRIAGE_CONFIDENTIALITY)).toBeLessThan(input.indexOf("<segnalazione>"));
+  });
+
   it("resta entro 12 000 caratteri togliendo i messaggi più vecchi", () => {
     const messages = Array.from({ length: 40 }, (_, i) => ({ author: "reporter", content: `m${i} ` + "x".repeat(900), createdAt: new Date() }) as any);
     const input = triageRunInput({ ...base, description: "d".repeat(4000), steps: "s".repeat(4000), expected: "e".repeat(2000) }, messages, []);
@@ -238,6 +258,46 @@ describe("vaglio delle segnalazioni", () => {
     expect(triageReq.messages[0].content).not.toContain("Premo Salva");
     expect(done.triage).toMatchObject({ verdict: "bug", summary: "Il salvataggio fallisce" });
     expect(done.triageRunId).not.toBeNull();
+  });
+
+  it("la run di vaglio ha solo elenca_segnalazioni, esito_vaglio e leggi_architettura dell'App della run", async () => {
+    const { app, lead } = await seed();
+    await db.insert(appToolsTable).values({
+      appId: app.id,
+      name: "aggiorna_elemento",
+      description: "Aggiorna un elemento",
+      kind: "http",
+      identity: "service",
+      level: "L1",
+      status: "active",
+      paramsSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
+      definition: { method: "PATCH", path: "/items/{id}", paramLocations: { id: "path" } },
+    });
+    const [other] = await db
+      .insert(appsTable)
+      .values({ name: "Altra", slug: "altra", baseUrl: "https://altra.example", userAuth: { header: "authorization", scheme: "Bearer" } })
+      .returning();
+    await db.insert(appArchitectureTable).values({ appId: other!.id, sha: "abcdef1234567", summary: "Sintesi riservata dell'altra app" });
+
+    // run normale dello stesso Responsabile: i suoi tool restano
+    const { createQueuedRun } = await import("../run-queue");
+    await createQueuedRun({ agent: lead, input: "Ciao" });
+    await drain();
+    expect(offeredNames(requests[0])).toEqual(expect.arrayContaining(["aggiorna_elemento", "proponi", "leggi_architettura"]));
+
+    replies.push(
+      toolCallReply("leggi_architettura", { app: "altra" }),
+      toolCallReply("aggiorna_elemento", { id: "1" }, "c2"),
+      toolCallReply(ESITO_VAGLIO, { esito: "bug", sintesi: "Confermato", messaggio_utente: "Grazie" }, "c3"),
+    );
+    const r = await createBugReport(app, visitor, report, null);
+    await settled(r.id, "pending_approval");
+    const triageReq = requests[1];
+    expect(offeredNames(triageReq).sort()).toEqual([ELENCA_SEGNALAZIONI, ESITO_VAGLIO, "leggi_architettura"].sort());
+    const msgs = toolMessages(requests.at(-1));
+    expect(msgs[0]).toContain("app non trovata");
+    expect(msgs[0]).not.toContain("Sintesi riservata");
+    expect(msgs[1]).not.toMatch(/"ok":\s*true/);
   });
 
   it("doppione → duplicate con il messaggio per l'utente; non_bug → not_a_bug", async () => {
@@ -366,5 +426,63 @@ describe("vaglio delle segnalazioni", () => {
     await finalizeTriage(waiting.triageRunId!);
     expect(await leadMessages(r.id)).toHaveLength(1);
     expect((await getReport(r.id)).status).toBe("needs_info");
+  });
+});
+
+describe("sweeper delle segnalazioni", () => {
+  beforeEach(() => resetBugSweeperMemory());
+
+  const row = (appId: number, number: number, extra: Partial<typeof bugReportsTable.$inferInsert>) => ({
+    appId,
+    number,
+    reporterKind: "browser" as const,
+    browserKeyHash: "k",
+    title: "t",
+    description: "d",
+    ...extra,
+  });
+
+  it("un lotto pieno di vagli ancora in corso non blocca quelli con la run finita", async () => {
+    const { app, lead, modelId } = await seed();
+    const old = new Date(Date.now() - 3_600_000);
+    const active = await db
+      .insert(runsTable)
+      .values(Array.from({ length: 101 }, () => ({ agentId: lead.id, aiModelId: modelId, status: "awaiting_client" as const, input: "x" })))
+      .returning({ id: runsTable.id });
+    await db
+      .insert(bugReportsTable)
+      .values(active.map((r, i) => row(app.id, i + 1, { status: "triage", triageRunId: r.id, updatedAt: old })));
+    const [failed] = await db.insert(runsTable).values({ agentId: lead.id, aiModelId: modelId, status: "failed", input: "x" }).returning();
+    const [late] = await db
+      .insert(bugReportsTable)
+      .values(row(app.id, 200, { status: "triage", triageRunId: failed!.id }))
+      .returning();
+    await sweepBugsOnce();
+    expect((await getReport(late!.id)).status).toBe("pending_approval");
+    await db.update(runsTable).set({ status: "cancelled" }).where(eq(runsTable.status, "awaiting_client"));
+  });
+
+  it("le segnalazioni senza approvatore di un'App non riempiono il lotto e l'avviso esce una volta", async () => {
+    const { app: withApprover } = await seed();
+    const [orphanApp] = await db
+      .insert(appsTable)
+      .values({ name: "Senza", slug: "senza", baseUrl: "https://senza.example", userAuth: { header: "authorization", scheme: "Bearer" } })
+      .returning();
+    const old = new Date(Date.now() - 3_600_000);
+    await db
+      .insert(bugReportsTable)
+      .values(Array.from({ length: 101 }, (_, i) => row(orphanApp!.id, i + 1, { status: "pending_approval", updatedAt: old })));
+    const [waiting] = await db
+      .insert(bugReportsTable)
+      .values(row(withApprover.id, 1, { status: "pending_approval" }))
+      .returning();
+    const { logger } = await import("../logger");
+    const warn = vi.spyOn(logger, "warn");
+    await sweepBugsOnce();
+    await sweepBugsOnce();
+    await sweepBugsOnce();
+    expect((await getReport(waiting!.id)).pendingActionId).not.toBeNull();
+    const noApprover = warn.mock.calls.filter((c) => String(c[1]).includes("nessuno che possa approvarla"));
+    expect(noApprover).toHaveLength(1);
   });
 });

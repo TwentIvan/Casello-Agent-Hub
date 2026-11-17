@@ -13,6 +13,7 @@ import {
   db,
   pool,
   aiAccountsTable,
+  characterInstructionProposalsTable,
   aiModelsTable,
   appArchitectureTable,
   appToolsTable,
@@ -27,6 +28,7 @@ import {
   usersTable,
 } from "@workspace/db";
 import { encryptSecret } from "../secrets";
+import { INSTRUCTION_PROPOSAL_RULE } from "../characters/instruction-proposals";
 import { startFakeGithub, type FakeGithub } from "../../../test/fake-github";
 import { clearInstallationTokenCache } from "../github/app";
 import { CODE_INSTRUCTIONS_GENERAL } from "../code-reader/messages";
@@ -191,6 +193,36 @@ describe("turni della chat di squadra", () => {
     expect(chatBodies()[0]!.tools!.map((t) => t.function.name)).toEqual(
       expect.arrayContaining(["leggi_squadra", "leggi_skill", "leggi_strumento", "proponi_identita", "proponi_istruzioni", "ricorda", "cerca_nello_storico"]),
     );
+  });
+
+  it("proposta di istruzioni personali: strumento offerto, proposta team_chat legata al messaggio, regola nel system", async () => {
+    let n = 0;
+    fake.chatReply = () => {
+      n += 1;
+      return n === 1
+        ? {
+            content: null,
+            toolCalls: [{ id: "c1", name: "proponi_istruzioni_personali", arguments: JSON.stringify({ testo: "Mai emoji", motivazione: "chiesto dall'utente" }) }],
+            usage: { prompt_tokens: 10, completion_tokens: 5 },
+          }
+        : { content: "Ho preparato la scheda.", toolCalls: [], usage: { prompt_tokens: 10, completion_tokens: 5 } };
+    };
+    await startTeamChatTurn(conversationId, "D'ora in poi mai emoji");
+    await waitIdle(conversationId);
+    const assistant = (await getMessages())[1]!;
+    const rows = await db.select().from(characterInstructionProposalsTable).where(eq(characterInstructionProposalsTable.userId, userId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ character: "lucius", conversationKind: "team_chat", conversationId, messageId: assistant.id, baseVersion: 0, content: "Mai emoji", status: "pending" });
+    const body = chatBodies()[0]! as { messages: Array<{ role: string; content: string | null }>; tools?: Array<{ function: { name: string } }> };
+    const names = body.tools!.map((t) => t.function.name);
+    expect(names).toContain("proponi_istruzioni_personali");
+    expect(new Set(names).size).toBe(names.length);
+    expect(String(body.messages.find((m) => m.role === "system")?.content)).toContain(INSTRUCTION_PROPOSAL_RULE);
+    fake.chatReply = { content: "Ok", toolCalls: [], usage: { prompt_tokens: 10, completion_tokens: 5 } };
+    await startTeamChatTurn(conversationId, "Grazie");
+    await waitIdle(conversationId);
+    const second = chatBodies().at(-1)!;
+    expect(second.messages.some((m) => m.role === "assistant" && (m.content ?? "").includes("[scheda istruzioni personali: pending]"))).toBe(true);
   });
 
   it("l'undicesima proposta dello stesso turno è rifiutata", async () => {

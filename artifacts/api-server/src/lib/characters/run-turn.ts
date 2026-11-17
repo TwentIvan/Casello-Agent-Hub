@@ -38,6 +38,13 @@ import { BEST_PRACTICE_INSTRUCTIONS } from "../best-practice/instructions";
 import { bestPracticeData } from "../best-practice/context";
 import { HANDOFF_TOOL, runHandoff } from "./handoff";
 import { CHARACTER_NAMES, characterInstructions } from "./instructions";
+import {
+  INSTRUCTION_PROPOSAL_TOOL,
+  InstructionProposer,
+  instructionProposalTag,
+  isInstructionProposalTool,
+  loadInstructionProposalStatuses,
+} from "./instruction-proposals";
 import { createTurnContext } from "./proposals";
 import { findSubject } from "./registry";
 import {
@@ -77,6 +84,8 @@ export interface CharacterHistoryMessage {
   role: "user" | "assistant";
   content: string;
   proposals: Array<{ kind: string; status: string }>;
+  /** Stati delle schede di istruzioni personali proposte in questo messaggio */
+  instructionProposals?: string[];
 }
 
 export interface CharacterContextInput {
@@ -124,6 +133,9 @@ function renderHistory(history: CharacterHistoryMessage[], userMessage: string, 
     let content = m.content;
     if (m.role === "assistant" && m.proposals.length > 0) {
       content += "\n" + m.proposals.map((p) => `[scheda ${p.kind}: ${p.status}]`).join("\n");
+    }
+    if (m.role === "assistant" && m.instructionProposals && m.instructionProposals.length > 0) {
+      content += "\n" + m.instructionProposals.map(instructionProposalTag).join("\n");
     }
     return { role: m.role, content };
   });
@@ -265,6 +277,7 @@ async function loadHistory(
     .from(characterProposalsTable)
     .where(eq(characterProposalsTable.conversationId, conversationId))
     .orderBy(asc(characterProposalsTable.id));
+  const instructionStatuses = await loadInstructionProposalStatuses("character", conversationId);
   const kept = messages.filter((m) => m.id < assistantMessageId && !(m.role === "assistant" && m.content === ""));
   const last = kept.at(-1);
   if (last?.role !== "user") throw new Error("messaggio dell'utente mancante");
@@ -272,6 +285,7 @@ async function loadHistory(
     role: m.role,
     content: m.content,
     proposals: proposals.filter((p) => p.messageId === m.id).map((p) => ({ kind: p.kind, status: p.status })),
+    instructionProposals: instructionStatuses.get(m.id) ?? [],
   }));
   return { history, userMessage: last.content, page: isPageContext(last.pageContext) ? last.pageContext : null };
 }
@@ -294,8 +308,10 @@ async function runCharacterTool(
   codeRunner: CodeToolRunner | null,
   webReader: WebPageReader,
   lucius: { architectureApp: App | null; searcher: BestPracticeSearcher | null } | null,
+  proposer: InstructionProposer,
 ): Promise<string> {
   try {
+    if (isInstructionProposalTool(call.name)) return await proposer.run(call.arguments);
     // Architettura e best practice (solo Lucius): testo semplice, avvolto come gli altri lettori
     if (lucius && isArchitectureTool(call.name)) {
       const text = await runArchitectureChatTool(lucius.architectureApp, call.arguments);
@@ -417,6 +433,14 @@ async function executeCharacterTurnInner(conversationId: number, assistantMessag
         });
         const resolved = await resolveModel(conv.aiModelId, { userId: conv.userId, mustOwn: true });
         const ctx = createTurnContext({ userId: conv.userId, conversationId, messageId: assistantMessageId, subjectId: conv.subjectId, page });
+        // Una proposta di istruzioni personali per turno (Alfred scritto e Lucius)
+        const proposer = new InstructionProposer({
+          userId: conv.userId,
+          character,
+          conversationKind: "character",
+          conversationId,
+          messageId: assistantMessageId,
+        });
         const outcome = await runChatTurn({
           resolved,
           userId: conv.userId,
@@ -428,13 +452,14 @@ async function executeCharacterTurnInner(conversationId: number, assistantMessag
             ...handler.tools,
             ...MEMORY_TOOLS,
             HANDOFF_TOOL,
+            INSTRUCTION_PROPOSAL_TOOL,
             ...(codeRunner ? CODE_TOOLS : []),
             ...WEB_TOOLS,
             ...(lucius ? [ARCHITECTURE_CHAT_TOOL] : []),
             ...(lucius?.searcher ? BEST_PRACTICE_TOOLS : []),
           ],
           ...(codeRunner ? { limits: CODE_TURN_LIMITS } : {}),
-          runTool: (call) => runCharacterTool(character, handler, call, ctx, codeRunner, webReader, lucius),
+          runTool: (call) => runCharacterTool(character, handler, call, ctx, codeRunner, webReader, lucius, proposer),
           caller: "character-chat",
           budgetCheck: (aiModelId) => characterBudgetBlock(conv.userId, character, aiModelId),
           signal,

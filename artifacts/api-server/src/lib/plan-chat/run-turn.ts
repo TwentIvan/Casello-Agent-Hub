@@ -34,6 +34,12 @@ import {
 import { itemHash } from "./decide";
 import { memoryContextBlock } from "../memory/context";
 import { personalInstructionsBlock } from "../characters/personal-instructions";
+import {
+  INSTRUCTION_PROPOSAL_TOOL,
+  InstructionProposer,
+  isInstructionProposalTool,
+  loadInstructionProposalStatuses,
+} from "../characters/instruction-proposals";
 import { MEMORY_TOOLS } from "../memory/tools";
 import { PLAN_TOOLS, PlanToolRunner, type PlanToolItem } from "./tools";
 import { runChatTurn } from "../node-turns/chat-turn";
@@ -196,6 +202,7 @@ async function loadHistory(conversationId: number, assistantMessageId: number): 
     .from(planProposalsTable)
     .where(eq(planProposalsTable.conversationId, conversationId))
     .orderBy(asc(planProposalsTable.id));
+  const instructionStatuses = await loadInstructionProposalStatuses("plan_chat", conversationId);
   const targetIds = proposals.filter((p) => p.payload === null && p.targetItemId !== null).map((p) => p.targetItemId!);
   const targets = targetIds.length > 0 ? await db.select().from(analysisItemsTable).where(inArray(analysisItemsTable.id, targetIds)) : [];
   const targetById = new Map(targets.map((t) => [t.id, t]));
@@ -215,6 +222,7 @@ async function loadHistory(conversationId: number, assistantMessageId: number): 
       proposals: proposals
         .filter((p) => p.messageId === m.id)
         .map((p): HistoryProposal => ({ kind: p.kind, title: titleOf(p), status: p.status })),
+      instructionProposals: instructionStatuses.get(m.id) ?? [],
     }));
 }
 
@@ -340,6 +348,14 @@ async function executePlanTurnInner(conversationId: number, assistantMessageId: 
       const webReader = new WebPageReader(conv.userId);
       // Una sola ricerca delle best practice per turno (con l'interruttore acceso)
       const searcher = conv.bestPractice ? new BestPracticeSearcher(conv.userId) : null;
+      // Una proposta di istruzioni personali di Lucius per turno
+      const proposer = new InstructionProposer({
+        userId: conv.userId,
+        character: "lucius",
+        conversationKind: "plan_chat",
+        conversationId,
+        messageId: assistantMessageId,
+      });
       const outcome = await runChatTurn({
         resolved,
         userId: conv.userId,
@@ -350,6 +366,7 @@ async function executePlanTurnInner(conversationId: number, assistantMessageId: 
         tools: [
           ...PLAN_TOOLS,
           ...MEMORY_TOOLS,
+          INSTRUCTION_PROPOSAL_TOOL,
           ...(codeRunner ? CODE_TOOLS : []),
           ...WEB_TOOLS,
           ARCHITECTURE_CHAT_TOOL,
@@ -357,15 +374,17 @@ async function executePlanTurnInner(conversationId: number, assistantMessageId: 
         ],
         ...(codeRunner ? { limits: CODE_TURN_LIMITS } : {}),
         runTool: (call) =>
-          codeRunner && isCodeTool(call.name)
-            ? codeRunner.run(call)
-            : isWebTool(call.name)
-              ? webReader.run(call)
-              : isArchitectureTool(call.name)
-                ? runArchitectureChatTool(app, call.arguments)
-                : searcher && isBestPracticeTool(call.name)
-                  ? searcher.run(parseToolArgs(call.arguments))
-                  : runner.run(call),
+          isInstructionProposalTool(call.name)
+            ? proposer.run(call.arguments)
+            : codeRunner && isCodeTool(call.name)
+              ? codeRunner.run(call)
+              : isWebTool(call.name)
+                ? webReader.run(call)
+                : isArchitectureTool(call.name)
+                  ? runArchitectureChatTool(app, call.arguments)
+                  : searcher && isBestPracticeTool(call.name)
+                    ? searcher.run(parseToolArgs(call.arguments))
+                    : runner.run(call),
         caller: "plan-chat",
         budgetCheck: (aiModelId) => characterBudgetBlock(conv.userId, "lucius", aiModelId),
         signal,

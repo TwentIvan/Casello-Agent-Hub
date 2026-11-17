@@ -4,6 +4,7 @@
 // a importare `itemTitle` da qui.
 
 import { withPersonalInstructions } from "../characters/personal-instructions";
+import { INSTRUCTION_PROPOSAL_RULE, instructionProposalTag } from "../characters/instruction-proposals";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { estimateTokens } from "../architect/phase-loop";
 import { sliceChars } from "../architect/text";
@@ -43,6 +44,8 @@ export interface HistoryMessage {
   role: "user" | "assistant";
   content: string;
   proposals: HistoryProposal[];
+  /** Stati delle schede di istruzioni personali proposte in questo messaggio */
+  instructionProposals?: string[];
 }
 
 export interface PlanContextInput {
@@ -94,6 +97,7 @@ export function planSystemPrompt(opts: { code: boolean; reason?: string; bestPra
   "Per un'integrazione tra due app proponi una voce per ciascuna app, e ognuna cita l'altra.",
   "Le voci riguardano solo i capitoli endpoint, completion ed evolution.",
   "Hai una memoria personale (strumenti `ricorda`, `aggiorna_appunto`, `dimentica`, `cerca_nello_storico`): salva solo fatti e preferenze stabili dell'utente, mai credenziali.",
+  INSTRUCTION_PROPOSAL_RULE,
   // Best practice: solo a interruttore acceso
   ...(opts.bestPractice ? [BEST_PRACTICE_INSTRUCTIONS] : []),
   ].join("\n");
@@ -131,6 +135,9 @@ function renderHistory(history: HistoryMessage[], maxChars: number): ChatComplet
     if (m.role === "assistant" && m.proposals.length > 0) {
       content +=
         "\n" + m.proposals.map((p) => `[proposta ${p.kind} «${p.title}»: ${p.status}]`).join("\n");
+    }
+    if (m.role === "assistant" && m.instructionProposals && m.instructionProposals.length > 0) {
+      content += "\n" + m.instructionProposals.map(instructionProposalTag).join("\n");
     }
     return { role: m.role, content };
   });

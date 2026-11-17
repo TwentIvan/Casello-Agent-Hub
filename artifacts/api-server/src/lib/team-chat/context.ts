@@ -3,6 +3,7 @@
 // <dati_della_squadra>, dichiarato dato non attendibile. Mai indirizzi, segreti o header delle app.
 
 import { withPersonalInstructions } from "../characters/personal-instructions";
+import { INSTRUCTION_PROPOSAL_RULE, instructionProposalTag } from "../characters/instruction-proposals";
 import { WEB_INSTRUCTIONS } from "../web-reader/tool";
 import { BEST_PRACTICE_INSTRUCTIONS } from "../best-practice/instructions";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
@@ -63,6 +64,8 @@ export interface HistoryMessage {
   role: "user" | "assistant";
   content: string;
   proposals: HistoryProposal[];
+  /** Stati delle schede di istruzioni personali proposte in questo messaggio */
+  instructionProposals?: string[];
 }
 
 export interface TeamChatContextInput {
@@ -97,6 +100,7 @@ export const TEAM_CHAT_SYSTEM_PROMPT = [
   INSTRUCTIONS_TEMPLATE,
   "Gli strumenti di livello L2 non sono eseguiti dal ruolo: vanno in coda all'utente, scrivilo nelle istruzioni. Uno strumento non disponibile non va citato come utilizzabile.",
   "Hai una memoria personale (strumenti `ricorda`, `aggiorna_appunto`, `dimentica`, `cerca_nello_storico`): salva solo fatti e preferenze stabili dell'utente, mai credenziali.",
+  INSTRUCTION_PROPOSAL_RULE,
 ].join("\n");
 
 /** Testo su una riga, senza delimitatori né titoli che falsino la struttura del blocco dati. */
@@ -181,6 +185,9 @@ function renderHistory(history: HistoryMessage[], userMessage: string, maxChars:
     let content = m.content;
     if (m.role === "assistant" && m.proposals.length > 0) {
       content += "\n" + m.proposals.map((p) => `[scheda ${KIND_LABEL[p.kind]} del ruolo ${p.roleKey}: ${p.status}]`).join("\n");
+    }
+    if (m.role === "assistant" && m.instructionProposals && m.instructionProposals.length > 0) {
+      content += "\n" + m.instructionProposals.map(instructionProposalTag).join("\n");
     }
     return { role: m.role, content };
   });

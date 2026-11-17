@@ -146,6 +146,7 @@ export function useAlfredAdapter(page: PageContext): ChatAdapter {
 
   return {
     character: "alfred",
+    instructionProposalsKind: "character",
     subjectLabel: "Il filo di Alfred",
     emptyHint: "Chiedi ad Alfred delle squadre, della coda da confermare o delle run.",
     useConversations: () => null,
@@ -240,6 +241,7 @@ export function useLuciusSubjectAdapter(target: Extract<ChatTarget, { kind: "cha
 
   return {
     character: "lucius",
+    instructionProposalsKind: "character",
     subjectLabel,
     emptyHint: "Chiedi a Lucius di scrivere o rivedere: cambia solo quello che accetti.",
     deleteNote: "I messaggi e le schede non decise vanno persi; quelle già accettate restano.",

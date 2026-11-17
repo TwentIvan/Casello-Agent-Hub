@@ -79,7 +79,7 @@ export function NewTeamDialog({ open, onOpenChange, template }: NewTeamDialogPro
       name: "Capo",
       task: "",
       isLead: true,
-      runsOn: defaultModelId !== null ? "cloud" : "node",
+      runsOn: "cloud",
       aiModelId: defaultModelId,
       tools: [],
       skills: [],

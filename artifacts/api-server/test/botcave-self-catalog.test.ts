@@ -190,7 +190,7 @@ describe("catalogo dei tool di Botcave come App di sé stesso", () => {
     const api = (openapi as unknown as { components: { schemas: Record<string, { properties: Record<string, unknown> }> } })
       .components.schemas[schemaName];
     expect(Object.keys(roleProps).sort()).toEqual(Object.keys(api.properties).sort());
-    expect(roleProps.code.enum).toEqual(["none", "read", "write"]);
+    expect(roleProps.code.enum).toEqual(["none", "read", "write", "merge"]);
   });
 
   it("create_plan_issues chiede poche voci per chiamata, così la creazione sta nel timeout dei tool", () => {

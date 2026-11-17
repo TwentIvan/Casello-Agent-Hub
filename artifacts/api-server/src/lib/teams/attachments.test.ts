@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { db, pool, teamAttachmentsTable, teamInstancesTable, teamTasksTable } from "@workspace/db";
-import { catalogSkill, ensureUser, nodeRole, seedNodeTeam } from "../../../test/team-node-fixture";
+import { catalogSkill, cloudLeadRole, ensureUser, nodeRole, seedNodeTeam } from "../../../test/team-node-fixture";
 import { ATTACHMENT_UPLOAD_PATH, AttachmentError, MAX_ATTACHMENT_BYTES, MAX_TEAM_ATTACHMENT_BYTES, deleteAttachment, getAttachment, listAttachments, purgeDeletedAttachments, rfc5987, saveAttachment, validateNodeWorkspace } from "./attachments";
 import { saveInstance } from "./instances";
 import { startTask } from "./task-runner";
@@ -157,7 +157,7 @@ describe("validateNodeWorkspace", () => {
 
 async function currentSave() {
   const [row] = await db.select().from(teamInstancesTable).where(eq(teamInstancesTable.id, instanceId));
-  return { name: row!.name, roles: [{ ...nodeRole({ key: "capo", name: "Capo", isLead: true }), code: "none" as const }], localSkills: [] };
+  return { name: row!.name, roles: [{ ...(await cloudLeadRole(userId)), code: "none" as const }], localSkills: [] };
 }
 
 describe("assegna_compito con allegati", () => {

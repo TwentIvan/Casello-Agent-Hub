@@ -453,7 +453,8 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   sono `{code, version}` fissate e c'è `localSkills` (codici delle skill specializzate).
 - **Regole** (`rules.ts`, `validateRoles`, a ogni salvataggio di modello o istanza; violazione → 400 con messaggio fisso in
   `TEAM_MESSAGES`, nulla salvato): un solo capo («una squadra ha esattamente un capo»); 1..20 ruoli, `key` e `name` unici,
-  ≤ 30 skill per ruolo (catalogo + specializzate); `cloud` → `aiModelId` di un modello dei propri account («modello non
+  ≤ 30 skill per ruolo (catalogo + specializzate); il capo è sempre `cloud` («il capo gira in cloud: scegli «cloud» e un modello cloud per il capo»: i suoi turni girano
+  solo nell'API; in console «Nodo locale» è disattivato per il capo e un ruolo node scelto come capo passa al cloud); `cloud` → `aiModelId` di un modello dei propri account («modello non
   disponibile»), `node` → `aiModelId` null; skill `node` solo su ruoli `node`; skill inesistenti o deprecate rifiutate,
   salvo quelle già nel ruolo della versione precedente (stessa `key`); nelle istanze la versione fissata deve esistere;
   strumenti `active` e con livello effettivo ≠ L3 («lo strumento <nome> non può essere usato da una squadra»), salvo

@@ -12,6 +12,8 @@ import {
   useSetAlfredSettings,
   useUpdateCharacterSettings,
 } from "@workspace/api-client-react";
+import { BarbaraInstructionsBlock } from "@/components/account/barbara-instructions-block";
+import { PersonalInstructionsBlock } from "@/components/account/personal-instructions-block";
 import { ModelPicker } from "@/components/ai/model-picker";
 import { CapForm, ratio, SpendLine, WARN_RATIO } from "@/components/budget/budget";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -413,6 +415,7 @@ export function CharactersSection() {
           ) : (
             <WrittenBlock character="alfred" settings={settings.data} save={save} pending={update.isPending} />
           )}
+          <PersonalInstructionsBlock character="alfred" />
         </section>
         {settings.data && (
           <section className="space-y-6" aria-labelledby="characters-lucius">
@@ -421,8 +424,15 @@ export function CharactersSection() {
             </h2>
             <WrittenBlock character="lucius" settings={settings.data} save={save} pending={update.isPending} />
             <BestPracticeBlock settings={settings.data} save={save} pending={update.isPending} />
+            <PersonalInstructionsBlock character="lucius" />
           </section>
         )}
+        <section className="space-y-6" aria-labelledby="characters-barbara">
+          <h2 id="characters-barbara" className="text-h2">
+            Barbara
+          </h2>
+          <BarbaraInstructionsBlock />
+        </section>
       </CardContent>
     </Card>
   );

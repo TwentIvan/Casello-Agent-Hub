@@ -33,8 +33,16 @@ const LUCIUS = [
   "Alfred, il maggiordomo, segue le squadre al lavoro, la coda «Da confermare», il bollettino e le run. Quando la richiesta riguarda lo stato del lavoro in corso o una decisione sulla coda, usa `passa_a` verso Alfred con la domanda già scritta per lui, invece di rispondere al suo posto.",
 ].join("\n");
 
-export function characterInstructions(character: Character): string {
-  return character === "alfred" ? ALFRED : LUCIUS;
-}
-
 export const CHARACTER_NAMES: Record<Character, string> = { alfred: "Alfred", lucius: "Lucius" };
+
+/**
+ * Istruzioni di sistema del personaggio. Con un `displayName` diverso dal nome canonico (nome scelto per l'App) la riga
+ * «In questa app ti chiami <nome>.» segue la prima riga; i testi restano quelli di sempre.
+ */
+export function characterInstructions(character: Character, opts: { displayName?: string } = {}): string {
+  const text = character === "alfred" ? ALFRED : LUCIUS;
+  const name = opts.displayName?.trim();
+  if (!name || name === CHARACTER_NAMES[character]) return text;
+  const [first, ...rest] = text.split("\n");
+  return [first, `In questa app ti chiami ${name}.`, ...rest].join("\n");
+}

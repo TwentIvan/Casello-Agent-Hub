@@ -904,3 +904,53 @@ describe("architettura e best practice nei turni dei personaggi", () => {
     expect(JSON.stringify(body.messages)).not.toContain("Fonti curate");
   });
 });
+
+describe("nome del personaggio per l'App nelle istruzioni", () => {
+  let unregisterReal: (() => void)[] = [];
+  let agentId: number;
+  const system = () => String(chatBodies()[0]!.messages[0]!.content);
+  beforeEach(async () => {
+    unregisterReal = [registerSubject(alfredThreadSubject), registerSubject(agentSubject)];
+    await pool.query("TRUNCATE apps RESTART IDENTITY CASCADE");
+    const [app] = await db
+      .insert(appsTable)
+      .values({ name: "The Hub Up", slug: "thu", baseUrl: "https://thu.example", alfredName: "Jeeves", luciusName: "Edison" })
+      .returning();
+    await db.insert(appsTable).values({ name: "Mister", slug: "mister", baseUrl: "https://mister.example" });
+    const [agent] = await db.insert(agentsTable).values({ appId: app!.id, name: "Smistatore", role: "area" }).returning();
+    agentId = agent!.id;
+    fake.chatReply = { content: "Ok", toolCalls: [], usage: { prompt_tokens: 10, completion_tokens: 5 } };
+  });
+  afterEach(async () => {
+    await waitIdle(conversationId);
+    for (const u of unregisterReal) u();
+  });
+  const openAlfred = async () => {
+    await db.update(usersTable).set({ alfredChatAiModelId: modelId }).where(eq(usersTable.id, userId));
+    conversationId = (await createConversation(userId, "alfred", "alfred_thread", null)).id;
+  };
+
+  it("Alfred: la pagina ospite dell'App con un nome personalizzato lo porta nelle istruzioni", async () => {
+    await openAlfred();
+    await startCharacterTurn(conversationId, "Ciao", { page: "host", host: { app: "thu", page: "workitem" } });
+    await waitIdle(conversationId);
+    expect(system()).toContain("In questa app ti chiami Jeeves.");
+  });
+
+  it("Alfred: App senza nome personalizzato, App sconosciuta o nessuna pagina ospite → nome canonico", async () => {
+    await openAlfred();
+    for (const page of [{ page: "host", host: { app: "mister", page: "x" } }, { page: "host", host: { app: "ignota", page: "x" } }, null]) {
+      fake.requests.length = 0;
+      await startCharacterTurn(conversationId, "Ciao", page);
+      await waitIdle(conversationId);
+      expect(system()).not.toContain("ti chiami");
+    }
+  });
+
+  it("Lucius: il nome viene dall'App dell'argomento", async () => {
+    conversationId = (await createConversation(userId, "lucius", "agent", String(agentId))).id;
+    await startCharacterTurn(conversationId, "Ciao", null);
+    await waitIdle(conversationId);
+    expect(system()).toContain("In questa app ti chiami Edison.");
+  });
+});

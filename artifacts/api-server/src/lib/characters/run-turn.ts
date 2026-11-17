@@ -5,8 +5,10 @@
 
 import { and, asc, eq, inArray, isNull, lt, notInArray, sql } from "drizzle-orm";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
+import { resolveBotNames } from "../apps/bot-names";
 import {
   db,
+  appsTable,
   characterConversationsTable,
   characterMessagesTable,
   characterProposalsTable,
@@ -98,6 +100,8 @@ export interface CharacterContextInput {
   page: PageContext | null;
   history: CharacterHistoryMessage[];
   userMessage: string;
+  /** Nome del personaggio per l'App (se diverso da quello canonico entra nelle istruzioni) */
+  displayName?: string;
   /** Istruzioni in più, in fondo al messaggio `system` (es. lettura del codice) */
   extraInstructions?: string;
   /** Best practice accese (solo Lucius): sintesi dell'App e fonti curate, in un messaggio di dati; vuoto = nessun messaggio */
@@ -157,7 +161,11 @@ export function buildCharacterMessages(input: CharacterContextInput): ChatComple
     {
       role: "system",
       content: withPersonalInstructions(
-        [characterInstructions(input.character), ...(input.extraInstructions ? [input.extraInstructions] : []), WEB_INSTRUCTIONS].join("\n"),
+        [
+          characterInstructions(input.character, input.displayName !== undefined ? { displayName: input.displayName } : {}),
+          ...(input.extraInstructions ? [input.extraInstructions] : []),
+          WEB_INSTRUCTIONS,
+        ].join("\n"),
         input.personalInstructions ?? "",
       ),
     },
@@ -343,6 +351,15 @@ async function runCharacterTool(
   }
 }
 
+async function botNameFor(character: Character, page: PageContext | null, subjectApp: App | null): Promise<string | undefined> {
+  let app: App | null = null;
+  if (character === "lucius") app = subjectApp;
+  else if (page?.page === "host" && page.host) {
+    [app = null] = await db.select().from(appsTable).where(eq(appsTable.slug, page.host.app)).limit(1);
+  }
+  return app ? resolveBotNames(app)[character] : undefined;
+}
+
 function errorText(err: unknown): string {
   if (err instanceof ProviderError || err instanceof ModelAccessError) return err.message;
   return GENERIC_ERROR_MESSAGE;
@@ -414,8 +431,12 @@ async function executeCharacterTurnInner(conversationId: number, assistantMessag
         const architectureApp = isLucius && handler.architectureApp ? await handler.architectureApp(conv.userId, conv.subjectId) : null;
         const lucius = isLucius ? { architectureApp, searcher: bestPractice ? new BestPracticeSearcher(conv.userId) : null } : null;
         const extraInstructions = [...(codeRunner ? [CODE_INSTRUCTIONS_GENERAL] : []), ...(bestPractice ? [BEST_PRACTICE_INSTRUCTIONS] : [])].join("\n");
+        // Nome del personaggio per l'App: Alfred dall'App della pagina ospite (`host.app`, per l'embed verificata dalla route
+        // sul token), Lucius dall'App dell'argomento; senza App resta il nome canonico
+        const displayName = await botNameFor(character, page, architectureApp);
         const messages = buildCharacterMessages({
           character,
+          ...(displayName !== undefined ? { displayName } : {}),
           subjectData,
           memory,
           personalInstructions,

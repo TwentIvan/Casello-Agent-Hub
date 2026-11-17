@@ -115,16 +115,22 @@ export async function decideProposal(
               .where(eq(analysisItemsTable.id, proposal.targetItemId))
               .for("update")
           : [];
-        // Il piano è l'analisi della conversazione più le voci approvate dalla chat di analisi precedenti della stessa app
+        // Il piano (`loadPlanItems`) è l'analisi della conversazione più, della stessa app, le voci delle analisi del ciclo
+        // di evoluzione e quelle nate in chat, con un'issue o approvate dal ciclo di altre analisi; l'impronta copre il resto
         let inPlan = false;
         if (target) {
           if (target.analysisId === owned.analysisId) inPlan = true;
-          else if (target.origin === "chat") {
+          else {
             const [targetAnalysis] = await tx
-              .select({ appId: analysesTable.appId })
+              .select({ appId: analysesTable.appId, mode: analysesTable.mode })
               .from(analysesTable)
               .where(eq(analysesTable.id, target.analysisId));
-            inPlan = targetAnalysis?.appId === owned.appId;
+            const planned =
+              targetAnalysis?.mode === "evolution" ||
+              target.origin === "chat" ||
+              target.issueNumber !== null ||
+              target.approvedByCycle === true;
+            inPlan = targetAnalysis?.appId === owned.appId && planned;
           }
         }
         if (!target || !inPlan || itemHash(target) !== proposal.targetHash) throw new StaleTarget();

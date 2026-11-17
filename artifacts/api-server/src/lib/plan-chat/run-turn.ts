@@ -2,7 +2,7 @@
 // `startPlanTurn` risponde subito con il messaggio dell'utente e lancia il turno in background.
 // Nei log solo id e conteggi: mai il contenuto dei messaggi.
 
-import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, ne, notInArray, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lt, ne, notInArray, sql } from "drizzle-orm";
 import {
   db,
   analysesTable,
@@ -32,6 +32,9 @@ import {
   type PlanItemRow,
 } from "./context";
 import { itemHash } from "./decide";
+import { loadPlanItems, planItemRef } from "./plan-items";
+
+export { latestCompletedAnalysisId, loadPlanItems, planItemRef } from "./plan-items";
 import { memoryContextBlock } from "../memory/context";
 import { MEMORY_TOOLS } from "../memory/tools";
 import { PLAN_TOOLS, PlanToolRunner, type PlanToolItem } from "./tools";
@@ -57,79 +60,6 @@ export class TurnBusyError extends Error {
     super("Un turno della conversazione è già in corso");
     this.name = "TurnBusyError";
   }
-}
-
-/**
- * Id dell'analisi base del piano dell'app: l'ultima analisi completa (`mode = full`) completata; solo se non ce n'è
- * nessuna, l'ultima completata del ciclo di evoluzione. Un'analisi ridotta del ciclo non sostituisce mai l'analisi
- * completa: le sue voci entrano nel piano con `loadPlanItems`.
- */
-export async function latestCompletedAnalysisId(appId: number): Promise<number | null> {
-  const [full] = await db
-    .select({ id: analysesTable.id })
-    .from(analysesTable)
-    .where(and(eq(analysesTable.appId, appId), eq(analysesTable.status, "completed"), eq(analysesTable.mode, "full")))
-    .orderBy(desc(analysesTable.id))
-    .limit(1);
-  if (full) return full.id;
-  const [any] = await db
-    .select({ id: analysesTable.id })
-    .from(analysesTable)
-    .where(and(eq(analysesTable.appId, appId), eq(analysesTable.status, "completed")))
-    .orderBy(desc(analysesTable.id))
-    .limit(1);
-  return any?.id ?? null;
-}
-
-/**
- * Voci del piano: i capitoli endpoint/completion/evolution dell'analisi della conversazione (la base), le voci approvate o
- * in attesa delle analisi del ciclo di evoluzione completate dopo la base, più le voci approvate delle altre analisi della
- * stessa app nate in chat o già collegate a un'issue GitHub (ogni voce una volta sola).
- */
-export async function loadPlanItems(analysisId: number, appId: number): Promise<AnalysisItem[]> {
-  const chapters = PLAN_CHAPTERS as string[];
-  const current = await db
-    .select()
-    .from(analysisItemsTable)
-    .where(and(eq(analysisItemsTable.analysisId, analysisId), inArray(analysisItemsTable.chapter, chapters as never[])))
-    .orderBy(asc(analysisItemsTable.position), asc(analysisItemsTable.id));
-  const cycle = await db
-    .select({ item: analysisItemsTable })
-    .from(analysisItemsTable)
-    .innerJoin(analysesTable, eq(analysesTable.id, analysisItemsTable.analysisId))
-    .where(
-      and(
-        eq(analysesTable.appId, appId),
-        eq(analysesTable.mode, "evolution"),
-        eq(analysesTable.status, "completed"),
-        gt(analysesTable.id, analysisId),
-        inArray(analysisItemsTable.status, ["approved", "pending"]),
-        inArray(analysisItemsTable.chapter, chapters as never[]),
-      ),
-    )
-    .orderBy(asc(analysisItemsTable.analysisId), asc(analysisItemsTable.position), asc(analysisItemsTable.id));
-  const earlier = await db
-    .select({ item: analysisItemsTable })
-    .from(analysisItemsTable)
-    .innerJoin(analysesTable, eq(analysesTable.id, analysisItemsTable.analysisId))
-    .where(
-      and(
-        eq(analysesTable.appId, appId),
-        ne(analysisItemsTable.analysisId, analysisId),
-        or(eq(analysisItemsTable.origin, "chat"), isNotNull(analysisItemsTable.issueNumber)),
-        eq(analysisItemsTable.status, "approved"),
-        inArray(analysisItemsTable.chapter, chapters as never[]),
-      ),
-    )
-    .orderBy(asc(analysisItemsTable.id));
-  const seen = new Set(current.map((i) => i.id));
-  const out = [...current];
-  for (const { item } of [...cycle, ...earlier]) {
-    if (seen.has(item.id)) continue;
-    seen.add(item.id);
-    out.push(item);
-  }
-  return out;
 }
 
 /** Salva il messaggio dell'utente e avvia il turno in background. Un solo turno alla volta per conversazione. */
@@ -171,10 +101,10 @@ export async function startPlanTurn(conversationId: number, content: string): Pr
   }
 }
 
-function toRow(i: AnalysisItem): PlanItemRow {
+function toRow(i: AnalysisItem, conversationAnalysisId: number): PlanItemRow {
   const p = (i.payload && typeof i.payload === "object" ? i.payload : {}) as Record<string, unknown>;
   return {
-    ref: i.ref,
+    ref: planItemRef(i, conversationAnalysisId),
     chapter: i.chapter as PlanChapter,
     title: itemTitle(i.chapter as PlanChapter, i.payload),
     phase: typeof p.phase === "number" ? p.phase : null,
@@ -305,9 +235,10 @@ async function executePlanTurnInner(conversationId: number, assistantMessageId: 
       const items = await loadPlanItems(analysis.id, app.id);
       const toolItems = new Map<string, PlanToolItem>();
       for (const i of items) {
-        // A parità di ref prevale la voce dell'analisi della conversazione (viene prima)
-        if (!toolItems.has(i.ref)) {
-          toolItems.set(i.ref, { id: i.id, ref: i.ref, chapter: i.chapter as PlanChapter, payload: i.payload, status: i.status, evidence: i.evidence });
+        // Ref univoco: le voci di altre analisi (giri del ciclo, analisi precedenti) hanno il prefisso dell'analisi
+        const ref = planItemRef(i, analysis.id);
+        if (!toolItems.has(ref)) {
+          toolItems.set(ref, { id: i.id, ref, chapter: i.chapter as PlanChapter, payload: i.payload, status: i.status, evidence: i.evidence });
         }
       }
       const others = await db.select().from(appsTable).where(ne(appsTable.id, app.id)).orderBy(asc(appsTable.id));
@@ -329,7 +260,7 @@ async function executePlanTurnInner(conversationId: number, assistantMessageId: 
           architectureMap: analysis.architectureMap,
           toolNames: await activeToolNames(app.id),
         },
-        items: items.map(toRow),
+        items: items.map((i) => toRow(i, analysis.id)),
         otherApps,
         history: await loadHistory(conversationId, assistantMessageId),
         memory: await memoryContextBlock(conv.userId, "lucius"),

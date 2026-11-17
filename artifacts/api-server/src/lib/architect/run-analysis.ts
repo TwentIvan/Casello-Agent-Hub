@@ -36,6 +36,7 @@ import { loadAppConnection } from "../tools/catalog";
 import type { McpToolInfo } from "../tools/mcp-client";
 import { EVOLUTION_MESSAGES } from "../evolution/messages";
 import { itemTitle } from "../plan-chat/context";
+import { latestCompletedAnalysisId, loadPlanItems } from "../plan-chat/plan-items";
 import { registerAnalysisAbort, releaseAnalysisAbort } from "./abort";
 import { loadMcpSource } from "./mcp-source";
 import { EVOLUTION_PHASE_SHARES, PHASE_TOKEN_SHARES, runPhase, type PhaseBudget } from "./phase-loop";
@@ -116,6 +117,20 @@ async function rejectedTitlesForRound(roundId: number): Promise<string[]> {
     .orderBy(desc(analysisItemsTable.id))
     .limit(REJECTED_TITLES_MAX);
   return rows.map((r) => itemTitle(r.chapter as "endpoint" | "completion" | "evolution", r.payload));
+}
+
+/**
+ * Titoli delle voci del piano dell'App (`loadPlanItems` sulla base: analisi completa più giri del ciclo) ancora in attesa
+ * di decisione, capitoli completion ed evolution, al massimo REJECTED_TITLES_MAX: l'analisi ridotta non le ripropone.
+ */
+async function pendingPlanTitles(appId: number): Promise<string[]> {
+  const base = await latestCompletedAnalysisId(appId);
+  if (base === null) return [];
+  const items = await loadPlanItems(base, appId);
+  return items
+    .filter((i) => i.status === "pending" && (i.chapter === "completion" || i.chapter === "evolution"))
+    .slice(0, REJECTED_TITLES_MAX)
+    .map((i) => itemTitle(i.chapter as "completion" | "evolution", i.payload));
 }
 
 // Ogni chiamata al modello dura almeno 1 s, poi la limita la scadenza dell'analisi
@@ -392,11 +407,20 @@ interface ModelChatOptions {
 
 /**
  * Analisi ancora `running` nel DB: «Ferma» chiude la riga anche quando l'analisi gira in un altro processo o arriva in
- * mezzo alla presa in carico (il segnale in memoria non c'è). Una lettura per chiave primaria prima di ogni chiamata.
+ * mezzo alla presa in carico (il segnale in memoria non c'è). Una lettura per chiave primaria prima di ogni chiamata;
+ * un errore del DB nella lettura si registra (solo il nome) e non ferma l'analisi.
  */
-async function assertStillRunning(analysisId: number): Promise<void> {
-  const [row] = await db.select({ status: analysesTable.status }).from(analysesTable).where(eq(analysesTable.id, analysisId)).limit(1);
-  if (row?.status !== "running") throw new AnalysisError(EVOLUTION_MESSAGES.analysisStopped);
+export async function assertStillRunning(analysisId: number): Promise<void> {
+  let status: string | undefined;
+  try {
+    const [row] = await db.select({ status: analysesTable.status }).from(analysesTable).where(eq(analysesTable.id, analysisId)).limit(1);
+    status = row?.status;
+  } catch (err) {
+    // Errore passeggero del DB: il controllo è solo una sicurezza in più, l'analisi prosegue (il segnale in memoria resta)
+    logger.warn({ analysisId, errName: err instanceof Error ? err.name : typeof err }, "Controllo dello stato dell'analisi non riuscito");
+    return;
+  }
+  if (status !== "running") throw new AnalysisError(EVOLUTION_MESSAGES.analysisStopped);
 }
 
 function architectChat({
@@ -556,6 +580,7 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
     let architectureSummary: string | null = null;
     let savedRepoMap: string | null = null;
     let rejectedTitles: string[] = [];
+    let pendingTitles: string[] = [];
     if (evolution) {
       const [arch] = await db
         .select({ summary: appArchitectureTable.summary, repoMap: appArchitectureTable.repoMap })
@@ -566,7 +591,10 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
       architectureSummary = arch.summary;
       savedRepoMap = arch.repoMap ?? "";
       rejectedTitles = analysis.evolutionRoundId === null ? [] : await rejectedTitlesForRound(analysis.evolutionRoundId);
-      log(`analisi ridotta del ciclo di evoluzione: ${rejectedTitles.length} voci rifiutate nei giri precedenti`);
+      pendingTitles = await pendingPlanTitles(app.id);
+      log(
+        `analisi ridotta del ciclo di evoluzione: ${rejectedTitles.length} voci rifiutate nei giri precedenti, ${pendingTitles.length} in attesa`,
+      );
     }
 
     const loaded = await loadSources(app, opts, log);
@@ -611,7 +639,7 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
         previous,
         alreadyPlanned,
         existingTools: phase === "catalog" ? await existingToolsForPrompt(app.id) : undefined,
-        ...(evolution ? { architectureSummary, rejectedTitles } : {}),
+        ...(evolution ? { architectureSummary, rejectedTitles, pendingTitles } : {}),
       });
       // Quota morbida della fase: solo il sollecito a consegnare; il tetto rigido resta il totale
       const share = evolution ? (EVOLUTION_PHASE_SHARES as Partial<Record<PhaseName, number>>)[phase]! : PHASE_TOKEN_SHARES[phase];

@@ -244,6 +244,87 @@ describe("turni della chat del piano", () => {
     expect(items.map((i) => i.ref).sort()).toEqual(["arch:2", "chat:1", "completion:1"]);
   });
 
+  it("dopo una nuova analisi completa restano nel piano le voci approvate dal ciclo senza issue", async () => {
+    const [round] = await db
+      .insert(analysesTable)
+      .values({ appId, model: "m", sources: { code: "none", openapi: false, description: true }, maxTokens: 1000, status: "completed", mode: "evolution" })
+      .returning();
+    const [newFull] = await db
+      .insert(analysesTable)
+      .values({ appId, model: "m", sources: { code: "none", openapi: false, description: true }, maxTokens: 1000, status: "completed" })
+      .returning();
+    const base = { diff: "new" as const, position: 0, chapter: "evolution" as const };
+    await db.insert(analysisItemsTable).values([
+      { ...base, analysisId: round!.id, ref: "evolution:1", payload: { title: "Approvata dal ciclo" }, status: "approved", approvedByCycle: true },
+      { ...base, analysisId: round!.id, ref: "evolution:2", payload: { title: "In attesa di un giro vecchio" }, status: "pending" },
+      { ...base, analysisId: newFull!.id, ref: "evolution:1", payload: { title: "Della nuova analisi" }, status: "pending" },
+    ]);
+    const items = await loadPlanItems(newFull!.id, appId);
+    expect(items.map((i) => (i.payload as { title: string }).title).sort()).toEqual(["Approvata dal ciclo", "Della nuova analisi"]);
+  });
+
+  it("senza analisi completa la base è l'ultimo giro e restano le voci di tutti i giri, una volta sola", async () => {
+    await db.update(analysesTable).set({ mode: "evolution" }).where(eq(analysesTable.id, analysisId));
+    const [second] = await db
+      .insert(analysesTable)
+      .values({ appId, model: "m", sources: { code: "none", openapi: false, description: true }, maxTokens: 1000, status: "completed", mode: "evolution" })
+      .returning();
+    const base = { diff: "new" as const, position: 0, chapter: "evolution" as const };
+    await db.insert(analysisItemsTable).values([
+      { ...base, analysisId, ref: "evolution:1", payload: { title: "Giro uno approvata" }, status: "approved", approvedByCycle: true },
+      { ...base, analysisId, ref: "evolution:2", payload: { title: "Giro uno in attesa" }, status: "pending" },
+      { ...base, analysisId: second!.id, ref: "evolution:1", payload: { title: "Giro due in attesa" }, status: "pending" },
+    ]);
+    const items = await loadPlanItems(second!.id, appId);
+    expect(items.map((i) => (i.payload as { title: string }).title).sort()).toEqual(["Giro due in attesa", "Giro uno approvata", "Giro uno in attesa"]);
+    expect(new Set(items.map((i) => i.id)).size).toBe(items.length);
+  });
+
+  it("voci del ciclo con lo stesso ref dell'analisi completa: ref distinti nel contesto, lo scarto tocca la voce del ciclo", async () => {
+    const [cycle] = await db
+      .insert(analysesTable)
+      .values({ appId, model: "m", sources: { code: "none", openapi: false, description: true }, maxTokens: 1000, status: "completed", mode: "evolution" })
+      .returning();
+    const base = { diff: "new" as const, position: 0, chapter: "evolution" as const, status: "pending" as const };
+    const [fullItem, cycleItem] = await db
+      .insert(analysisItemsTable)
+      .values([
+        { ...base, analysisId, ref: "evolution:1", payload: { title: "Voce dell'analisi completa" } },
+        { ...base, analysisId: cycle!.id, ref: "evolution:1", payload: { title: "Voce del ciclo" } },
+      ])
+      .returning();
+    const cycleRef = `a${cycle!.id}:evolution:1`;
+    let n = 0;
+    fake.chatReply = () => {
+      n += 1;
+      return n === 1
+        ? {
+            content: null,
+            toolCalls: [
+              { id: "c1", name: "read_item", arguments: JSON.stringify({ ref: cycleRef }) },
+              { id: "c2", name: "propose", arguments: JSON.stringify({ kind: "discard", chapter: "evolution", targetRef: cycleRef, rationale: "doppione" }) },
+            ],
+            usage: { prompt_tokens: 10, completion_tokens: 5 },
+          }
+        : { content: "Fatto.", toolCalls: [], usage: { prompt_tokens: 10, completion_tokens: 5 } };
+    };
+    await startPlanTurn(conversationId, "scarta la voce del ciclo");
+    await waitIdle(conversationId);
+
+    const sent = JSON.stringify(chatBodies()[0]!.messages);
+    expect(sent).toContain("- evolution:1 [evolution] Voce dell'analisi completa");
+    expect(sent).toContain(`- ${cycleRef} [evolution] Voce del ciclo`);
+    const toolResults = chatBodies()[1]!.messages.filter((m) => m.role === "tool").map((m) => String(m.content));
+    expect(toolResults[0]).toContain("Voce del ciclo");
+    const [proposal] = await db.select().from(planProposalsTable);
+    expect(proposal).toMatchObject({ kind: "discard", targetItemId: cycleItem!.id });
+
+    await decideProposal(proposal!.id, userId, "accept");
+    const after = await db.select().from(analysisItemsTable);
+    expect(after.find((i) => i.id === cycleItem!.id)!.status).toBe("discarded");
+    expect(after.find((i) => i.id === fullItem!.id)!.status).toBe("pending");
+  });
+
   it("cronologia: finisce con l'utente, senza assistant vuoti, e la scelta di scartare porta il titolo della voce", async () => {
     const [item] = await db
       .insert(analysisItemsTable)

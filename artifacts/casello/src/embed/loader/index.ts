@@ -24,7 +24,7 @@ const CSS = `
   color: var(--surface-fg, hsl(0 0% 10%)); font: 500 14px/1 var(--surface-font, system-ui, sans-serif);
   cursor: pointer; z-index: 2147483000; display: flex; align-items: center; gap: 8px; }
 .btn[data-side="right"] { right: 16px; } .btn[data-side="left"] { left: 16px; }
-.btn.inline { position: relative; }
+.btn.inline { position: relative; bottom: auto; left: auto; right: auto; }
 .btn img { width: 24px; height: 24px; display: block; flex-shrink: 0; }
 .label { white-space: nowrap; }
 .label:empty { display: none; }

@@ -263,6 +263,28 @@ function isAncestor(repo: FakeGitRepo, ancestor: string, descendant: string): bo
   return false;
 }
 
+/** Primo antenato comune (visita in ampiezza dalla testa), per il merge a tre vie di `POST /merges`. */
+function mergeBase(repo: FakeGitRepo, a: string, b: string): string | null {
+  const ancestorsOfA = new Set<string>();
+  const stack = [a];
+  while (stack.length) {
+    const cur = stack.pop()!;
+    if (ancestorsOfA.has(cur)) continue;
+    ancestorsOfA.add(cur);
+    stack.push(...(repo.commits.get(cur)?.parents ?? []));
+  }
+  const queue = [b];
+  const seen = new Set<string>();
+  while (queue.length) {
+    const cur = queue.shift()!;
+    if (ancestorsOfA.has(cur)) return cur;
+    if (seen.has(cur)) continue;
+    seen.add(cur);
+    queue.push(...(repo.commits.get(cur)?.parents ?? []));
+  }
+  return null;
+}
+
 function filesOfCommit(repo: FakeGitRepo, commitSha: string): Record<string, string> {
   const out: Record<string, string> = {};
   const commit = repo.commits.get(commitSha);
@@ -549,7 +571,7 @@ export async function startFakeGithub(opts: { appId?: string; slug?: string } = 
     }
 
     // Merge di un branch in un altro (`POST /repos/{repo}/merges`): 204 se il base contiene già la testa, 409 con un conflitto
-    // simulato, altrimenti un commit di merge con l'albero del base più i file della testa
+    // simulato, altrimenti un commit di merge a tre vie: l'albero del base più i file cambiati dalla testa rispetto all'antenato comune
     if (repoMatch && method === "POST" && rest === "/merges") {
       const fullName = access("contents", "write");
       if (!fullName) return;
@@ -565,8 +587,16 @@ export async function startFakeGithub(opts: { appId?: string; slug?: string } = 
         return;
       }
       if (fake.mergeConflicts.has(fullName)) return send(res, 409, { message: "Merge conflict" });
-      const entries = new Map((repo.trees.get(repo.commits.get(baseSha)!.tree) ?? []).map((e) => [e.path, e]));
-      for (const e of repo.trees.get(repo.commits.get(headSha)!.tree) ?? []) entries.set(e.path, e);
+      const entriesOf = (sha: string | null) => new Map((sha ? (repo.trees.get(repo.commits.get(sha)!.tree) ?? []) : []).map((e) => [e.path, e]));
+      const entries = entriesOf(baseSha);
+      const ancestor = entriesOf(mergeBase(repo, baseSha, headSha));
+      const head = entriesOf(headSha);
+      for (const path of new Set([...ancestor.keys(), ...head.keys()])) {
+        const h = head.get(path);
+        if (JSON.stringify(h) === JSON.stringify(ancestor.get(path))) continue;
+        if (h) entries.set(path, h);
+        else entries.delete(path);
+      }
       const sha = storeCommit(repo, storeTree(repo, [...entries.values()]), [baseSha, headSha], typeof b["commit_message"] === "string" ? b["commit_message"] : "merge");
       repo.refs.set(`heads/${b["base"]}`, sha);
       return send(res, 201, { sha });

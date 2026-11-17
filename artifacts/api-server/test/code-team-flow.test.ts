@@ -595,3 +595,141 @@ describe("flusso: merge automatico (code: merge)", () => {
     expect(await mergeTeamPull(instanceId, { compito: "t2" })).toEqual({ ok: false, content: MERGE_MESSAGES.notTeamBranch });
   });
 });
+
+describe("flusso: lavoro su branch unico e Porta in produzione (§15.7)", () => {
+  let userId: number;
+  let instanceId: number;
+  let workBranch: string;
+
+  beforeEach(async () => {
+    process.env["CASELLO_SECRET_KEY"] = "a".repeat(64);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    script = [];
+    fake = await startFakeProvider({ chatReply: () => script.shift() ?? text("fatto") });
+    resetGithub();
+    await pool.query(TRUNCATE);
+    const [u] = await db.insert(usersTable).values({ email: "capo@example.com", name: "Ivan" }).returning();
+    userId = u!.id;
+    await db.insert(githubInstallationsTable).values({ userId, installationId: INST, accountLogin: "ivan", accountType: "User", repositorySelection: "selected" });
+    const [account] = await db
+      .insert(aiAccountsTable)
+      .values({ userId, name: "Account", provider: "custom", baseUrl: fake.baseUrl, allowPrivateNetwork: true, apiKeyEnc: encryptSecret("sk-test"), status: "ok" })
+      .returning();
+    const [model] = await db.insert(aiModelsTable).values({ accountId: account!.id, modelId: "fake-model", displayName: "Fake", priceInputPerMtok: "1000", priceOutputPerMtok: "2000" }).returning();
+    const [app] = await db
+      .insert(appsTable)
+      .values({ name: "The Hub Up", slug: "hub-up", baseUrl: "http://hub.example", sourceType: "github", sourceRepo: REPO, sourceInstallationId: INST, stagingBranch: "staging", stagingUrl: "https://prova.hub.example" })
+      .returning();
+    const base = { runsOn: "cloud" as const, aiModelId: model!.id, tools: [], skills: [], localSkills: [] };
+    const roles: InstanceRoleData[] = [
+      { ...base, key: "capo", name: "Capo", task: "Coordina.", isLead: true },
+      { ...base, key: "dev", name: "Sviluppatore", task: "Scrive codice.", isLead: false, code: "write" } as InstanceRoleData,
+    ];
+    const [inst] = await db
+      .insert(teamInstancesTable)
+      .values({ name: "Squadra WI", refAppId: app!.id, refType: "wi", refId: "1174", refTitle: "WI 1174", status: "active", roles, createdBy: userId, activatedBy: userId })
+      .returning();
+    instanceId = inst!.id;
+    workBranch = `botcave/lavoro-${instanceId}-1`;
+    const task = (id: string, title: string) => ({ id, title, roleKey: "dev", instructions: title, status: "planned" as const, outcome: null });
+    await writePlanVersion(
+      instanceId,
+      { objective: "Tre modifiche", constraints: [], openPoints: [], manualActions: [], tasks: [task("t1", "Porta a a 2"), task("t2", "Porta a a 3"), task("t3", "Aggiungi b")] },
+      "approved",
+    );
+  });
+
+  afterEach(async () => {
+    await settleTaskExecutions();
+    vi.restoreAllMocks();
+    await fake.close();
+    if (savedKey === undefined) delete process.env["CASELLO_SECRET_KEY"];
+    else process.env["CASELLO_SECRET_KEY"] = savedKey;
+  });
+
+  const lead = async (name: string, args: Record<string, unknown>) => {
+    const { LEAD_TOOLS, leadToolHandler } = await import("../src/lib/teams/lead-tools");
+    return leadToolHandler({ instanceId, userId, teamName: "Squadra WI", roleKeys: ["capo", "dev"] })(LEAD_TOOLS.find((t) => t.name === name)!, args);
+  };
+  const assign = async (taskId: string) => {
+    const out = await lead("assegna_compito", { taskId });
+    await settleTaskExecutions();
+    return out;
+  };
+  const green = (sha: string) => gh.checkRuns.set(sha, [{ id: 1, name: "test", status: "completed", conclusion: "success", annotations: [] }]);
+  const head = (branch: string) => gh.git.get(REPO)!.refs.get(`heads/${branch}`)!;
+
+  it("compiti in fila sul branch del lavoro → merge automatico → CI assente bloccata → chiusura unica → prova → Porta in produzione", async () => {
+    const t0 = Date.now();
+    // 1. Primo compito: apre il lavoro dal base e lavora sul suo branch
+    script = [
+      call("modifica_file", { percorso: "src/a.ts", vecchio: "a = 1", nuovo: "a = 2" }),
+      call("crea_commit", { messaggio: "a = 2" }),
+      call("apri_pr", { titolo: "a = 2", corpo: "t1" }),
+      report("PR aperta"),
+    ];
+    expect((await assign("t1")).ok).toBe(true);
+    const pr1 = (await getCodeTask(instanceId, "t1"))!;
+    expect(pr1).toMatchObject({ baseBranch: workBranch, prState: "open" });
+
+    // 2. Un secondo compito con codice aspetta in fila
+    const busy = await assign("t2");
+    expect(busy).toMatchObject({ ok: false });
+    expect(JSON.stringify(busy)).toContain("un compito con codice è già in corso nel lavoro");
+
+    // 3. CI verde: Botcave unisce la PR sul branch del lavoro (main resta com'era)
+    green(pr1.headSha!);
+    await watchCodeTasksOnce(new Date(t0 + 60_000));
+    await watchCodeTasksOnce(new Date(t0 + 90_000));
+    expect((await getCodeTask(instanceId, "t1"))!.prState).toBe("merged");
+    expect(gh.filesAt(REPO, workBranch)["src/a.ts"]).toBe("export const a = 2;\n");
+    expect(gh.filesAt(REPO, "main")["src/a.ts"]).toBe("export const a = 1;\n");
+
+    // 4. Il secondo compito parte dalla testa nuova del lavoro
+    script = [
+      call("modifica_file", { percorso: "src/a.ts", vecchio: "a = 2", nuovo: "a = 3" }),
+      call("crea_commit", { messaggio: "a = 3" }),
+      call("apri_pr", { titolo: "a = 3", corpo: "t2" }),
+      report("PR aperta"),
+    ];
+    expect((await assign("t2")).ok).toBe(true);
+    const pr2 = (await getCodeTask(instanceId, "t2"))!;
+    green(pr2.headSha!);
+    await watchCodeTasksOnce(new Date(t0 + 120_000));
+    await watchCodeTasksOnce(new Date(t0 + 150_000));
+    expect(gh.filesAt(REPO, workBranch)["src/a.ts"]).toBe("export const a = 3;\n");
+
+    // 5. Terzo compito senza CI: dopo 10 minuti è bloccato con il messaggio fisso
+    script = [call("scrivi_file", { percorso: "src/b.ts", contenuto: "export const b = 1;\n" }), call("crea_commit", { messaggio: "b" }), call("apri_pr", { titolo: "b", corpo: "t3" }), report("PR aperta")];
+    expect((await assign("t3")).ok).toBe(true);
+    await watchCodeTasksOnce(new Date(Date.now() + 11 * 60_000));
+    expect((await getPlan(instanceId)).tasks.find((t) => t.id === "t3")).toMatchObject({ status: "blocked", outcome: "nessuna CI sul branch: aggiungi un workflow che giri sui branch botcave/**" });
+
+    // 6. Il capo chiude il lavoro: un solo «Lavoro finito», branch di prova sulla testa del lavoro, voce «Porta in produzione»
+    expect((await lead("chiudi_lavoro", { bulletin: "Fatto" })).ok).toBe(true);
+    expect((await lead("chiudi_lavoro", { bulletin: "Fatto" })).ok).toBe(false);
+    expect((await bulletins(instanceId)).filter((b) => b.startsWith("lavoro_finito"))).toHaveLength(1);
+    expect(head("staging")).toBe(head(workBranch));
+    expect(await bulletins(instanceId)).toContain("lavoro_in_prova: Lavoro 1 in prova su https://prova.hub.example");
+    const [item] = await db.select().from(pendingActionsTable).where(eq(pendingActionsTable.kind, "release"));
+    expect(item!.argsPublic).toMatchObject({ number: 1, stagingUrl: "https://prova.hub.example", tasks: [{ id: "t1" }, { id: "t2" }] });
+
+    // 7. main avanza, l'utente approva: main entra nel lavoro, PR di rilascio, CI verde, commit di merge su main
+    const mainHead = head("main");
+    const { sha } = await commitFiles(
+      { cfg: githubConfig()!, installationId: INST, repo: REPO },
+      { branch: `botcave/${instanceId}-hotfix`, parentSha: mainHead, baseTreeSha: await getCommitTree({ cfg: githubConfig()!, installationId: INST, repo: REPO }, mainHead), changes: new Map([["README.md", "# Hub 2\n"]]), message: "hotfix", createBranch: true },
+    );
+    gh.git.get(REPO)!.refs.set("heads/main", sha);
+    const approved = await approveAction(userId, item!.number);
+    expect(approved.ok && approved.action.status).toBe("executing");
+    expect(gh.filesAt(REPO, workBranch)["README.md"]).toBe("# Hub 2\n");
+    green(head(workBranch));
+    const { watchReleasesOnce } = await import("../src/lib/teams/release");
+    await watchReleasesOnce(new Date(Date.now() + 60_000));
+    expect(gh.filesAt(REPO, "main")).toMatchObject({ "README.md": "# Hub 2\n", "src/a.ts": "export const a = 3;\n" });
+    expect(gh.filesAt(REPO, "main")["src/b.ts"]).toBeUndefined();
+    const [done] = await db.select().from(pendingActionsTable).where(eq(pendingActionsTable.id, item!.id));
+    expect(done).toMatchObject({ status: "done", result: "lavoro 1 in produzione" });
+  });
+});

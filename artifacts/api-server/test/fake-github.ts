@@ -176,6 +176,8 @@ export interface FakeGithub {
   comparisons: Map<string, { commits: string[]; files: { filename: string; status: string }[] }>;
   /** sha → check run. */
   checkRuns: Map<string, FakeCheckRun[]>;
+  /** Repository (`proprietario/nome`) in cui `POST /merges` risponde 409 (conflitto). */
+  mergeConflicts: Set<string>;
   /** sha → stati di commit. */
   statuses: Map<string, { context: string; state: string }[]>;
   /** id del job → log di testo. */
@@ -259,6 +261,28 @@ function isAncestor(repo: FakeGitRepo, ancestor: string, descendant: string): bo
     queue.push(...(repo.commits.get(cur)?.parents ?? []));
   }
   return false;
+}
+
+/** Primo antenato comune (visita in ampiezza dalla testa), per il merge a tre vie di `POST /merges`. */
+function mergeBase(repo: FakeGitRepo, a: string, b: string): string | null {
+  const ancestorsOfA = new Set<string>();
+  const stack = [a];
+  while (stack.length) {
+    const cur = stack.pop()!;
+    if (ancestorsOfA.has(cur)) continue;
+    ancestorsOfA.add(cur);
+    stack.push(...(repo.commits.get(cur)?.parents ?? []));
+  }
+  const queue = [b];
+  const seen = new Set<string>();
+  while (queue.length) {
+    const cur = queue.shift()!;
+    if (ancestorsOfA.has(cur)) return cur;
+    if (seen.has(cur)) continue;
+    seen.add(cur);
+    queue.push(...(repo.commits.get(cur)?.parents ?? []));
+  }
+  return null;
 }
 
 function filesOfCommit(repo: FakeGitRepo, commitSha: string): Record<string, string> {
@@ -349,6 +373,7 @@ export async function startFakeGithub(opts: { appId?: string; slug?: string } = 
     git: new Map(),
     pulls: new Map(),
     comparisons: new Map(),
+    mergeConflicts: new Set(),
     checkRuns: new Map(),
     statuses: new Map(),
     jobLogs: new Map(),
@@ -543,6 +568,38 @@ export async function startFakeGithub(opts: { appId?: string; slug?: string } = 
       if (!fullName) return;
       const r = (fake.repos.get(liveToken(req)!.installationId) ?? []).find((x) => x.fullName === fullName)!;
       return send(res, 200, { ...repoJson(r, 0), default_branch: gitOf(fullName)?.defaultBranch ?? r.defaultBranch });
+    }
+
+    // Merge di un branch in un altro (`POST /repos/{repo}/merges`): 204 se il base contiene già la testa, 409 con un conflitto
+    // simulato, altrimenti un commit di merge a tre vie: l'albero del base più i file cambiati dalla testa rispetto all'antenato comune
+    if (repoMatch && method === "POST" && rest === "/merges") {
+      const fullName = access("contents", "write");
+      if (!fullName) return;
+      const repo = gitOf(fullName);
+      const b = (body ?? {}) as Record<string, unknown>;
+      if (!repo || typeof b["base"] !== "string" || typeof b["head"] !== "string") return send(res, 422, { message: "Validation Failed" });
+      const baseSha = repo.refs.get(`heads/${b["base"]}`);
+      const headSha = resolveRef(repo, b["head"]);
+      if (!baseSha || !headSha) return send(res, 404, NOT_FOUND);
+      if (isAncestor(repo, headSha, baseSha)) {
+        res.writeHead(204);
+        res.end();
+        return;
+      }
+      if (fake.mergeConflicts.has(fullName)) return send(res, 409, { message: "Merge conflict" });
+      const entriesOf = (sha: string | null) => new Map((sha ? (repo.trees.get(repo.commits.get(sha)!.tree) ?? []) : []).map((e) => [e.path, e]));
+      const entries = entriesOf(baseSha);
+      const ancestor = entriesOf(mergeBase(repo, baseSha, headSha));
+      const head = entriesOf(headSha);
+      for (const path of new Set([...ancestor.keys(), ...head.keys()])) {
+        const h = head.get(path);
+        if (JSON.stringify(h) === JSON.stringify(ancestor.get(path))) continue;
+        if (h) entries.set(path, h);
+        else entries.delete(path);
+      }
+      const sha = storeCommit(repo, storeTree(repo, [...entries.values()]), [baseSha, headSha], typeof b["commit_message"] === "string" ? b["commit_message"] : "merge");
+      repo.refs.set(`heads/${b["base"]}`, sha);
+      return send(res, 201, { sha });
     }
 
     if (repoMatch && /^\/git\//.test(rest)) {

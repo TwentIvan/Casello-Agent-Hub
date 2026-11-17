@@ -499,6 +499,16 @@ export interface App {
      */
   functionalDescription: string | null;
   architectureRefresh: ArchitectureRefresh;
+  /**
+     * Branch di prova dell'App, riscritto da Botcave a ogni lavoro delle squadre (null = nessuna versione di prova)
+     * @nullable
+     */
+  stagingBranch: string | null;
+  /**
+     * Indirizzo https dove la CI dell'App pubblica il branch di prova
+     * @nullable
+     */
+  stagingUrl: string | null;
   status: AppStatus;
   createdAt: string;
   updatedAt: string;
@@ -866,6 +876,16 @@ export interface AppUpdate {
   /** @nullable */
   functionalDescription?: string | null;
   architectureRefresh?: ArchitectureRefresh;
+  /**
+     * Branch di prova (non il base, non main/master, non botcave/…); null lo toglie
+     * @nullable
+     */
+  stagingBranch?: string | null;
+  /**
+     * Indirizzo https della versione di prova; null lo toglie
+     * @nullable
+     */
+  stagingUrl?: string | null;
   status?: AppStatus;
 }
 
@@ -1634,6 +1654,7 @@ export const QueuedActionKind = {
   proposal: 'proposal',
   merge: 'merge',
   bug: 'bug',
+  release: 'release',
 } as const;
 
 /**
@@ -4683,6 +4704,46 @@ export interface TeamCodeTask {
   ciCheckedAt: string | null;
 }
 
+export type TeamWorkStatus = typeof TeamWorkStatus[keyof typeof TeamWorkStatus];
+
+
+export const TeamWorkStatus = {
+  open: 'open',
+  awaiting_release: 'awaiting_release',
+  releasing: 'releasing',
+  released: 'released',
+  abandoned: 'abandoned',
+} as const;
+
+/**
+ * Lavoro su branch unico di una squadra con codice (compiti in fila, versione di prova, «Porta in produzione»)
+ */
+export interface TeamWork {
+  id: number;
+  number: number;
+  status: TeamWorkStatus;
+  repo: string;
+  branch: string;
+  baseBranch: string;
+  headSha: string | null;
+  /** PR dei compiti unite sul branch del lavoro */
+  mergedPulls: number;
+  /** Compito con codice in corso o con la PR aperta (solo per un lavoro aperto) */
+  queuedTask: string | null;
+  /** Script -post uniti nel lavoro, da applicare su Neon dopo il deploy */
+  postScripts: string[];
+  stagingBranch: string | null;
+  stagingUrl: string | null;
+  /** Numero della voce «Porta in produzione» in «Da confermare» */
+  releaseActionNumber: number | null;
+  releasePrNumber: number | null;
+  releasePrUrl: string | null;
+  /** Nota del rifiuto o motivo del rilascio non riuscito (il lavoro è tornato aperto) */
+  rejectionNote: string | null;
+  createdAt: string;
+  finishedAt: string | null;
+}
+
 export type TeamPlanTasksItem = TeamPlanTask & {
   updatedAt: string;
 };
@@ -4697,6 +4758,8 @@ export const TeamPlanStatus = {
 } as const;
 
 export interface TeamPlan {
+  /** Ultimo lavoro su branch unico della squadra (null se non ne ha mai aperto uno) */
+  work: TeamWork | null;
   /** Branch, PR e CI dei compiti che hanno scritto codice (vuoto se nessuno) */
   codeTasks: TeamCodeTask[];
   objective: string;

@@ -4,13 +4,13 @@ import { Led } from "@/components/brand/led";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { roleLed } from "@/lib/team-readiness";
 
-/** Stato di preparazione dei ruoli `node`: per ognuno LED e problemi (errori e avvisi) con il link per sistemarli. */
+/** Stato di preparazione dei ruoli `node` e dei ruoli con codice: per ognuno LED e problemi (errori e avvisi) con il link per sistemarli. */
 export function TeamReadinessCard({ readiness }: { readiness: TeamReadiness }) {
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-base">Pronta a lavorare</CardTitle>
-        <CardDescription>Che cosa manca ai ruoli che lavorano sul tuo Mac prima che possano partire.</CardDescription>
+        <CardDescription>Che cosa manca ai ruoli che lavorano sul tuo Mac o sul codice prima che possano partire.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         {readiness.roles.map((role) => (

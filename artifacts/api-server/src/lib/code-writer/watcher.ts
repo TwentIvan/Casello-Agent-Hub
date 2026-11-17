@@ -1,4 +1,7 @@
 import { and, asc, desc, eq, inArray, isNotNull, sql } from "drizzle-orm";
+import { WORK_MESSAGES, closeWorkIfDone, sweepWorks } from "../teams/works";
+import { mergeIntoWork } from "./merge";
+import { watchReleasesOnce } from "../teams/release";
 import { appsTable, db, teamCodeTasksTable, teamInstancesTable, teamTasksTable, type TeamCodeTaskRow } from "@workspace/db";
 import { githubConfig } from "../github/config";
 import { logger } from "../logger";
@@ -75,6 +78,8 @@ async function watchRow(code: TeamCodeTaskRow, r: RepoRef, now: Date): Promise<v
       return true;
     });
     if (won) notifyTurnQueued(code.instanceId);
+    // Lavoro su branch unico: una PR del lavoro chiusa può essere l'ultima (chiusura, versione di prova, voce)
+    if (won && code.workId !== null) await closeWorkIfDone(code.instanceId);
     return;
   }
 
@@ -126,6 +131,10 @@ async function watchRow(code: TeamCodeTaskRow, r: RepoRef, now: Date): Promise<v
     if (notify) {
       if (state === "success") {
         await emitEvent({ instanceId: code.instanceId, type: "compito_finito", taskId, bulletin: `Compito ${code.planTaskId}: CI verde, PR #${n} pronta per la revisione` }, tx);
+      } else if (state === "none" && code.workId !== null) {
+        // Lavoro su branch unico: senza CI non si unisce nulla (CI obbligatoria)
+        await emitEvent({ instanceId: code.instanceId, type: "bloccato", taskId, bulletin: `Compito ${code.planTaskId}: nessuna CI sulla PR #${n}`, detail: WORK_MESSAGES.noCi }, tx);
+        await patchPlan(code.instanceId, { tasks: [{ id: code.planTaskId, status: "blocked", outcome: WORK_MESSAGES.noCi }] }, tx);
       } else if (state === "none") {
         await emitEvent({ instanceId: code.instanceId, type: "compito_finito", taskId, bulletin: `Compito ${code.planTaskId}: nessuna CI configurata, PR #${n} pronta per la revisione` }, tx);
       } else {
@@ -139,6 +148,22 @@ async function watchRow(code: TeamCodeTaskRow, r: RepoRef, now: Date): Promise<v
     return true;
   });
   if (won && notify) notifyTurnQueued(code.instanceId);
+  // Lavoro su branch unico: con la CI verde Botcave unisce la PR sul branch del lavoro (il pr_closed arriva al giro dopo)
+  // Merge già tentato su questa testa senza riuscire (rifiuto, errore, lavoro non aperto): si ritenta a ogni giro, in silenzio
+  const retry = !notify && state === "success" && code.workId !== null && pull.headSha === code.ciNotifiedSha;
+  if (won && state === "success" && code.workId !== null && (notify || retry)) await mergeWorkPull({ ...code, headSha }, taskId, notify);
+}
+
+/** Merge automatico sul branch del lavoro; un rifiuto blocca il compito con il messaggio fisso e lo dice al capo (solo la prima volta per testa). */
+async function mergeWorkPull(code: TeamCodeTaskRow, taskId: number | undefined, report: boolean): Promise<void> {
+  const result = await mergeIntoWork(code);
+  if (result === "merged" || result === "skipped" || !report) return;
+  await db.transaction(async (tx) => {
+    await emitEvent({ instanceId: code.instanceId, type: "bloccato", taskId, bulletin: `Compito ${code.planTaskId}: PR #${code.prNumber} non unita nel lavoro`, detail: result.refused }, tx);
+    await patchPlan(code.instanceId, { tasks: [{ id: code.planTaskId, status: "blocked", outcome: result.refused }] }, tx);
+    await enqueueTurnReason(code.instanceId, { type: "merge_failed", taskCodeId: code.id, message: result.refused }, tx);
+  });
+  notifyTurnQueued(code.instanceId);
 }
 
 /** Un giro: fino a 20 PR aperte di squadre attive, le meno recenti per ultimo controllo per prime. */
@@ -169,6 +194,10 @@ export async function watchCodeTasksOnce(now: Date = new Date()): Promise<void> 
     }
   }
   if (skipped > 0) logger.info({ count: skipped }, "PR dei compiti senza installazione GitHub: saltate");
+  // Lavori su branch unico: chiusura quando non resta nulla da fare, voce «Porta in produzione» non ancora accodata
+  await sweepWorks();
+  // «Porta in produzione» approvate: CI della PR di rilascio, poi merge o esito negativo
+  await watchReleasesOnce(now);
 }
 
 /** Avvia la sorveglianza ogni minuto, un giro alla volta; restituisce la funzione che la ferma. */

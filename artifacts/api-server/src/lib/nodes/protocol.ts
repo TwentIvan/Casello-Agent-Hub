@@ -564,6 +564,9 @@ export async function reportTask(nodeId: number, taskId: number, input: NodeRepo
   const [task] = await db.select().from(teamTasksTable).where(eq(teamTasksTable.id, taskId)).limit(1);
   if (!task || task.nodeId !== nodeId || task.leaseToken !== input.leaseToken) throw new NodeError(409, NODE_PROTOCOL_MESSAGES.lease);
   const outcome = input.outcome.slice(0, MAX_TASK_OUTCOME);
+  // Ruolo con codice: la PR aperta sul branch del compito passa alla sorveglianza (non solleva mai). Prima della chiusura del
+  // compito, così la fila del lavoro su branch unico non resta libera tra la fine del compito e la riga della sua PR
+  if (input.status === "done") await adoptNodePull(task, { outcome });
   const closed = await finishTaskExecution(
     task,
     {
@@ -576,6 +579,4 @@ export async function reportTask(nodeId: number, taskId: number, input: NodeRepo
     { kind: "lease", nodeId, leaseToken: input.leaseToken, now: new Date(), sessionId: input.sessionId ?? null },
   );
   if (!closed) throw new NodeError(409, NODE_PROTOCOL_MESSAGES.lease);
-  // Ruolo con codice: la PR aperta sul branch del compito passa alla sorveglianza (non solleva mai)
-  if (input.status === "done") await adoptNodePull(task, { outcome });
 }

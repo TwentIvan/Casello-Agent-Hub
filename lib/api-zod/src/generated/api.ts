@@ -1674,6 +1674,8 @@ export const ListAppsResponseItem = zod.object({
   "openapiUrl": zod.string().nullable().describe('URL dell\'OpenAPI dell\'app, letto (GET) dall\'architetto'),
   "functionalDescription": zod.string().nullable().describe('Descrizione funzionale dell\'app per l\'architetto'),
   "architectureRefresh": zod.enum(['off', 'hourly', '6h', 'daily', 'weekly']).describe('Frequenza di controllo della sintesi dell\'architettura'),
+  "stagingBranch": zod.string().nullable().describe('Branch di prova dell\'App, riscritto da Botcave a ogni lavoro delle squadre (null = nessuna versione di prova)'),
+  "stagingUrl": zod.string().nullable().describe('Indirizzo https dove la CI dell\'App pubblica il branch di prova'),
   "status": zod.enum(['active', 'inactive']),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -1755,6 +1757,8 @@ export const CreateAppResponse = zod.object({
   "openapiUrl": zod.string().nullable().describe('URL dell\'OpenAPI dell\'app, letto (GET) dall\'architetto'),
   "functionalDescription": zod.string().nullable().describe('Descrizione funzionale dell\'app per l\'architetto'),
   "architectureRefresh": zod.enum(['off', 'hourly', '6h', 'daily', 'weekly']).describe('Frequenza di controllo della sintesi dell\'architettura'),
+  "stagingBranch": zod.string().nullable().describe('Branch di prova dell\'App, riscritto da Botcave a ogni lavoro delle squadre (null = nessuna versione di prova)'),
+  "stagingUrl": zod.string().nullable().describe('Indirizzo https dove la CI dell\'App pubblica il branch di prova'),
   "status": zod.enum(['active', 'inactive']),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -1803,6 +1807,8 @@ export const GetAppResponse = zod.object({
   "openapiUrl": zod.string().nullable().describe('URL dell\'OpenAPI dell\'app, letto (GET) dall\'architetto'),
   "functionalDescription": zod.string().nullable().describe('Descrizione funzionale dell\'app per l\'architetto'),
   "architectureRefresh": zod.enum(['off', 'hourly', '6h', 'daily', 'weekly']).describe('Frequenza di controllo della sintesi dell\'architettura'),
+  "stagingBranch": zod.string().nullable().describe('Branch di prova dell\'App, riscritto da Botcave a ogni lavoro delle squadre (null = nessuna versione di prova)'),
+  "stagingUrl": zod.string().nullable().describe('Indirizzo https dove la CI dell\'App pubblica il branch di prova'),
   "status": zod.enum(['active', 'inactive']),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -1849,6 +1855,8 @@ export const UpdateAppBody = zod.object({
   "openapiUrl": zod.string().nullish(),
   "functionalDescription": zod.string().nullish(),
   "architectureRefresh": zod.enum(['off', 'hourly', '6h', 'daily', 'weekly']).optional().describe('Frequenza di controllo della sintesi dell\'architettura'),
+  "stagingBranch": zod.string().nullish().describe('Branch di prova (non il base, non main\/master, non botcave\/…); null lo toglie'),
+  "stagingUrl": zod.string().nullish().describe('Indirizzo https della versione di prova; null lo toglie'),
   "status": zod.enum(['active', 'inactive']).optional()
 })
 
@@ -1887,6 +1895,8 @@ export const UpdateAppResponse = zod.object({
   "openapiUrl": zod.string().nullable().describe('URL dell\'OpenAPI dell\'app, letto (GET) dall\'architetto'),
   "functionalDescription": zod.string().nullable().describe('Descrizione funzionale dell\'app per l\'architetto'),
   "architectureRefresh": zod.enum(['off', 'hourly', '6h', 'daily', 'weekly']).describe('Frequenza di controllo della sintesi dell\'architettura'),
+  "stagingBranch": zod.string().nullable().describe('Branch di prova dell\'App, riscritto da Botcave a ogni lavoro delle squadre (null = nessuna versione di prova)'),
+  "stagingUrl": zod.string().nullable().describe('Indirizzo https dove la CI dell\'App pubblica il branch di prova'),
   "status": zod.enum(['active', 'inactive']),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -5068,8 +5078,8 @@ export const CloseTeamInstanceResponse = zod.object({
 
 
 /**
- * Per ogni ruolo `node` i problemi che gli impedirebbero di lavorare (nodo con le skill, online e aggiornato, Git, spazio di lavoro, repository). Utente di riferimento: chi ha attivato la squadra o, se non è attivata, chi chiede. Squadra chiusa → 409.
- * @summary Prontezza dei ruoli node della squadra
+ * Per ogni ruolo `node` i problemi che gli impedirebbero di lavorare (nodo con le skill, online e aggiornato, Git, spazio di lavoro, repository); per ogni ruolo con codice, anche cloud, la CI sui branch botcave/** (`ci_missing`). Utente di riferimento: chi ha attivato la squadra o, se non è attivata, chi chiede. Squadra chiusa → 409.
+ * @summary Prontezza dei ruoli node e dei ruoli con codice della squadra
  */
 export const GetTeamReadinessParams = zod.object({
   "id": zod.coerce.number()
@@ -5087,6 +5097,37 @@ export const GetTeamReadinessResponse = zod.object({
 }))
 }))
 })
+
+
+/**
+ * Ultimi 20 lavori, dal più recente: stato, branch, PR unite, compito in fila, versione di prova dell'App, voce «Porta in produzione» e PR di rilascio.
+ * @summary Lavori su branch unico della squadra
+ */
+export const ListTeamWorksParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListTeamWorksResponseItem = zod.object({
+  "id": zod.number(),
+  "number": zod.number(),
+  "status": zod.enum(['open', 'awaiting_release', 'releasing', 'released', 'abandoned']),
+  "repo": zod.string(),
+  "branch": zod.string(),
+  "baseBranch": zod.string(),
+  "headSha": zod.string().nullable(),
+  "mergedPulls": zod.number().describe('PR dei compiti unite sul branch del lavoro'),
+  "queuedTask": zod.string().nullable().describe('Compito con codice in corso o con la PR aperta (solo per un lavoro aperto)'),
+  "postScripts": zod.array(zod.string()).describe('Script -post uniti nel lavoro, da applicare su Neon dopo il deploy'),
+  "stagingBranch": zod.string().nullable(),
+  "stagingUrl": zod.string().nullable(),
+  "releaseActionNumber": zod.number().nullable().describe('Numero della voce «Porta in produzione» in «Da confermare»'),
+  "releasePrNumber": zod.number().nullable(),
+  "releasePrUrl": zod.string().nullable(),
+  "rejectionNote": zod.string().nullable().describe('Nota del rifiuto o motivo del rilascio non riuscito (il lavoro è tornato aperto)'),
+  "createdAt": zod.coerce.date(),
+  "finishedAt": zod.coerce.date().nullable()
+}).describe('Lavoro su branch unico di una squadra con codice (compiti in fila, versione di prova, «Porta in produzione»)')
+export const ListTeamWorksResponse = zod.array(ListTeamWorksResponseItem)
 
 
 /**
@@ -5286,6 +5327,26 @@ export const getTeamPlanResponseManualActionsItemTextMax = 500;
 
 
 export const GetTeamPlanResponse = zod.object({
+  "work": zod.union([zod.object({
+  "id": zod.number(),
+  "number": zod.number(),
+  "status": zod.enum(['open', 'awaiting_release', 'releasing', 'released', 'abandoned']),
+  "repo": zod.string(),
+  "branch": zod.string(),
+  "baseBranch": zod.string(),
+  "headSha": zod.string().nullable(),
+  "mergedPulls": zod.number().describe('PR dei compiti unite sul branch del lavoro'),
+  "queuedTask": zod.string().nullable().describe('Compito con codice in corso o con la PR aperta (solo per un lavoro aperto)'),
+  "postScripts": zod.array(zod.string()).describe('Script -post uniti nel lavoro, da applicare su Neon dopo il deploy'),
+  "stagingBranch": zod.string().nullable(),
+  "stagingUrl": zod.string().nullable(),
+  "releaseActionNumber": zod.number().nullable().describe('Numero della voce «Porta in produzione» in «Da confermare»'),
+  "releasePrNumber": zod.number().nullable(),
+  "releasePrUrl": zod.string().nullable(),
+  "rejectionNote": zod.string().nullable().describe('Nota del rifiuto o motivo del rilascio non riuscito (il lavoro è tornato aperto)'),
+  "createdAt": zod.coerce.date(),
+  "finishedAt": zod.coerce.date().nullable()
+}).describe('Lavoro su branch unico di una squadra con codice (compiti in fila, versione di prova, «Porta in produzione»)'),zod.null()]).describe('Ultimo lavoro su branch unico della squadra (null se non ne ha mai aperto uno)'),
   "codeTasks": zod.array(zod.object({
   "planTaskId": zod.string(),
   "repo": zod.string().describe('Repository nel formato `proprietario\/nome`'),
@@ -5403,6 +5464,26 @@ export const saveTeamPlanResponseManualActionsItemTextMax = 500;
 
 
 export const SaveTeamPlanResponse = zod.object({
+  "work": zod.union([zod.object({
+  "id": zod.number(),
+  "number": zod.number(),
+  "status": zod.enum(['open', 'awaiting_release', 'releasing', 'released', 'abandoned']),
+  "repo": zod.string(),
+  "branch": zod.string(),
+  "baseBranch": zod.string(),
+  "headSha": zod.string().nullable(),
+  "mergedPulls": zod.number().describe('PR dei compiti unite sul branch del lavoro'),
+  "queuedTask": zod.string().nullable().describe('Compito con codice in corso o con la PR aperta (solo per un lavoro aperto)'),
+  "postScripts": zod.array(zod.string()).describe('Script -post uniti nel lavoro, da applicare su Neon dopo il deploy'),
+  "stagingBranch": zod.string().nullable(),
+  "stagingUrl": zod.string().nullable(),
+  "releaseActionNumber": zod.number().nullable().describe('Numero della voce «Porta in produzione» in «Da confermare»'),
+  "releasePrNumber": zod.number().nullable(),
+  "releasePrUrl": zod.string().nullable(),
+  "rejectionNote": zod.string().nullable().describe('Nota del rifiuto o motivo del rilascio non riuscito (il lavoro è tornato aperto)'),
+  "createdAt": zod.coerce.date(),
+  "finishedAt": zod.coerce.date().nullable()
+}).describe('Lavoro su branch unico di una squadra con codice (compiti in fila, versione di prova, «Porta in produzione»)'),zod.null()]).describe('Ultimo lavoro su branch unico della squadra (null se non ne ha mai aperto uno)'),
   "codeTasks": zod.array(zod.object({
   "planTaskId": zod.string(),
   "repo": zod.string().describe('Repository nel formato `proprietario\/nome`'),
@@ -5469,6 +5550,26 @@ export const markTeamManualActionDoneResponseManualActionsItemTextMax = 500;
 
 
 export const MarkTeamManualActionDoneResponse = zod.object({
+  "work": zod.union([zod.object({
+  "id": zod.number(),
+  "number": zod.number(),
+  "status": zod.enum(['open', 'awaiting_release', 'releasing', 'released', 'abandoned']),
+  "repo": zod.string(),
+  "branch": zod.string(),
+  "baseBranch": zod.string(),
+  "headSha": zod.string().nullable(),
+  "mergedPulls": zod.number().describe('PR dei compiti unite sul branch del lavoro'),
+  "queuedTask": zod.string().nullable().describe('Compito con codice in corso o con la PR aperta (solo per un lavoro aperto)'),
+  "postScripts": zod.array(zod.string()).describe('Script -post uniti nel lavoro, da applicare su Neon dopo il deploy'),
+  "stagingBranch": zod.string().nullable(),
+  "stagingUrl": zod.string().nullable(),
+  "releaseActionNumber": zod.number().nullable().describe('Numero della voce «Porta in produzione» in «Da confermare»'),
+  "releasePrNumber": zod.number().nullable(),
+  "releasePrUrl": zod.string().nullable(),
+  "rejectionNote": zod.string().nullable().describe('Nota del rifiuto o motivo del rilascio non riuscito (il lavoro è tornato aperto)'),
+  "createdAt": zod.coerce.date(),
+  "finishedAt": zod.coerce.date().nullable()
+}).describe('Lavoro su branch unico di una squadra con codice (compiti in fila, versione di prova, «Porta in produzione»)'),zod.null()]).describe('Ultimo lavoro su branch unico della squadra (null se non ne ha mai aperto uno)'),
   "codeTasks": zod.array(zod.object({
   "planTaskId": zod.string(),
   "repo": zod.string().describe('Repository nel formato `proprietario\/nome`'),
@@ -8178,7 +8279,7 @@ export const ListPendingActionsResponse = zod.object({
   "actions": zod.array(zod.object({
   "number": zod.number(),
   "status": zod.enum(['pending', 'executing', 'done', 'failed', 'rejected']),
-  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal', 'merge', 'bug']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima), oppure segnalazione di un bug da affidare alla squadra per i bug dell\'App'),
+  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal', 'merge', 'bug', 'release']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima), oppure segnalazione di un bug da affidare alla squadra per i bug dell\'App'),
   "proposal": zod.union([zod.object({
   "title": zod.string(),
   "reason": zod.string().nullable(),
@@ -8236,7 +8337,7 @@ export const GetPendingActionParams = zod.object({
 export const GetPendingActionResponse = zod.object({
   "number": zod.number(),
   "status": zod.enum(['pending', 'executing', 'done', 'failed', 'rejected']),
-  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal', 'merge', 'bug']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima), oppure segnalazione di un bug da affidare alla squadra per i bug dell\'App'),
+  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal', 'merge', 'bug', 'release']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima), oppure segnalazione di un bug da affidare alla squadra per i bug dell\'App'),
   "proposal": zod.union([zod.object({
   "title": zod.string(),
   "reason": zod.string().nullable(),
@@ -8307,7 +8408,7 @@ export const ApprovePendingActionBody = zod.object({
 export const ApprovePendingActionResponse = zod.object({
   "number": zod.number(),
   "status": zod.enum(['pending', 'executing', 'done', 'failed', 'rejected']),
-  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal', 'merge', 'bug']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima), oppure segnalazione di un bug da affidare alla squadra per i bug dell\'App'),
+  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal', 'merge', 'bug', 'release']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima), oppure segnalazione di un bug da affidare alla squadra per i bug dell\'App'),
   "proposal": zod.union([zod.object({
   "title": zod.string(),
   "reason": zod.string().nullable(),
@@ -8372,7 +8473,7 @@ export const RejectPendingActionBody = zod.object({
 export const RejectPendingActionResponse = zod.object({
   "number": zod.number(),
   "status": zod.enum(['pending', 'executing', 'done', 'failed', 'rejected']),
-  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal', 'merge', 'bug']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima), oppure segnalazione di un bug da affidare alla squadra per i bug dell\'App'),
+  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal', 'merge', 'bug', 'release']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima), oppure segnalazione di un bug da affidare alla squadra per i bug dell\'App'),
   "proposal": zod.union([zod.object({
   "title": zod.string(),
   "reason": zod.string().nullable(),

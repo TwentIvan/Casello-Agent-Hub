@@ -1,5 +1,7 @@
 import { pgTable, serial, integer, text, timestamp, boolean, pgEnum, index, unique } from "drizzle-orm/pg-core";
+import type { AnyPgColumn } from "drizzle-orm/pg-core";
 import { teamInstancesTable } from "./team-instances";
+import { teamWorksTable } from "./team-works";
 
 export const codePrStateEnum = pgEnum("code_pr_state", ["open", "merged", "closed"]);
 export const codeCiStateEnum = pgEnum("code_ci_state", ["pending", "success", "failure", "none"]);
@@ -31,6 +33,8 @@ export const teamCodeTasksTable = pgTable(
     lastCommitAt: timestamp("last_commit_at"),
     // Merge fatto (o prenotato) da Botcave con `unisci_pr`: limite orario per squadra e niente merge doppi
     botcaveMergedAt: timestamp("botcave_merged_at"),
+    // Lavoro su branch unico a cui appartiene la PR (null = compito precedente alla 3b, PR verso il base dell'App)
+    workId: integer("work_id").references((): AnyPgColumn => teamWorksTable.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },

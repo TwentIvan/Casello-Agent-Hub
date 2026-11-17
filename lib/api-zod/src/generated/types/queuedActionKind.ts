@@ -19,4 +19,5 @@ export const QueuedActionKind = {
   proposal: 'proposal',
   merge: 'merge',
   bug: 'bug',
+  release: 'release',
 } as const;

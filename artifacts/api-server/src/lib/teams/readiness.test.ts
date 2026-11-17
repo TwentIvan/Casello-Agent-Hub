@@ -19,7 +19,7 @@ async function addNode(over: Partial<typeof nodesTable.$inferInsert> = {}) {
     .returning();
   return n!;
 }
-async function linkApp(opts: { installation?: boolean; owned?: boolean } = {}) {
+async function linkApp(opts: { installation?: boolean; owned?: boolean; ci?: boolean } = {}) {
   const [app] = await db.select().from(appsTable);
   await db
     .update(appsTable)
@@ -27,6 +27,12 @@ async function linkApp(opts: { installation?: boolean; owned?: boolean } = {}) {
     .where(eq(appsTable.id, app!.id));
   if (opts.owned !== false && opts.installation !== false) {
     await db.insert(githubInstallationsTable).values({ userId, installationId: 77, accountLogin: "o", accountType: "User", repositorySelection: "all" } as never);
+  }
+  // Una PR precedente del repository con la CI verde: niente avviso ci_missing nei test che non lo riguardano
+  if (opts.ci !== false) {
+    const { teamCodeTasksTable } = await import("@workspace/db");
+    const [inst] = await db.select().from(teamInstancesTable).limit(1);
+    if (inst) await db.insert(teamCodeTasksTable).values({ instanceId: inst.id, planTaskId: "t0", repo: "o/r", branch: "botcave/x-t0", baseBranch: "main", ciState: "success" });
   }
   return app!;
 }
@@ -157,5 +163,35 @@ describe("readinessText", () => {
     expect(t.length).toBeLessThanOrEqual(2000);
     expect(t).toContain("A");
     expect(READINESS_MESSAGES.noNode("x")).toContain("x");
+  });
+});
+
+describe("ci_missing (ruoli con codice, anche cloud)", () => {
+  const cloudCoder = () => nodeRole({ key: "dev", name: "Dev", runsOn: "cloud", code: "write" } as never);
+
+  it("ruolo cloud con codice e nessuna PR finora: avviso", async () => {
+    const id = await seedNodeTeam({ userId, roles: [cloudCoder()] });
+    await linkApp({ ci: false });
+    const r = await teamReadiness(await instance(id), userId);
+    expect(r.roles.find((x) => x.roleKey === "dev")!.problems).toEqual([
+      { code: "ci_missing", level: "warning", message: READINESS_MESSAGES.ciUnknown, link: null },
+    ]);
+  });
+
+  it("ultima PR del repository senza CI: errore", async () => {
+    const id = await seedNodeTeam({ userId, roles: [cloudCoder()] });
+    await linkApp();
+    const { teamCodeTasksTable } = await import("@workspace/db");
+    await db.insert(teamCodeTasksTable).values({ instanceId: id, planTaskId: "t1", repo: "o/r", branch: "botcave/1-t1", baseBranch: "main", ciState: "none" });
+    expect(await codes(id, "dev")).toEqual(["ci_missing"]);
+    const r = await teamReadiness(await instance(id), userId);
+    expect(r.roles.find((x) => x.roleKey === "dev")!.problems[0]!.level).toBe("error");
+    expect(readinessText(r)).toContain(READINESS_MESSAGES.ciNone);
+  });
+
+  it("ultima PR con la CI verde: nessun problema", async () => {
+    const id = await seedNodeTeam({ userId, roles: [cloudCoder()] });
+    await linkApp();
+    expect(await codes(id, "dev")).toEqual([]);
   });
 });

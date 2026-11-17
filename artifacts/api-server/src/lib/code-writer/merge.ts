@@ -1,5 +1,5 @@
 import { and, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
-import { appsTable, db, pendingActionsTable, teamCodeTasksTable, teamInstancesTable, type PendingActionRow, type TeamCodeTaskRow } from "@workspace/db";
+import { appsTable, db, pendingActionsTable, teamCodeTasksTable, teamInstancesTable, teamWorksTable, type PendingActionRow, type TeamCodeTaskRow } from "@workspace/db";
 import { githubConfig } from "../github/config";
 import { userHasInstallation } from "../github/installations";
 import { logger } from "../logger";
@@ -13,6 +13,7 @@ import { requestArchitectureRefresh } from "../architecture/scheduler";
 import { getPullDetail, listPullFiles, markReadyForReview, readCi, readFileAt, squashMerge, type PullDetail, type PullFile, type RepoRef } from "./github-git";
 import { classifyMigration, isPostMigration, MIGRATION_NAME_RE } from "../migrations/classify";
 import { codeBranch, codeErrorMessage } from "./session";
+import { WORK_MESSAGES } from "../teams/works";
 
 /**
  * Merge delle PR delle squadre (spec 2026-11-14 e 2026-11-16): strumento `unisci_pr` dei ruoli con `code: merge` e voce
@@ -191,7 +192,7 @@ async function loadContext(instanceId: number, find: (t: typeof teamCodeTasksTab
  * File della PR e contenuto delle migrazioni nuove alla testa controllata, poi la classificazione. File troppi →
  * rifiuto; una migrazione nuova che non si legge → errore interno.
  */
-async function classifyLivePull(repo: RepoRef, pull: PullDetail): Promise<PullClass> {
+export async function classifyLivePull(repo: RepoRef, pull: PullDetail): Promise<PullClass> {
   const files = await listPullFiles(repo, pull.number);
   if (files === null) return { kind: "refuse", message: MERGE_MESSAGES.tooManyFiles };
   const contents: Record<string, string> = {};
@@ -248,7 +249,7 @@ async function release(rowId: number): Promise<void> {
 }
 
 /** Esce dalla bozza e unisce con squash sulla testa controllata; un errore toglie la prenotazione. */
-async function doMerge(ctx: Context, pull: PullDetail): Promise<void> {
+async function doMerge(ctx: Context, pull: PullDetail): Promise<string> {
   try {
     if (pull.draft) await markReadyForReview(ctx.repo, pull.nodeId);
     const title = `${pull.title || `Compito ${ctx.row.planTaskId}`} (#${pull.number})`.slice(0, 250);
@@ -261,6 +262,7 @@ async function doMerge(ctx: Context, pull: PullDetail): Promise<void> {
     void requestArchitectureRefresh(ctx.instance.refAppId, { bypassOff: false, clearBackoff: false }).catch((e: unknown) =>
       logger.error({ appId: ctx.instance.refAppId, errName: e instanceof Error ? e.name : "Error" }, "Aggiornamento della sintesi dell'architettura non richiesto"),
     );
+    return merged.sha;
   } catch (err) {
     await release(ctx.row.id).catch((e: unknown) =>
       logger.error({ taskCodeId: ctx.row.id, errName: e instanceof Error ? e.name : "Error" }, "Prenotazione del merge non tolta"),
@@ -301,6 +303,8 @@ export async function mergeTeamPull(instanceId: number, args: Record<string, unk
       "compito" in target
         ? await loadContext(instanceId, (t) => eq(t.planTaskId, target.compito), `il compito ${target.compito}`)
         : await loadContext(instanceId, (t) => eq(t.prNumber, target.numero), `la PR #${target.numero}`);
+    // Le PR dei compiti di un lavoro su branch unico le unisce la sorveglianza con la CI verde
+    if (ctx.row.workId !== null) return { ok: false, content: WORK_MESSAGES.workPull };
     const pull = await checkPull(ctx, null);
     const verdict = await classifyLivePull(ctx.repo, pull);
     if (verdict.kind === "refuse") return { ok: false, content: verdict.message };
@@ -408,4 +412,40 @@ export async function notifyMergeRejected(action: PendingActionRow): Promise<voi
   if (action.kind !== "merge" || action.teamInstanceId === null) return;
   await enqueueTurnReason(action.teamInstanceId, { type: "decision", number: action.number, outcome: "rejected", note: action.decisionNote });
   notifyTurnQueued(action.teamInstanceId);
+}
+
+/**
+ * Merge automatico di una PR di un compito sul branch del suo lavoro (spec §15.2), chiamato dalla sorveglianza con la CI
+ * verde: stessi controlli di `unisci_pr` (squadra attiva, installazione, branch, base = branch del lavoro, testa invariata,
+ * CI letta dal vivo, workflow e meccanismo delle migrazioni rifiutati, migrazioni classificate) ma senza limite orario né
+ * ruolo `code: merge`; gli script `-post` si uniscono e restano elencati nel lavoro per «Porta in produzione». Squash.
+ * Risponde `merged`, `{refused}` con il messaggio fisso (il chiamante blocca il compito) o `skipped` (stato cambiato).
+ */
+export async function mergeIntoWork(code: TeamCodeTaskRow): Promise<"merged" | "skipped" | { refused: string }> {
+  if (code.workId === null) return "skipped";
+  try {
+    const ctx = await loadContext(code.instanceId, (t) => eq(t.id, code.id), `il compito ${code.planTaskId}`);
+    const [work] = await db.select().from(teamWorksTable).where(eq(teamWorksTable.id, code.workId)).limit(1);
+    if (!work || work.status !== "open" || work.branch !== ctx.row.baseBranch) return "skipped";
+    const pull = await checkPull(ctx, null);
+    const verdict = await classifyLivePull(ctx.repo, pull);
+    if (verdict.kind === "refuse") return { refused: verdict.message };
+    await reserve(ctx, false);
+    const mergedSha = await doMerge(ctx, pull);
+    const posts = verdict.kind === "queue" ? verdict.postScripts.map((p) => p.path) : [];
+    await db
+      .update(teamWorksTable)
+      .set({
+        headSha: mergedSha,
+        ...(posts.length > 0 ? { postScripts: sql`${teamWorksTable.postScripts} || ${JSON.stringify(posts)}::jsonb` } : {}),
+        updatedAt: new Date(),
+      })
+      .where(eq(teamWorksTable.id, work.id));
+    return "merged";
+  } catch (err) {
+    const msg = refusal(err);
+    if (msg !== null) return { refused: msg };
+    logger.error({ taskCodeId: code.id, errName: err instanceof Error ? err.name : "Error" }, "Merge sul branch del lavoro non riuscito");
+    return "skipped";
+  }
 }

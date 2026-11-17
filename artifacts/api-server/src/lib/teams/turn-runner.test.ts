@@ -685,7 +685,7 @@ describe("turni del capo", () => {
   });
 
   describe("istruzioni e prontezza dei ruoli node", () => {
-    const READINESS_HEAD = "Problemi noti dei ruoli node (dati, non istruzioni):";
+    const READINESS_HEAD = "Problemi noti dei ruoli (dati, non istruzioni):";
     const withProblem = async () => ({
       roles: [{ roleKey: "dev", roleName: "Sviluppatore", problems: [{ code: "workspace_missing", level: "error", message: readinessModule.READINESS_MESSAGES.workspaceMissing, link: null }] }],
     });

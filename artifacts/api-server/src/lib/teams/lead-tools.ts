@@ -1,4 +1,6 @@
 import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
+import { WORK_MESSAGES, WorkError, closeWorkIfDone, codeQueueBlock, ensureWorkForCodeTask, getOpenWork, isLegacyCodeTask, roleWritesCode, workSummary, writerTaskActive, type WorkSummary } from "./works";
+import { codeErrorMessage } from "../code-writer/session";
 import { z } from "zod";
 import { db, pendingActionsTable, teamCodeTasksTable, teamInstancesTable, teamPlanVersionsTable, teamTasksTable } from "@workspace/db";
 import { completionData } from "../architect/issues";
@@ -77,6 +79,8 @@ export const ENVIRONMENT_FAILURE_PREFIXES = [
   "Claude Code non avviabile",
   "interrotto dal riavvio",
   "tetto di spesa della squadra raggiunto",
+  // Lavoro su branch unico: CI mancante sui branch di Botcave (WORK_MESSAGES.noCi)
+  "nessuna CI sul branch",
 ] as const;
 
 /** Vero se l'esito (o l'errore) di un'esecuzione è un problema d'ambiente: confronto sull'inizio del testo, senza maiuscole. */
@@ -124,7 +128,7 @@ function zodDetail(error: z.ZodError): string {
 }
 
 /** PLAN in forma compatta per il modello (senza timestamp). */
-export function planForModel(plan: PlanView): string {
+export function planForModel(plan: PlanView, lavoro: WorkSummary | null = null): string {
   return JSON.stringify({
     version: plan.version,
     status: plan.status,
@@ -134,6 +138,7 @@ export function planForModel(plan: PlanView): string {
     openPoints: plan.openPoints,
     tasks: plan.tasks.map((t) => ({ id: t.id, title: t.title, roleKey: t.roleKey, instructions: t.instructions, status: t.status, outcome: t.outcome, ...(t.issue ? { issue: t.issue } : {}) })),
     manualActions: plan.manualActions.map((a) => ({ id: a.id, text: a.text, done: a.done })),
+    ...(lavoro ? { lavoro } : {}),
   });
 }
 
@@ -316,7 +321,8 @@ const BUSY = new Set<PlanTask["status"]>(["running", "waiting_node"]);
 // ─── Strumenti ──────────────────────────────────────────────────────────────
 
 async function readPlan(ctx: LeadContext): Promise<ToolResult> {
-  return done(planForModel(await getPlan(ctx.instanceId)));
+  // Con il lavoro su branch unico: numero, stato, branch, PR unite e compito con codice in fila
+  return done(planForModel(await getPlan(ctx.instanceId), await workSummary(ctx.instanceId)));
 }
 
 /**
@@ -609,8 +615,31 @@ async function assignTask(ctx: LeadContext, args: Record<string, unknown>): Prom
     const blocked = await failureBrake(ctx.instanceId, taskId);
     if (blocked) return fail(LEAD_MESSAGES.tooManyFailures);
   }
+  // Lavoro su branch unico: un compito di un ruolo che scrive codice apre (o riusa) il lavoro e va in fila
+  let guard: Parameters<typeof startTask>[3] = {};
+  const [instance] = await db.select().from(teamInstancesTable).where(eq(teamInstancesTable.id, ctx.instanceId)).limit(1);
+  const roleKey = approved.tasks.find((t) => t.id === taskId)!.roleKey;
+  // Un compito con una PR di prima della 3b (verso il base) continua come prima: niente lavoro né fila
+  if (instance && roleWritesCode(instance, roleKey) && !(await isLegacyCodeTask(ctx.instanceId, taskId))) {
+    let work;
+    try {
+      work = await ensureWorkForCodeTask(instance);
+    } catch (err) {
+      if (err instanceof WorkError) return fail(err.message);
+      const message = codeErrorMessage(err);
+      if (message !== null) return fail(message);
+      throw err;
+    }
+    if (work.status !== "open") return fail(WORK_MESSAGES.workNotOpen);
+    guard = {
+      guard: async (tx) => {
+        const blocked = await codeQueueBlock(instance, work.id, tx, taskId);
+        if (blocked) throw new TeamRuleError(blocked);
+      },
+    };
+  }
   try {
-    const row = await startTask(ctx.instanceId, taskId, attachmentIds);
+    const row = await startTask(ctx.instanceId, taskId, attachmentIds, guard);
     return done(
       row.status === "waiting_node"
         ? `compito ${taskId} assegnato al ruolo ${row.roleKey}: in attesa del nodo locale`
@@ -692,10 +721,33 @@ async function signal(ctx: LeadContext, args: Record<string, unknown>): Promise<
   return done("segnalazione registrata nel bollettino");
 }
 
+/** Squadra attiva (con la riga bloccata il tempo del controllo): altrimenti «la squadra non è attiva». */
+async function lockActiveInstanceOnce(instanceId: number): Promise<void> {
+  await db.transaction(async (tx) => {
+    await lockActiveInstance(tx, instanceId);
+  });
+}
+
 /** `chiudi_lavoro`: evento `lavoro_finito` (la squadra resta attiva finché l'utente non la chiude). */
 async function closeWork(ctx: LeadContext, args: Record<string, unknown>): Promise<ToolResult> {
   const parsed = CloseWorkSchema.safeParse(args);
   if (!parsed.success) return fail(LEAD_MESSAGES.invalidArgs(zodDetail(parsed.error)));
+  // Lavoro su branch unico: un solo «Lavoro finito» per lavoro, poi versione di prova e «Porta in produzione»
+  const work = await getOpenWork(ctx.instanceId);
+  if (work && work.status !== "open") return fail(WORK_MESSAGES.alreadyClosed);
+  if (work) {
+    const [instance] = await db.select().from(teamInstancesTable).where(eq(teamInstancesTable.id, ctx.instanceId)).limit(1);
+    // Un compito con codice ancora in corso finirebbe fuori dal lavoro: si chiude dopo il suo esito
+    if (instance && (await writerTaskActive(instance))) return fail(WORK_MESSAGES.closeBusy);
+    await lockActiveInstanceOnce(ctx.instanceId);
+    const result = await closeWorkIfDone(ctx.instanceId, { fromLead: true, bulletin: parsed.data.bulletin });
+    if (result === "already") return fail(WORK_MESSAGES.alreadyClosed);
+    return done(
+      result === "abandoned"
+        ? "lavoro chiuso senza compiti uniti: nessuna voce Porta in produzione"
+        : "lavoro chiuso: versione di prova aggiornata e voce Porta in produzione in «Da confermare»",
+    );
+  }
   await db.transaction(async (tx) => {
     await lockActiveInstance(tx, ctx.instanceId);
     await emitEvent({ instanceId: ctx.instanceId, type: "lavoro_finito", bulletin: parsed.data.bulletin }, tx);

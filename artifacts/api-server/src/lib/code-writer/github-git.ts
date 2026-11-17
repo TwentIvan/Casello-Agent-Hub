@@ -26,6 +26,8 @@ export interface CiSnapshot {
 }
 
 const TASK_BRANCH_RE = /^botcave\/\d+-[A-Za-z0-9_-]{1,40}$/;
+/** Branch di un lavoro su branch unico (`botcave/lavoro-<squadra>-<numero>`): l'unico che Botcave crea fuori dai compiti. */
+export const WORK_BRANCH_RE = /^botcave\/lavoro-\d+-\d+$/;
 const PER_PAGE = 100;
 const MAX_PAGES = 5;
 const LOG_TIMEOUT_MS = 15_000;
@@ -140,6 +142,39 @@ export async function getBranchHead(r: RepoRef, branch: string): Promise<string 
 /** GET che tollera il 404 (ramo o risorsa assente) ma non lo confonde con l'accesso perso del repo. */
 async function githubCallSafe(r: RepoRef, token: string, path: string): Promise<{ status: number; json: unknown }> {
   return call(r, token, "contents: read", { method: "GET", path }, [404]);
+}
+
+/**
+ * Crea il branch di un lavoro allo sha dato (`contents: write`, mai forzato). Un branch già esistente alla stessa testa va
+ * bene (apertura ripetuta); a un'altra testa è un errore fisso. Solo nomi `botcave/lavoro-<squadra>-<numero>`.
+ */
+export async function createBranch(r: RepoRef, branch: string, sha: string): Promise<void> {
+  if (!WORK_BRANCH_RE.test(branch)) throw new Error("scrittura rifiutata: il branch deve essere del tipo botcave/lavoro-<squadra>-<numero>");
+  const token = await tokenFor(r, { contents: "write" });
+  const { status } = await call(r, token, "contents: write", { method: "POST", path: repoPath(r, "/git/refs"), body: { ref: `refs/heads/${branch}`, sha } }, [422]);
+  if (status !== 422) return;
+  const head = await getBranchHead(r, branch);
+  if (head !== sha) throw new CodeWriteError(CODE_WRITE_MESSAGES.unavailable, 422);
+}
+
+/**
+ * Sposta il branch di prova dell'App allo sha dato con `force: true` (lo crea se manca): l'unica scrittura forzata di
+ * Botcave. Mai su `main`/`master` né su un branch di Botcave; il chiamante ricontrolla il nome con `checkStagingBranch`.
+ */
+export async function forceUpdateRef(r: RepoRef, branch: string, sha: string): Promise<void> {
+  if (branch === "main" || branch === "master" || branch.startsWith("botcave/")) throw new Error("scrittura forzata rifiutata: branch non di prova");
+  const token = await tokenFor(r, { contents: "write" });
+  const { status } = await call(
+    r,
+    token,
+    "contents: write",
+    { method: "PATCH", path: repoPath(r, `/git/refs/heads/${refPath(branch)}`), body: { sha, force: true } },
+    [404, 422],
+  );
+  if (status === 404 || status === 422) {
+    const created = await call(r, token, "contents: write", { method: "POST", path: repoPath(r, "/git/refs"), body: { ref: `refs/heads/${branch}`, sha } }, [422]);
+    if (created.status === 422) throw new CodeWriteError(CODE_WRITE_MESSAGES.unavailable, 422);
+  }
 }
 
 /** Confronto tra due commit: titoli dei commit (i più recenti) e file toccati, con tetti fissi. */
@@ -441,6 +476,61 @@ export async function squashMerge(r: RepoRef, n: number, input: { sha: string; t
     token,
     "contents: write, pull_requests: write",
     { method: "PUT", path: repoPath(r, `/pulls/${n}/merge`), body: { merge_method: "squash", sha: input.sha, commit_title: input.title } },
+    [405, 409, 422],
+  );
+  if (status === 409) throw new CodeWriteError(CODE_WRITE_MESSAGES.headMoved, 409);
+  if (status === 405 || status === 422) throw new CodeWriteError(CODE_WRITE_MESSAGES.notMergeable, status);
+  if (!isObj(json) || json["merged"] !== true) throw new CodeWriteError(CODE_WRITE_MESSAGES.notMergeable, status);
+  return { sha: str(json["sha"], status) };
+}
+
+// --- Rilascio di un lavoro su branch unico --------------------------------------------------
+
+/**
+ * Unisce `head` (il base dell'App) nel branch di un lavoro (`POST /merges`): `up_to_date` se lo contiene già, `conflict` con
+ * un 409, altrimenti `merged` con lo sha del commit di merge. Solo verso branch `botcave/lavoro-…`.
+ */
+export async function mergeBranches(r: RepoRef, input: { base: string; head: string; message: string }): Promise<{ result: "merged"; sha: string } | { result: "up_to_date" | "conflict" }> {
+  if (!WORK_BRANCH_RE.test(input.base)) throw new Error("scrittura rifiutata: si unisce solo nel branch di un lavoro");
+  const token = await tokenFor(r, { contents: "write" });
+  const { status, json } = await call(
+    r,
+    token,
+    "contents: write",
+    { method: "POST", path: repoPath(r, "/merges"), body: { base: input.base, head: input.head, commit_message: input.message } },
+    [204, 409],
+  );
+  if (status === 204) return { result: "up_to_date" };
+  if (status === 409) return { result: "conflict" };
+  if (!isObj(json)) throw badShape(status);
+  return { result: "merged", sha: str(json["sha"], status) };
+}
+
+/** PR del lavoro verso il base (non in bozza): riusa quella aperta sullo stesso branch, altrimenti la apre. */
+export async function openReleasePull(r: RepoRef, input: { head: string; base: string; title: string; body: string }): Promise<PullInfo> {
+  if (!WORK_BRANCH_RE.test(input.head)) throw new Error("scrittura rifiutata: la PR di rilascio parte solo da un lavoro");
+  const existing = await findOpenPull(r, input.head);
+  if (existing) return existing;
+  const token = await tokenFor(r, PULLS);
+  const { status, json } = await call(
+    r,
+    token,
+    "pull_requests: write",
+    { method: "POST", path: repoPath(r, "/pulls"), body: { title: input.title, body: input.body, head: input.head, base: input.base, draft: false } },
+    [422],
+  );
+  if (status === 422) throw new CodeWriteError(CODE_WRITE_MESSAGES.pullRejected, 422);
+  return pullInfo(json, status);
+}
+
+/** Unisce la PR di rilascio con un commit di merge (conserva i commit dei compiti e i loro «Closes #n») sulla testa controllata. */
+export async function mergeCommit(r: RepoRef, n: number, input: { sha: string; title: string }): Promise<{ sha: string }> {
+  const token = await tokenFor(r, MERGE);
+  const { status, json } = await call(
+    r,
+    token,
+    "contents: write, pull_requests: write",
+    { method: "PUT", path: repoPath(r, `/pulls/${n}/merge`), body: { merge_method: "merge", sha: input.sha, commit_title: input.title } },
     [405, 409, 422],
   );
   if (status === 409) throw new CodeWriteError(CODE_WRITE_MESSAGES.headMoved, 409);

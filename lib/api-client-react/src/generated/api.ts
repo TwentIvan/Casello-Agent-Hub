@@ -245,6 +245,7 @@ import type {
   TeamTemplateInput,
   TeamTurn,
   TeamUpdateApply,
+  TeamWork,
   TooManyRequestsResponse,
   Trigger,
   TriggerCreated,
@@ -11509,8 +11510,8 @@ export const getGetTeamReadinessUrl = (id: number,) => {
 }
 
 /**
- * Per ogni ruolo `node` i problemi che gli impedirebbero di lavorare (nodo con le skill, online e aggiornato, Git, spazio di lavoro, repository). Utente di riferimento: chi ha attivato la squadra o, se non è attivata, chi chiede. Squadra chiusa → 409.
- * @summary Prontezza dei ruoli node della squadra
+ * Per ogni ruolo `node` i problemi che gli impedirebbero di lavorare (nodo con le skill, online e aggiornato, Git, spazio di lavoro, repository); per ogni ruolo con codice, anche cloud, la CI sui branch botcave/** (`ci_missing`). Utente di riferimento: chi ha attivato la squadra o, se non è attivata, chi chiede. Squadra chiusa → 409.
+ * @summary Prontezza dei ruoli node e dei ruoli con codice della squadra
  */
 export const getTeamReadiness = async (id: number, options?: RequestInit): Promise<TeamReadiness> => {
 
@@ -11557,7 +11558,7 @@ export type GetTeamReadinessQueryError = ErrorType<NotFoundResponse | ConflictRe
 
 
 /**
- * @summary Prontezza dei ruoli node della squadra
+ * @summary Prontezza dei ruoli node e dei ruoli con codice della squadra
  */
 
 export function useGetTeamReadiness<TData = Awaited<ReturnType<typeof getTeamReadiness>>, TError = ErrorType<NotFoundResponse | ConflictResponse>>(
@@ -11566,6 +11567,84 @@ export function useGetTeamReadiness<TData = Awaited<ReturnType<typeof getTeamRea
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetTeamReadinessQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListTeamWorksUrl = (id: number,) => {
+
+
+
+
+  return `/api/team-instances/${id}/works`
+}
+
+/**
+ * Ultimi 20 lavori, dal più recente: stato, branch, PR unite, compito in fila, versione di prova dell'App, voce «Porta in produzione» e PR di rilascio.
+ * @summary Lavori su branch unico della squadra
+ */
+export const listTeamWorks = async (id: number, options?: RequestInit): Promise<TeamWork[]> => {
+
+  return customFetch<TeamWork[]>(getListTeamWorksUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListTeamWorksQueryKey = (id: number,) => {
+    return [
+    `/api/team-instances/${id}/works`
+    ] as const;
+    }
+
+
+export const getListTeamWorksQueryOptions = <TData = Awaited<ReturnType<typeof listTeamWorks>>, TError = ErrorType<NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTeamWorks>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListTeamWorksQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTeamWorks>>> = ({ signal }) => listTeamWorks(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listTeamWorks>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListTeamWorksQueryResult = NonNullable<Awaited<ReturnType<typeof listTeamWorks>>>
+export type ListTeamWorksQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Lavori su branch unico della squadra
+ */
+
+export function useListTeamWorks<TData = Awaited<ReturnType<typeof listTeamWorks>>, TError = ErrorType<NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTeamWorks>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListTeamWorksQueryOptions(id,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

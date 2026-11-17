@@ -14,6 +14,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { formatRelative } from "@/lib/format";
 import { TaskCodeLine } from "./task-code-line";
+import { WorkLine } from "./work-line";
 import { PlanEditorDialog } from "./plan-editor-dialog";
 import { PlanStatusBadge, TaskStatusBadge } from "./team-work-status";
 
@@ -124,6 +125,11 @@ export function PlanCard({
             <Block title="Vincoli">
               <TextList items={p.constraints} empty="Nessun vincolo." />
             </Block>
+            {p.work && (
+              <Block title="Lavoro">
+                <WorkLine work={p.work} />
+              </Block>
+            )}
             <Block title={`Compiti (${p.tasks.length})`}>
               {p.tasks.length === 0 ? (
                 <p className="text-sm text-muted-foreground">Nessun compito.</p>

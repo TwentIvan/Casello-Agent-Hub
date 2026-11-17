@@ -40,6 +40,7 @@ export * from "./character-memory";
 export * from "./characters";
 export * from "./agent-triggers";
 export * from "./team-code-tasks";
+export * from "./team-works";
 export * from "./lead-chat";
 export * from "./schema-migrations";
 export * from "./app-architecture";

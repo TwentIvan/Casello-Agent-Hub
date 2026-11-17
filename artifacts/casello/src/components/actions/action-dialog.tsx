@@ -22,6 +22,7 @@ import { decidedTitle } from "./pending-action-item";
 import { ACTION_KIND_LABELS, PlanProposalDetail, isPlanItem } from "./plan-proposal";
 import { BugDetail } from "./bug-detail";
 import { MergeDetail } from "./merge-detail";
+import { ReleaseDetail } from "./release-detail";
 import { ProposalSteps } from "./proposal-steps";
 import { useProposalSelection } from "./use-proposal-selection";
 
@@ -174,6 +175,10 @@ export function ActionDialog({
               <div className="rounded-md border p-3">
                 <MergeDetail args={action.args} />
               </div>
+            ) : action.kind === "release" ? (
+              <div className="rounded-md border p-3">
+                <ReleaseDetail args={action.args} status={action.status} />
+              </div>
             ) : plan ? (
               <div className="rounded-md border p-3">
                 <PlanProposalDetail args={action.args} />
@@ -221,6 +226,9 @@ export function ActionDialog({
                   {action.kind === "bug" && (
                     <p className="text-xs text-muted-foreground">La nota la vede l'utente che ha segnalato.</p>
                   )}
+                  {action.kind === "release" && (
+                    <p className="text-xs text-muted-foreground">La nota arriva al capo della squadra: scrivi cosa correggere.</p>
+                  )}
                   <Textarea
                     id="action-note"
                     rows={2}
@@ -249,7 +257,7 @@ export function ActionDialog({
                       setUserToken("");
                     }}
                   >
-                    {approve.isPending ? (plan ? "Approvazione…" : "Esecuzione…") : plan ? "Approva" : action.kind === "proposal" ? selection.approveLabel : action.kind === "merge" ? "Approva e unisci" : action.kind === "bug" ? "Approva e affida alla squadra" : "Approva ed esegui"}
+                    {approve.isPending ? (plan ? "Approvazione…" : "Esecuzione…") : plan ? "Approva" : action.kind === "proposal" ? selection.approveLabel : action.kind === "merge" ? "Approva e unisci" : action.kind === "release" ? "Porta in produzione" : action.kind === "bug" ? "Approva e affida alla squadra" : "Approva ed esegui"}
                   </Button>
                 </DialogFooter>
               </div>

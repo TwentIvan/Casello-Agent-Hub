@@ -1,5 +1,5 @@
 import { and, eq, sql } from "drizzle-orm";
-import { db, teamCodeTasksTable, type TeamCodeTaskRow } from "@workspace/db";
+import { db, teamCodeTasksTable, teamWorksTable, type TeamCodeTaskRow } from "@workspace/db";
 
 /**
  * Accesso a `team_code_tasks`: una riga per compito del PLAN con codice (branch, PR, stato della CI).
@@ -22,7 +22,10 @@ export interface UpsertCodeTaskInput {
 export async function upsertCodeTask(input: UpsertCodeTaskInput): Promise<TeamCodeTaskRow> {
   const t = teamCodeTasksTable;
   const now = new Date();
+  // Lavoro su branch unico: la PR che punta al branch di un lavoro della squadra ne fa parte (null = PR verso il base)
+  const workId = sql`(select ${teamWorksTable.id} from ${teamWorksTable} where ${teamWorksTable.instanceId} = ${input.instanceId} and ${teamWorksTable.branch} = ${input.baseBranch} order by ${teamWorksTable.id} desc limit 1)`;
   const set: Record<string, unknown> = {
+    workId,
     repo: input.repo,
     branch: input.branch,
     baseBranch: input.baseBranch,
@@ -51,6 +54,7 @@ export async function upsertCodeTask(input: UpsertCodeTaskInput): Promise<TeamCo
       branch: input.branch,
       baseBranch: input.baseBranch,
       headSha: input.headSha,
+      workId,
       ...(input.pr ? { prNumber: input.pr.number, prUrl: input.pr.url, prState: "open" as const, ciState: "pending" as const } : {}),
       ...(input.committedAt ? { lastCommitAt: input.committedAt } : {}),
     })

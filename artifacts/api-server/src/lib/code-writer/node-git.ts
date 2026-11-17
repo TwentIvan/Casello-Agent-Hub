@@ -1,4 +1,5 @@
 import { eq } from "drizzle-orm";
+import { workBaseFor } from "../teams/works";
 import { appsTable, db, teamInstancesTable, type TeamInstanceRow, type TeamTaskRow } from "@workspace/db";
 import { githubConfig } from "../github/config";
 import { logger } from "../logger";
@@ -94,6 +95,9 @@ export async function nodeGitContext(
       throw isPermanentGithubError(err) ? new NodeGitAccessError() : err;
     }
   }
+  // Lavoro su branch unico: il compito parte dal branch del lavoro aperto e la PR punta lì
+  const workBase = await workBaseFor(instance.id, task.planTaskId);
+  if (workBase) baseBranch = workBase;
   const branch = codeBranch(instance.id, task.planTaskId);
   const git: NodeTaskGit = { repo: ctx.sourceRepo, baseBranch, branch, issue };
   return { git, instructions: `${task.instructions}\n\n${nodeGitSection(git)}` };
@@ -138,7 +142,7 @@ export async function adoptNodePull(task: TeamTaskRow, report: { outcome: string
     if (!ctx?.ref) return;
     const branch = codeBranch(instance.id, task.planTaskId);
     let pull: PullInfo | null = await findOpenPull(ctx.ref, branch);
-    const baseBranch = ctx.sourceBranch ?? (await getDefaultBranch(ctx.ref));
+    const baseBranch = (await workBaseFor(instance.id, task.planTaskId)) ?? ctx.sourceBranch ?? (await getDefaultBranch(ctx.ref));
     if (!pull && (await branchAhead(ctx.ref, branch, baseBranch)) && (await activatorOwns(instance, ctx.ref))) {
       const planTask = (await getPlan(instance.id)).tasks.find((t) => t.id === task.planTaskId);
       const title = (planTask?.title ?? "").trim().slice(0, 200);

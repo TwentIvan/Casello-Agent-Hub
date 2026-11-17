@@ -5,6 +5,8 @@ import {
   CreateTeamInstanceBody,
   GetTeamInstanceParams,
   GetTeamReadinessParams,
+  ListTeamWorksParams,
+  ListTeamWorksResponse,
   GetTeamReadinessResponse,
   GetTeamInstanceResponse,
   SaveTeamInstanceParams,
@@ -71,6 +73,7 @@ import { TeamRuleError } from "../lib/teams/rules";
 import { TemplateError } from "../lib/teams/templates";
 import { applyUpdates, getUpdates } from "../lib/teams/updates";
 import { teamReadiness } from "../lib/teams/readiness";
+import { listWorks } from "../lib/teams/works";
 import { parseRequest } from "../middlewares/error-handler";
 
 // Squadre (istanze di modelli) legate a un lavoro. Con un token personale valgono gli ambiti per metodo.
@@ -193,6 +196,15 @@ router.get("/team-instances/:id/readiness", async (req, res) => {
   });
 });
 
+// Lavori su branch unico della squadra (ultimi 20)
+router.get("/team-instances/:id/works", async (req, res) => {
+  const { id } = parseRequest(ListTeamWorksParams, req.params);
+  await guarded(res, async () => {
+    await getInstance(id);
+    res.json(ListTeamWorksResponse.parse(await listWorks(id)));
+  });
+});
+
 router.get("/team-instances/:id/updates", async (req, res) => {
   const { id } = parseRequest(GetTeamInstanceUpdatesParams, req.params);
   await guarded(res, async () => {
@@ -223,8 +235,10 @@ router.post("/team-instances/:id/save-as-template", async (req, res) => {
 // Stato di branch, PR e CI dei compiti che hanno scritto codice, da affiancare al PLAN
 async function withCodeTasks<T extends object>(instanceId: number, plan: T) {
   const rows = await db.select().from(teamCodeTasksTable).where(eq(teamCodeTasksTable.instanceId, instanceId)).orderBy(teamCodeTasksTable.id);
+  const [work] = await listWorks(instanceId, 1);
   return {
     ...plan,
+    work: work ?? null,
     codeTasks: rows.map((r) => ({
       planTaskId: r.planTaskId,
       repo: r.repo,

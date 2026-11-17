@@ -178,8 +178,8 @@ function TeamEditor({
   const refApp = useGetApp(team.ref.appId, { query: { queryKey: getGetAppQueryKey(team.ref.appId) } });
   const codeEnabled = !refApp.data || (refApp.data.sourceType === "github" && refApp.data.sourceInstallationId !== null);
 
-  // «Pronta a lavorare»: solo con ruoli `node` salvati, si rilegge ogni 30 s e dopo ogni salvataggio
-  const hasNodeRoles = team.roles.some((r) => r.runsOn === "node");
+  // «Pronta a lavorare»: con ruoli `node` o con codice (CI sui branch botcave/**) salvati, si rilegge ogni 30 s e dopo ogni salvataggio
+  const hasNodeRoles = team.roles.some((r) => r.runsOn === "node" || (!r.isLead && (r.code ?? "none") !== "none"));
   const readiness = useGetTeamReadiness(team.id, {
     query: { queryKey: getGetTeamReadinessQueryKey(team.id), enabled: hasNodeRoles && !closed, refetchInterval: 30_000 },
   });

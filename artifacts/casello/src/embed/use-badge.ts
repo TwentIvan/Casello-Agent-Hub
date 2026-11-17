@@ -1,17 +1,14 @@
-// Contatore sul pulsante della pagina ospite (messaggio `badge`): per l'amministratore collegato le voci da confermare,
-// per il visitatore le sue segnalazioni con novità non ancora viste.
+// Pannello mostrato e contatore del visitatore sul pulsante della pagina ospite (le sue segnalazioni con novità non
+// ancora viste). Lo stato dell'amministratore collegato è in use-status.ts.
 // Il caricatore nasconde il pannello con display:none, che non cambia `visibilityState` dell'iframe: per sapere se il
 // pannello è mostrato si osserva anche l'intersezione del documento con la finestra (IntersectionObserver, a pannello
 // nascosto non interseca). Senza IntersectionObserver il pannello si considera mostrato finché il documento è visibile.
 import { useEffect, useRef, useState } from "react";
-import { getListPendingActionsQueryKey, useListPendingActions } from "@workspace/api-client-react";
 import type { FromFrame } from "./protocol";
-import { badgeIntervalMs, isPanelOpen, nextBadge, VISITOR_BADGE_CLOSED_MS, VISITOR_BADGE_OPEN_MS } from "./panel-helpers";
+import { isPanelOpen, nextBadge, VISITOR_BADGE_CLOSED_MS, VISITOR_BADGE_OPEN_MS } from "./panel-helpers";
 import { visitorBadge } from "@/lib/bug-status";
 import { useVisitorBugList } from "./bugs/visitor-bugs";
 import type { HostOpenRequest } from "./use-host";
-
-const PENDING_PARAMS = { status: "pending" } as const;
 
 function isDocumentVisible(): boolean {
   return typeof document === "undefined" || document.visibilityState === "visible";
@@ -44,29 +41,6 @@ export function usePanelOpen(openRequest: HostOpenRequest | null): boolean {
   }, [openRequest]);
 
   return isPanelOpen({ visible, shown });
-}
-
-/** Legge le voci `pending` (5 s a pannello aperto, 30 s altrimenti) e manda `badge` solo quando il numero cambia. */
-export function useBadge(open: boolean, post: (m: FromFrame) => void): void {
-  const interval = badgeIntervalMs(open);
-  const list = useListPendingActions(PENDING_PARAMS, {
-    query: {
-      queryKey: getListPendingActionsQueryKey(PENDING_PARAMS),
-      refetchInterval: interval,
-      // A pannello chiuso il documento può risultare in background: il contatore si aggiorna comunque, ogni 30 s
-      refetchIntervalInBackground: true,
-    },
-  });
-  const last = useRef<number | null>(null);
-  const count = list.data?.actions.length;
-
-  useEffect(() => {
-    if (count === undefined) return;
-    const next = nextBadge(last.current, count);
-    if (next === null) return;
-    last.current = next;
-    post({ botcave: 1, type: "badge", payload: { pending: next } });
-  }, [count, post]);
 }
 
 /**

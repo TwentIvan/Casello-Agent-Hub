@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { leadPageFromPath } from "./page-subject";
-import { TAB_LABELS, tabOrder } from "./tabs";
+import { CONSOLE_BOT_NAMES, TAB_LABELS, tabLabel, tabOrder } from "./tabs";
 import { CHARACTER_TEXT } from "../characters/targets";
 import { INITIAL_PANEL_STATE, panelReducer } from "./panel-state";
 
@@ -38,12 +38,13 @@ describe("leadPageFromPath", () => {
 
 describe("schede per ambiente", () => {
   it("la scheda di Barbara, la Responsabile di Botcave, ha il suo nome", () => {
-    expect(TAB_LABELS.lead).toBe("Barbara");
+    expect(tabLabel("lead", CONSOLE_BOT_NAMES)).toBe("Barbara");
+    expect(TAB_LABELS.lead).toBe("Responsabile");
     expect(CHARACTER_TEXT.responsabile).toEqual({ name: "Barbara", placeholder: "Scrivi a Barbara…", send: "Scrivi a Barbara" });
   });
 
-  it("la scheda di Barbara c'è solo nella console, quella delle segnalazioni solo nell'embed", () => {
-    expect(tabOrder("embed")).toEqual(["alfred", "pending", "bulletin", "lucius", "bugs"]);
+  it("la scheda delle segnalazioni c'è solo nell'embed, quella del Responsabile in entrambi", () => {
+    expect(tabOrder("embed")).toEqual(["alfred", "lucius", "lead", "pending", "bulletin", "bugs"]);
     expect(tabOrder("embed").at(-1)).toBe("bugs");
     expect(tabOrder("console")).not.toContain("bugs");
     expect(TAB_LABELS.bugs).toBe("Segnalazioni");

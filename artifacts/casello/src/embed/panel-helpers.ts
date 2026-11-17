@@ -19,6 +19,12 @@ export function alfredPageContext(appSlug: string, ctx: HostContextMsg | null): 
   return { page: "host", host };
 }
 
+/** Pagina dei messaggi al Responsabile dell'App ospite: quella dell'app ospite se nota, altrimenti nessuna. */
+export function leadHostPage(appSlug: string, ctx: HostContextMsg | null): (CharacterPageContext & { page: "host" }) | null {
+  const page = alfredPageContext(appSlug, ctx);
+  return page.page === "host" ? (page as CharacterPageContext & { page: "host" }) : null;
+}
+
 /** L'App di Botcave con lo slug indicato dalla pagina ospite (confronto esatto), o null. */
 export function findAppBySlug<T extends { slug: string }>(apps: readonly T[] | undefined, slug: string): T | null {
   if (!apps || !slug) return null;

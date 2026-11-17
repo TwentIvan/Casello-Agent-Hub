@@ -14,6 +14,8 @@ export interface PanelState {
   pageLucius: ChatTarget | null;
   /** Argomento di Lucius scelto da un passaggio di consegne, al posto di quello della pagina. */
   override: ChatTarget | null;
+  /** Azione della pagina ospite scelta nella barra del contesto, da mandare al Responsabile; `seq` cresce a ogni clic. */
+  action: { label: string; seq: number } | null;
 }
 
 export type PanelAction =
@@ -23,7 +25,9 @@ export type PanelAction =
   | { type: "handoff"; target: ChatTarget; draft: string }
   | { type: "setPageSubject"; lucius: ChatTarget | null }
   | { type: "navigate" }
-  | { type: "clearOverride" };
+  | { type: "clearOverride" }
+  | { type: "runAction"; label: string }
+  | { type: "actionDone"; seq: number };
 
 export const INITIAL_PANEL_STATE: PanelState = {
   open: false,
@@ -32,6 +36,7 @@ export const INITIAL_PANEL_STATE: PanelState = {
   nonce: 0,
   pageLucius: null,
   override: null,
+  action: null,
 };
 
 export function panelReducer(state: PanelState, action: PanelAction): PanelState {
@@ -64,6 +69,11 @@ export function panelReducer(state: PanelState, action: PanelAction): PanelState
       return { ...state, open: false, override: null, draft: null };
     case "clearOverride":
       return { ...state, override: null };
+    case "runAction":
+      return { ...state, open: true, tab: "lead", draft: null, action: { label: action.label, seq: (state.action?.seq ?? 0) + 1 } };
+    case "actionDone":
+      // Solo l'azione presa in carico: un clic arrivato nel frattempo resta
+      return state.action?.seq === action.seq ? { ...state, action: null } : state;
   }
 }
 

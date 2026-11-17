@@ -4,7 +4,8 @@ import { THEME_VARS, cleanFontUrl, cleanThemeValue, type HostTheme } from "./the
 
 export type { HostTheme, ThemeVar } from "./theme";
 
-export type EmbedTab = "alfred" | "pending" | "bulletin" | "lucius" | "bugs";
+// Tenute allineate con `TABS` qui sotto e con `tabOrder` di components/panel/tabs.ts
+export type EmbedTab = "alfred" | "lucius" | "lead" | "pending" | "bulletin" | "bugs";
 
 export type HostContextMsg = { page: string; id?: string; title?: string };
 
@@ -21,7 +22,7 @@ export type FromFrame =
   | { botcave: 1; type: "badge"; payload: { pending: number } }
   | { botcave: 1; type: "error"; payload: { code: "host_not_allowed" | "unreachable" } };
 
-const TABS: readonly string[] = ["alfred", "pending", "bulletin", "lucius", "bugs"];
+const TABS: readonly string[] = ["alfred", "lucius", "lead", "pending", "bulletin", "bugs"];
 const TOKEN_RE = /^[A-Za-z0-9_.-]{1,4096}$/;
 const ID_RE = /^[A-Za-z0-9._:-]{1,40}$/;
 

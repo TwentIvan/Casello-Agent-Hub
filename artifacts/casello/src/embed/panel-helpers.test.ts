@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { alfredPageContext, badgeIntervalMs, cleanAppSlug, consoleUrl, findAppBySlug, isPanelOpen, nextBadge, VISITOR_BADGE_CLOSED_MS, VISITOR_BADGE_OPEN_MS } from "./panel-helpers";
+import { alfredPageContext, leadHostPage, badgeIntervalMs, cleanAppSlug, consoleUrl, findAppBySlug, isPanelOpen, nextBadge, VISITOR_BADGE_CLOSED_MS, VISITOR_BADGE_OPEN_MS } from "./panel-helpers";
 
 describe("alfredPageContext", () => {
   it("senza contesto della pagina ospite: console", () => {
@@ -16,6 +16,14 @@ describe("alfredPageContext", () => {
     expect(alfredPageContext("", { page: "home" })).toEqual({ page: "console" });
     expect(alfredPageContext("a".repeat(65), { page: "home" })).toEqual({ page: "console" });
     expect(alfredPageContext("a".repeat(64), { page: "home" })).toEqual({ page: "host", host: { app: "a".repeat(64), page: "home" } });
+  });
+});
+
+describe("leadHostPage", () => {
+  it("con contesto: la pagina dell'app ospite; senza: nessuna", () => {
+    expect(leadHostPage("hubup", { page: "workitem", id: "7" })).toEqual({ page: "host", host: { app: "hubup", page: "workitem", id: "7" } });
+    expect(leadHostPage("hubup", null)).toBeNull();
+    expect(leadHostPage("", { page: "home" })).toBeNull();
   });
 });
 

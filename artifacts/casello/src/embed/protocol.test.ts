@@ -125,6 +125,13 @@ describe("identità e scheda bugs", () => {
     expect(parseToFrame({ botcave: 1, type: "identity", payload: { token: "a".repeat(4097) } })).toBeNull();
     expect(parseToFrame({ botcave: 1, type: "identity" })).toBeNull();
   });
+  it("open accetta lead", () => {
+    expect(parseToFrame({ botcave: 1, type: "open", payload: { tab: "lead" } })).toEqual({
+      botcave: 1,
+      type: "open",
+      payload: { tab: "lead" },
+    });
+  });
   it("open accetta bugs", () => {
     expect(parseToFrame({ botcave: 1, type: "open", payload: { tab: "bugs" } })).toEqual({
       botcave: 1,

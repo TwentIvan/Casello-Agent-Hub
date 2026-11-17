@@ -2,6 +2,7 @@
 // istruzioni; la squadra, il PLAN e la memoria di Lucius stanno in un messaggio `user` delimitato da
 // <dati_della_squadra>, dichiarato dato non attendibile. Mai indirizzi, segreti o header delle app.
 
+import { withPersonalInstructions } from "../characters/personal-instructions";
 import { WEB_INSTRUCTIONS } from "../web-reader/tool";
 import { BEST_PRACTICE_INSTRUCTIONS } from "../best-practice/instructions";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
@@ -68,6 +69,8 @@ export interface TeamChatContextInput {
   team: TeamSnapshot;
   /** Blocco di memoria di Lucius (appunti e conversazioni recenti); vuoto se non c'è nulla. */
   memory: string;
+  /** Blocco delle istruzioni personali dell'utente, in fondo al messaggio `system`; vuoto = nessuno */
+  personalInstructions?: string;
   history: HistoryMessage[];
   userMessage: string;
   /** Frase sulla lettura del codice, in fondo al prompt di sistema; presente solo se gli strumenti sono offerti. */
@@ -202,12 +205,15 @@ export function buildTeamChatMessages(input: TeamChatContextInput): ChatCompleti
   const build = (historyChars: number, detail: SkillDetail): ChatCompletionMessageParam[] => [
     {
       role: "system",
-      content: [
+      content: withPersonalInstructions(
+        [
         TEAM_CHAT_SYSTEM_PROMPT,
         ...(input.codeInstructions ? [input.codeInstructions] : []),
         WEB_INSTRUCTIONS,
         ...(input.bestPractice ? [BEST_PRACTICE_INSTRUCTIONS] : []),
       ].join("\n"),
+        input.personalInstructions ?? "",
+      ),
     },
     { role: "user", content: dataBlock(input, detail) },
     ...renderHistory(input.history, input.userMessage, historyChars),

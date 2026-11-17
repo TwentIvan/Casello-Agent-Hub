@@ -3,6 +3,7 @@
 // messaggio `user` delimitato da <dati_del_piano>, dichiarato dato non attendibile. Non importa `architect/prompts.ts`: sarà quello
 // a importare `itemTitle` da qui.
 
+import { withPersonalInstructions } from "../characters/personal-instructions";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { estimateTokens } from "../architect/phase-loop";
 import { sliceChars } from "../architect/text";
@@ -57,6 +58,8 @@ export interface PlanContextInput {
   history: HistoryMessage[];
   /** Blocco di memoria di Lucius (appunti e conversazioni recenti); vuoto se non c'è nulla. */
   memory: string;
+  /** Blocco delle istruzioni personali dell'utente, in fondo al messaggio `system`; vuoto = nessuno */
+  personalInstructions?: string;
   /** Lettura del codice dell'app: disponibile (repo e branch) oppure il motivo per cui manca. */
   code: { available: true; repo: string; branch: string | null } | { available: false; reason: string };
   /** Best practice accese nella conversazione: istruzioni nel prompt e `data` (sintesi dell'App e fonti curate) nei dati. */
@@ -212,7 +215,7 @@ export function buildPlanMessages(input: PlanContextInput): ChatCompletionMessag
     input.code.available ? { code: true, bestPractice } : { code: false, reason: input.code.reason, bestPractice },
   );
   const build = (historyChars: number, includeOthers: boolean, titleMax: number | null) => [
-    { role: "system" as const, content: systemPrompt },
+    { role: "system" as const, content: withPersonalInstructions(systemPrompt, input.personalInstructions ?? "") },
     { role: "user" as const, content: dataBlock(input, { includeOthers, titleMax }) },
     ...renderHistory(input.history, historyChars),
   ];

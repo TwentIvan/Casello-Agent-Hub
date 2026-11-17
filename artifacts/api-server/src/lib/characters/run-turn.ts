@@ -22,6 +22,7 @@ import { estimateTokens } from "../architect/phase-loop";
 import { sliceChars } from "../architect/text";
 import { characterBudgetBlock } from "../budget";
 import { memoryContextBlock } from "../memory/context";
+import { personalInstructionsBlock, withPersonalInstructions } from "./personal-instructions";
 import { MEMORY_TOOLS, MEMORY_TOOL_NAMES, runMemoryTool } from "../memory/tools";
 import { EMPTY_REPLY_MESSAGE, INTERRUPTED_TURN_MESSAGE, TurnBusyError } from "../plan-chat/run-turn";
 import { runChatTurn } from "../node-turns/chat-turn";
@@ -92,6 +93,8 @@ export interface CharacterContextInput {
   extraInstructions?: string;
   /** Best practice accese (solo Lucius): sintesi dell'App e fonti curate, in un messaggio di dati; vuoto = nessun messaggio */
   bestPracticeData?: string;
+  /** Blocco delle istruzioni personali dell'utente, in fondo al messaggio `system`; vuoto = nessuno */
+  personalInstructions?: string;
 }
 
 const stripDelimiters = (text: string) => text.split(DATA_OPEN).join("").split(DATA_CLOSE).join("");
@@ -147,7 +150,10 @@ export function buildCharacterMessages(input: CharacterContextInput): ChatComple
   const build = (historyChars: number, dataChars: number | null): ChatCompletionMessageParam[] => [
     {
       role: "system",
-      content: [characterInstructions(input.character), ...(input.extraInstructions ? [input.extraInstructions] : []), WEB_INSTRUCTIONS].join("\n"),
+      content: withPersonalInstructions(
+        [characterInstructions(input.character), ...(input.extraInstructions ? [input.extraInstructions] : []), WEB_INSTRUCTIONS].join("\n"),
+        input.personalInstructions ?? "",
+      ),
     },
     ...input.subjectData.map((d) =>
       dataMessage("Dati dell'argomento", dataChars === null || d.length <= dataChars ? d : `${sliceChars(d, dataChars)}\n… (troncato)`),
@@ -383,9 +389,10 @@ async function executeCharacterTurnInner(conversationId: number, assistantMessag
         content = blocked;
       } else {
         const { history, userMessage, page } = await loadHistory(conversationId, assistantMessageId);
-        const [subjectData, memory] = await Promise.all([
+        const [subjectData, memory, personalInstructions] = await Promise.all([
           handler.context(conv.userId, conv.subjectId, page),
           memoryContextBlock(conv.userId, character),
+          personalInstructionsBlock(conv.userId, character),
         ]);
         const code = handler.codeApp ? await handler.codeApp(conv.userId, conv.subjectId) : null;
         const codeRunner = code?.available ? new CodeToolRunner(conv.userId, code.defaultAppId) : null;
@@ -401,6 +408,7 @@ async function executeCharacterTurnInner(conversationId: number, assistantMessag
           character,
           subjectData,
           memory,
+          personalInstructions,
           page,
           history,
           userMessage,

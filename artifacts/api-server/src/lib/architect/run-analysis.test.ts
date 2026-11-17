@@ -22,6 +22,7 @@ import { ensureLegacyGatewayProvider } from "../../../test/legacy-gateway";
 import { allowTestLoopback } from "../../../test/fake-provider";
 import { startFakeGithub, type FakeGithub } from "../../../test/fake-github";
 import { startFakeMcp, type FakeMcp } from "../../../test/fake-mcp";
+import { PERSONAL_INSTRUCTIONS_HEADER, saveInstructions } from "../characters/personal-instructions";
 import { clearInstallationTokenCache } from "../github/app";
 import type { GithubConfig } from "../github/config";
 // Passo delle best practice: finto, si conta quando parte e cosa restituisce
@@ -863,6 +864,16 @@ describe("startAnalysis sugli account AI", () => {
     expect(Number(a.costUsd)).toBeCloseTo(0.00168, 8);
     expect(llmRequests[0].model).toBe("modello-architetto");
     expect(llmAuth.every((h) => h === `Bearer ${ACCOUNT_KEY}`)).toBe(true);
+  });
+
+  it("istruzioni personali di Lucius: nel system di ogni fase, solo quelle del proprietario del modello", async () => {
+    const model = await ownModel();
+    const [owner] = await db.select().from(usersTable).where(eq(usersTable.email, "a@example.com"));
+    await saveInstructions(owner!.id, "lucius", "Cita sempre le fonti", 0);
+    const id = await createAnalysis(appId, { aiModelId: model.id, model: "modello-architetto" });
+    await startAnalysis(id, { zip: testZip() });
+    expect(llmRequests.length).toBeGreaterThan(0);
+    expect(llmRequests.every((r) => String(r.messages[0].content).endsWith(`${PERSONAL_INSTRUCTIONS_HEADER}\nCita sempre le fonti`))).toBe(true);
   });
 
   it("token in cache: pesati al 10% nel budget, salvati a parte e pagati al prezzo di cache", async () => {

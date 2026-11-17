@@ -33,6 +33,7 @@ import {
 } from "./context";
 import { itemHash } from "./decide";
 import { memoryContextBlock } from "../memory/context";
+import { personalInstructionsBlock } from "../characters/personal-instructions";
 import { MEMORY_TOOLS } from "../memory/tools";
 import { PLAN_TOOLS, PlanToolRunner, type PlanToolItem } from "./tools";
 import { runChatTurn } from "../node-turns/chat-turn";
@@ -302,6 +303,7 @@ async function executePlanTurnInner(conversationId: number, assistantMessageId: 
         otherApps,
         history: await loadHistory(conversationId, assistantMessageId),
         memory: await memoryContextBlock(conv.userId, "lucius"),
+        personalInstructions: await personalInstructionsBlock(conv.userId, "lucius"),
         code: codeInfo.ok ? { available: true, repo: codeInfo.repo, branch: codeInfo.branch } : { available: false, reason: codeInfo.reason },
         // Il valore dell'interruttore si legge all'inizio del turno
         ...(conv.bestPractice ? { bestPractice: { data: await bestPracticeData(conv.userId, app.id) } } : {}),

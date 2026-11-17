@@ -19,6 +19,7 @@ import { ModelAccessError, resolveModel } from "../ai/executor";
 import { sliceChars } from "../architect/text";
 import { characterBudgetBlock } from "../budget";
 import { memoryContextBlock } from "../memory/context";
+import { personalInstructionsBlock } from "../characters/personal-instructions";
 import { EMPTY_REPLY_MESSAGE, INTERRUPTED_TURN_MESSAGE, TurnBusyError } from "../plan-chat/run-turn";
 import { runChatTurn } from "../node-turns/chat-turn";
 import { codeAvailability } from "../code-reader/source-cache";
@@ -180,6 +181,7 @@ async function executeTeamChatTurnInner(conversationId: number, assistantMessage
       const messages = buildTeamChatMessages({
         team,
         memory: await memoryContextBlock(conv.userId, "lucius"),
+        personalInstructions: await personalInstructionsBlock(conv.userId, "lucius"),
         history,
         userMessage,
         ...(codeRunner ? { codeInstructions: CODE_INSTRUCTIONS_GENERAL } : {}),

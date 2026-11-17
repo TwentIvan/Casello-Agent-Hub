@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { WEB_INSTRUCTIONS } from "../web-reader/tool";
+import { PERSONAL_INSTRUCTIONS_HEADER } from "../characters/personal-instructions";
 import { estimateTokens } from "../architect/phase-loop";
 import { DATA_CLOSE, TEAM_CHAT_SYSTEM_PROMPT, TEAM_CONTEXT_MAX_TOKENS, buildTeamChatMessages, type TeamSnapshot } from "./context";
 
@@ -23,6 +24,16 @@ const team = (skillContent = "Istruzioni della skill"): TeamSnapshot => ({
   ],
   localSkills: [],
   plan: null,
+});
+
+describe("istruzioni personali nel prompt della chat di squadra", () => {
+  it("in fondo al messaggio system se presenti, assenti senza il campo", () => {
+    const block = `${PERSONAL_INSTRUCTIONS_HEADER}\nSempre il costo`;
+    const withBlock = buildTeamChatMessages({ team: team(), memory: "", history: [], userMessage: "ciao", personalInstructions: block });
+    expect(String(withBlock[0]!.content).endsWith(block)).toBe(true);
+    const without = buildTeamChatMessages({ team: team(), memory: "", history: [], userMessage: "ciao" });
+    expect(String(without[0]!.content)).not.toContain(PERSONAL_INSTRUCTIONS_HEADER);
+  });
 });
 
 describe("contesto della chat di squadra", () => {

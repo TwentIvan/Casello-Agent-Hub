@@ -9,6 +9,7 @@ export {
   DeleteMemoryNoteParams,
   DeleteMemoryHistoryEntryParams,
   GetAlfredNotificationsParams,
+  GetAppEvolutionConsentTextParams,
   GetEmbedBugParams,
   AddEmbedBugMessageParams,
   ListAppBugsParams,

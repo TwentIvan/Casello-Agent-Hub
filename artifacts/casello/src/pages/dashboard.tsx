@@ -149,6 +149,16 @@ export default function Dashboard() {
           </AlertDescription>
         </Alert>
       ))}
+      {s && s.evolutionCyclesPaused > 0 && (
+        <Alert>
+          <AlertTitle>Cicli in pausa: {s.evolutionCyclesPaused}</AlertTitle>
+          <AlertDescription>
+            <Link href="/apps" className="underline">
+              Apri le App
+            </Link>
+          </AlertDescription>
+        </Alert>
+      )}
       {s?.nodeClaudeWarnings.map((w) => (
         <Alert key={`claude-${w.nodeId}-${w.reason}`} variant="destructive">
           <AlertCircle className="size-4" />

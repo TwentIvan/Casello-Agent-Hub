@@ -34,6 +34,8 @@ tags:
     description: Account AI dell'utente (provider, chiave, modelli e prezzi) e stima dei costi
   - name: catalog
     description: Catalogo dei modelli per provider e suo aggiornamento
+  - name: evolution
+    description: Ciclo di evoluzione automatica di un'App (impostazioni, consenso, giri)
   - name: architect
     description: Analisi dell'architetto (proposte su tool, agenti, skill, endpoint ed evoluzione) e skill degli agenti
   - name: pending-actions
@@ -1935,6 +1937,211 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+
+  /apps/{id}/evolution:
+    get:
+      operationId: getAppEvolution
+      tags: [evolution]
+      summary: Ciclo di evoluzione dell'app (null se non c'è)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Il ciclo o null
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/EvolutionCycleView"
+                  - type: "null"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      operationId: saveAppEvolution
+      tags: [evolution]
+      summary: Crea o aggiorna il ciclo di evoluzione (solo con il login)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EvolutionCycleInput"
+      responses:
+        "200":
+          description: Ciclo salvato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvolutionCycleView"
+        "400":
+          description: Impostazioni o consenso non validi
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteAppEvolution
+      tags: [evolution]
+      summary: Elimina il ciclo (solo con il login; va prima fermato)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Eliminato
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Il ciclo è attivo o ha un giro aperto
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /apps/{id}/evolution/consent-text:
+    get:
+      operationId: getAppEvolutionConsentText
+      tags: [evolution]
+      summary: Testo del consenso per le impostazioni indicate
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - name: mergeMode
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [staging, direct]
+        - name: stagingBranch
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: teamTemplateId
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: analysisAiModelId
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: itemsPerRound
+          in: query
+          required: true
+          schema:
+            type: integer
+        - name: monthlyBudgetUsd
+          in: query
+          required: true
+          schema:
+            type: number
+      responses:
+        "200":
+          description: Versione e righe del consenso
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvolutionConsentText"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /apps/{id}/evolution/stop:
+    post:
+      operationId: stopAppEvolution
+      tags: [evolution]
+      summary: Ferma il ciclo (solo con il login)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Ciclo fermato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvolutionCycleView"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /apps/{id}/evolution/resume:
+    post:
+      operationId: resumeAppEvolution
+      tags: [evolution]
+      summary: Riprende il ciclo (solo con il login)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Ciclo ripreso
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvolutionCycleView"
+        "400":
+          description: Consenso da rinnovare
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /apps/{id}/evolution/run-now:
+    post:
+      operationId: runAppEvolutionNow
+      tags: [evolution]
+      summary: Avvia subito un giro (solo con il login e solo chi ha attivato il ciclo, 2 all'ora per App)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "202":
+          description: Giro avviato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EvolutionRoundView"
+        "403":
+          description: Solo chi ha attivato il ciclo (chi paga) può avviare un giro
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: Ciclo in pausa, giro già in corso o controllo non superato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: Troppe richieste
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /apps/{id}/evolution/rounds:
+    get:
+      operationId: listAppEvolutionRounds
+      tags: [evolution]
+      summary: Ultimi 20 giri del ciclo
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Giri, dal più recente
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/EvolutionRoundView"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   # ─── Agents ─────────────────────────────────────────────────────────────────
 
@@ -7813,11 +8020,143 @@ components:
             type: string
           description: Messaggi fissi (chiamata non riuscita, elenco non trovato, elementi scartati)
 
+    # ── Ciclo di evoluzione ────────────────────────────────────────────────────
+
+    EvolutionFrequency:
+      type: string
+      enum: [daily, every_3_days, weekly, monthly]
+
+    EvolutionRoundView:
+      type: object
+      required: [id, number, status, analysisId, itemIds, outcome, startedAt, finishedAt]
+      properties:
+        id:
+          type: integer
+        number:
+          type: integer
+        status:
+          type: string
+          enum: [analyzing, approving, implementing, awaiting_release, done, blocked, rejected, stopped, failed]
+        analysisId:
+          type: ["integer", "null"]
+        itemIds:
+          type: array
+          items:
+            type: integer
+        outcome:
+          type: ["string", "null"]
+        startedAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: ["string", "null"]
+          format: date-time
+
+    EvolutionCycleView:
+      type: object
+      required: [appId, status, pausedReason, frequency, itemsPerRound, analysisAiModelId, analysisModelName, teamTemplateId, mergeMode, stagingBranch, stagingUrl, monthlyBudgetUsd, spentUsd, unpricedCount, activatedByName, isPayer, consentAt, consentValid, nextRoundAt, lastError, openRound]
+      properties:
+        appId:
+          type: integer
+        status:
+          type: string
+          enum: [active, paused]
+        pausedReason:
+          type: ["string", "null"]
+        frequency:
+          $ref: "#/components/schemas/EvolutionFrequency"
+        itemsPerRound:
+          type: integer
+        analysisAiModelId:
+          type: ["integer", "null"]
+        analysisModelName:
+          type: ["string", "null"]
+        teamTemplateId:
+          type: ["integer", "null"]
+        mergeMode:
+          type: string
+          enum: [staging, direct]
+        stagingBranch:
+          type: ["string", "null"]
+        stagingUrl:
+          type: ["string", "null"]
+        monthlyBudgetUsd:
+          type: number
+        spentUsd:
+          type: number
+          description: Spesa del mese
+        unpricedCount:
+          type: integer
+        activatedByName:
+          type: ["string", "null"]
+        isPayer:
+          type: boolean
+          description: L'utente della richiesta è chi ha attivato il ciclo (chi paga); solo lui avvia e riprende i giri
+        consentAt:
+          type: ["string", "null"]
+          format: date-time
+        consentValid:
+          type: boolean
+        nextRoundAt:
+          type: ["string", "null"]
+          format: date-time
+        lastError:
+          type: ["string", "null"]
+        openRound:
+          oneOf:
+            - $ref: "#/components/schemas/EvolutionRoundView"
+            - type: "null"
+
+    EvolutionCycleInput:
+      type: object
+      required: [frequency, itemsPerRound, analysisAiModelId, teamTemplateId, mergeMode, stagingBranch, stagingUrl, monthlyBudgetUsd]
+      properties:
+        frequency:
+          $ref: "#/components/schemas/EvolutionFrequency"
+        itemsPerRound:
+          type: integer
+        analysisAiModelId:
+          type: integer
+        teamTemplateId:
+          type: ["integer", "null"]
+        mergeMode:
+          type: string
+          enum: [staging, direct]
+        stagingBranch:
+          type: ["string", "null"]
+        stagingUrl:
+          type: ["string", "null"]
+        monthlyBudgetUsd:
+          type: number
+        consent:
+          type: object
+          required: [accepted, appSlug, version]
+          properties:
+            accepted:
+              type: boolean
+            appSlug:
+              type: string
+            version:
+              type: string
+            directMerge:
+              type: boolean
+
+    EvolutionConsentText:
+      type: object
+      required: [version, lines]
+      properties:
+        version:
+          type: string
+        lines:
+          type: array
+          items:
+            type: string
+
     # ── Dashboard ──────────────────────────────────────────────────────────────
 
     DashboardStats:
       type: object
-      required: [totalApps, totalAgents, totalRuns, successfulRuns, failedRuns, cancelledRuns, activeAgents, pendingActions, triggersInError, recentlyPairedNodes, nodeClaudeWarnings]
+      required: [totalApps, totalAgents, totalRuns, successfulRuns, failedRuns, cancelledRuns, activeAgents, pendingActions, triggersInError, evolutionCyclesPaused, recentlyPairedNodes, nodeClaudeWarnings]
       properties:
         totalApps:
           type: integer
@@ -7839,6 +8178,9 @@ components:
         triggersInError:
           type: integer
           description: Inneschi fermi in stato error (servono «Riprendi»)
+        evolutionCyclesPaused:
+          type: integer
+          description: Cicli di evoluzione in pausa attivati dall'utente corrente
         recentlyPairedNodes:
           type: array
           description: Nodi dell'utente collegati nelle ultime 24 ore (attivi)
@@ -8307,7 +8649,7 @@ components:
 
     AnalysisItem:
       type: object
-      required: [id, analysisId, chapter, ref, position, payload, diff, evidence, status, reviewNote, appliedAt, origin, issue]
+      required: [id, analysisId, chapter, ref, position, payload, diff, evidence, status, reviewNote, appliedAt, origin, issue, approvedByCycle]
       properties:
         id:
           type: integer
@@ -8350,6 +8692,9 @@ components:
             - $ref: "#/components/schemas/ItemIssue"
             - type: "null"
           description: Issue GitHub collegata alla voce (null se non creata o ancora in prenotazione)
+        approvedByCycle:
+          type: boolean
+          description: Approvata dal ciclo di evoluzione automatica
 
     # ── Chat del piano ────────────────────────────────────────────────────────
     PlanTurnStatus:

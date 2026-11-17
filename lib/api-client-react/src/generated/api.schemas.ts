@@ -1441,6 +1441,132 @@ export interface TriggerTestResult {
   errors: string[];
 }
 
+export type EvolutionFrequency = typeof EvolutionFrequency[keyof typeof EvolutionFrequency];
+
+
+export const EvolutionFrequency = {
+  daily: 'daily',
+  every_3_days: 'every_3_days',
+  weekly: 'weekly',
+  monthly: 'monthly',
+} as const;
+
+export type EvolutionRoundViewStatus = typeof EvolutionRoundViewStatus[keyof typeof EvolutionRoundViewStatus];
+
+
+export const EvolutionRoundViewStatus = {
+  analyzing: 'analyzing',
+  approving: 'approving',
+  implementing: 'implementing',
+  awaiting_release: 'awaiting_release',
+  done: 'done',
+  blocked: 'blocked',
+  rejected: 'rejected',
+  stopped: 'stopped',
+  failed: 'failed',
+} as const;
+
+export interface EvolutionRoundView {
+  id: number;
+  number: number;
+  status: EvolutionRoundViewStatus;
+  /** @nullable */
+  analysisId: number | null;
+  itemIds: number[];
+  /** @nullable */
+  outcome: string | null;
+  startedAt: string;
+  /** @nullable */
+  finishedAt: string | null;
+}
+
+export type EvolutionCycleViewStatus = typeof EvolutionCycleViewStatus[keyof typeof EvolutionCycleViewStatus];
+
+
+export const EvolutionCycleViewStatus = {
+  active: 'active',
+  paused: 'paused',
+} as const;
+
+export type EvolutionCycleViewMergeMode = typeof EvolutionCycleViewMergeMode[keyof typeof EvolutionCycleViewMergeMode];
+
+
+export const EvolutionCycleViewMergeMode = {
+  staging: 'staging',
+  direct: 'direct',
+} as const;
+
+export interface EvolutionCycleView {
+  appId: number;
+  status: EvolutionCycleViewStatus;
+  /** @nullable */
+  pausedReason: string | null;
+  frequency: EvolutionFrequency;
+  itemsPerRound: number;
+  /** @nullable */
+  analysisAiModelId: number | null;
+  /** @nullable */
+  analysisModelName: string | null;
+  /** @nullable */
+  teamTemplateId: number | null;
+  mergeMode: EvolutionCycleViewMergeMode;
+  /** @nullable */
+  stagingBranch: string | null;
+  /** @nullable */
+  stagingUrl: string | null;
+  monthlyBudgetUsd: number;
+  /** Spesa del mese */
+  spentUsd: number;
+  unpricedCount: number;
+  /** @nullable */
+  activatedByName: string | null;
+  /** L'utente della richiesta è chi ha attivato il ciclo (chi paga); solo lui avvia e riprende i giri */
+  isPayer: boolean;
+  /** @nullable */
+  consentAt: string | null;
+  consentValid: boolean;
+  /** @nullable */
+  nextRoundAt: string | null;
+  /** @nullable */
+  lastError: string | null;
+  openRound: EvolutionRoundView | null;
+}
+
+export type EvolutionCycleInputMergeMode = typeof EvolutionCycleInputMergeMode[keyof typeof EvolutionCycleInputMergeMode];
+
+
+export const EvolutionCycleInputMergeMode = {
+  staging: 'staging',
+  direct: 'direct',
+} as const;
+
+export type EvolutionCycleInputConsent = {
+  accepted: boolean;
+  appSlug: string;
+  version: string;
+  directMerge?: boolean;
+};
+
+export interface EvolutionCycleInput {
+  frequency: EvolutionFrequency;
+  itemsPerRound: number;
+  analysisAiModelId: number;
+  /** @nullable */
+  teamTemplateId: number | null;
+  mergeMode: EvolutionCycleInputMergeMode;
+  /** @nullable */
+  stagingBranch: string | null;
+  /** @nullable */
+  stagingUrl: string | null;
+  monthlyBudgetUsd: number;
+  consent?: EvolutionCycleInputConsent;
+}
+
+export interface EvolutionConsentText {
+  version: string;
+  lines: string[];
+}
+
 export type DashboardStatsRecentlyPairedNodesItem = {
   id: number;
   name: string;
@@ -1474,6 +1600,8 @@ export interface DashboardStats {
   pendingActions: number;
   /** Inneschi fermi in stato error (servono «Riprendi») */
   triggersInError: number;
+  /** Cicli di evoluzione in pausa attivati dall'utente corrente */
+  evolutionCyclesPaused: number;
   /** Nodi dell'utente collegati nelle ultime 24 ore (attivi) */
   recentlyPairedNodes: DashboardStatsRecentlyPairedNodesItem[];
   /** Nodi con un account «Claude Code (nodo)» dell'utente il cui Claude non è pronto */
@@ -1913,6 +2041,8 @@ export interface AnalysisItem {
   appliedAt: string | null;
   /** Issue GitHub collegata alla voce (null se non creata o ancora in prenotazione) */
   issue: ItemIssue | null;
+  /** Approvata dal ciclo di evoluzione automatica */
+  approvedByCycle: boolean;
 }
 
 export type PlanTurnStatus = typeof PlanTurnStatus[keyof typeof PlanTurnStatus];
@@ -4973,6 +5103,23 @@ export type RefreshAppArchitecture202 = {
 export type ListAppBugsParams = {
 status?: EmbedBugStatus;
 };
+
+export type GetAppEvolutionConsentTextParams = {
+mergeMode: GetAppEvolutionConsentTextMergeMode;
+stagingBranch?: string;
+teamTemplateId?: number;
+analysisAiModelId: number;
+itemsPerRound: number;
+monthlyBudgetUsd: number;
+};
+
+export type GetAppEvolutionConsentTextMergeMode = typeof GetAppEvolutionConsentTextMergeMode[keyof typeof GetAppEvolutionConsentTextMergeMode];
+
+
+export const GetAppEvolutionConsentTextMergeMode = {
+  staging: 'staging',
+  direct: 'direct',
+} as const;
 
 export type ListAgentsParams = {
 /**

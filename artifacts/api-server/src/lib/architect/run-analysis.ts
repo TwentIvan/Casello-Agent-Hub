@@ -9,13 +9,16 @@
 // testo generico in italiano.
 
 import { setTimeout as sleep } from "node:timers/promises";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { APIConnectionTimeoutError } from "openai";
 import type { ChatCompletionMessageParam, ChatCompletionTool } from "openai/resources/chat/completions";
 import {
   db,
   analysesTable,
+  analysisItemsTable,
+  appArchitectureTable,
   appsTable,
+  evolutionRoundsTable,
   type Analysis,
   type AnalysisLogEntry,
   type AnalysisSources,
@@ -31,9 +34,13 @@ import { GITHUB_MESSAGES, GithubError, forgetInstallationTokens, installationTok
 import { githubConfig, type GithubConfig } from "../github/config";
 import { loadAppConnection } from "../tools/catalog";
 import type { McpToolInfo } from "../tools/mcp-client";
+import { EVOLUTION_MESSAGES } from "../evolution/messages";
+import { itemTitle } from "../plan-chat/context";
+import { latestCompletedAnalysisId, loadPlanItems } from "../plan-chat/plan-items";
+import { registerAnalysisAbort, releaseAnalysisAbort } from "./abort";
 import { hasVerifiedNotes, runBestPracticeStep } from "../best-practice/analysis-step";
 import { loadMcpSource } from "./mcp-source";
-import { PHASE_TOKEN_SHARES, runPhase, type PhaseBudget } from "./phase-loop";
+import { EVOLUTION_PHASE_SHARES, PHASE_TOKEN_SHARES, runPhase, type PhaseBudget } from "./phase-loop";
 import { existingToolsForPrompt, recordPhaseResult } from "./phase-record";
 import { chatPlannedItems } from "./planned";
 import { phasePrompt, SYSTEM_BASE } from "./prompts";
@@ -49,6 +56,84 @@ export const ANALYSIS_MAX_MS = 1_800_000;
 export const CHOOSE_MODEL = "scegli un modello";
 /** Voci massime del log di un'analisi: si tengono le più recenti. */
 export const ANALYSIS_LOG_MAX = 500;
+
+/** Fasi eseguite per modalità: l'analisi ridotta del ciclo di evoluzione salta map, capabilities, catalog e agents. */
+export const PHASES_BY_MODE: Record<"full" | "evolution", readonly PhaseName[]> = {
+  full: PHASES,
+  evolution: ["completion", "evolution"],
+};
+/** Tetti dell'analisi ridotta (`mode = evolution`), al posto di ANALYSIS_DEFAULT_MAX_TOKENS e ANALYSIS_MAX_MS. */
+export const EVOLUTION_ANALYSIS_LIMITS = { maxTokens: 150_000, maxMs: 900_000 } as const;
+/** Titoli delle voci rifiutate dei giri precedenti del ciclo passati al modello, al massimo. */
+const REJECTED_TITLES_MAX = 50;
+
+// --- Fine delle analisi: avvisi a chi aspetta (es. il ciclo di evoluzione) ---
+
+type AnalysisFinishedListener = (analysisId: number) => void | Promise<void>;
+const finishedListeners: AnalysisFinishedListener[] = [];
+
+/** Chiamato a ogni fine di un'analisi cloud presa in carico, con qualunque esito, dopo la chiusura. */
+export function onAnalysisFinished(listener: AnalysisFinishedListener): void {
+  finishedListeners.push(listener);
+}
+
+/** Solo per i test: toglie tutti i listener. */
+export function clearAnalysisFinishedListeners(): void {
+  finishedListeners.length = 0;
+}
+
+function notifyFinished(analysisId: number): void {
+  // Senza attesa: un listener lento non trattiene l'analisi; errori sincroni e promesse rifiutate finiscono nel log
+  for (const listener of finishedListeners) {
+    void Promise.resolve()
+      .then(() => listener(analysisId))
+      .catch((err: unknown) => {
+        logger.error({ analysisId, errName: err instanceof Error ? err.name : "unknown" }, "Avviso di fine analisi non riuscito");
+      });
+  }
+}
+
+/**
+ * Titoli delle voci rifiutate dall'utente (`discarded`) nelle analisi dei giri dello stesso ciclo del
+ * giro dato, dalle più recenti, al massimo REJECTED_TITLES_MAX.
+ */
+async function rejectedTitlesForRound(roundId: number): Promise<string[]> {
+  const [round] = await db
+    .select({ cycleId: evolutionRoundsTable.cycleId })
+    .from(evolutionRoundsTable)
+    .where(eq(evolutionRoundsTable.id, roundId))
+    .limit(1);
+  if (!round) return [];
+  const rows = await db
+    .select({ chapter: analysisItemsTable.chapter, payload: analysisItemsTable.payload })
+    .from(analysisItemsTable)
+    .innerJoin(analysesTable, eq(analysesTable.id, analysisItemsTable.analysisId))
+    .innerJoin(evolutionRoundsTable, eq(evolutionRoundsTable.id, analysesTable.evolutionRoundId))
+    .where(
+      and(
+        eq(evolutionRoundsTable.cycleId, round.cycleId),
+        eq(analysisItemsTable.status, "discarded"),
+        inArray(analysisItemsTable.chapter, ["endpoint", "completion", "evolution"]),
+      ),
+    )
+    .orderBy(desc(analysisItemsTable.id))
+    .limit(REJECTED_TITLES_MAX);
+  return rows.map((r) => itemTitle(r.chapter as "endpoint" | "completion" | "evolution", r.payload));
+}
+
+/**
+ * Titoli delle voci del piano dell'App (`loadPlanItems` sulla base: analisi completa più giri del ciclo) ancora in attesa
+ * di decisione, capitoli completion ed evolution, al massimo REJECTED_TITLES_MAX: l'analisi ridotta non le ripropone.
+ */
+async function pendingPlanTitles(appId: number): Promise<string[]> {
+  const base = await latestCompletedAnalysisId(appId);
+  if (base === null) return [];
+  const items = await loadPlanItems(base, appId);
+  return items
+    .filter((i) => i.status === "pending" && (i.chapter === "completion" || i.chapter === "evolution"))
+    .slice(0, REJECTED_TITLES_MAX)
+    .map((i) => itemTitle(i.chapter as "completion" | "evolution", i.payload));
+}
 
 // Ogni chiamata al modello dura almeno 1 s, poi la limita la scadenza dell'analisi
 const MIN_MODEL_CALL_MS = 1_000;
@@ -325,6 +410,26 @@ interface ModelChatOptions {
   rateLimitDelaysMs: number[];
   log: (message: string) => void;
   now: () => number;
+  /** Segnale di annullamento dell'analisi (abortAnalysis). */
+  abortSignal: AbortSignal;
+}
+
+/**
+ * Analisi ancora `running` nel DB: «Ferma» chiude la riga anche quando l'analisi gira in un altro processo o arriva in
+ * mezzo alla presa in carico (il segnale in memoria non c'è). Una lettura per chiave primaria prima di ogni chiamata;
+ * un errore del DB nella lettura si registra (solo il nome) e non ferma l'analisi.
+ */
+export async function assertStillRunning(analysisId: number): Promise<void> {
+  let status: string | undefined;
+  try {
+    const [row] = await db.select({ status: analysesTable.status }).from(analysesTable).where(eq(analysesTable.id, analysisId)).limit(1);
+    status = row?.status;
+  } catch (err) {
+    // Errore passeggero del DB: il controllo è solo una sicurezza in più, l'analisi prosegue (il segnale in memoria resta)
+    logger.warn({ analysisId, errName: err instanceof Error ? err.name : typeof err }, "Controllo dello stato dell'analisi non riuscito");
+    return;
+  }
+  if (status !== "running") throw new AnalysisError(EVOLUTION_MESSAGES.analysisStopped);
 }
 
 function architectChat({
@@ -338,10 +443,14 @@ function architectChat({
   rateLimitDelaysMs,
   log,
   now,
+  abortSignal,
 }: ModelChatOptions) {
   return async (messages: ChatCompletionMessageParam[], tools: ChatCompletionTool[]): Promise<ChatResult> => {
-    // La chiamata non può superare la scadenza complessiva (minimo 1 s)
-    const signal = AbortSignal.timeout(Math.max(MIN_MODEL_CALL_MS, deadline - now()));
+    if (abortSignal.aborted) throw new AnalysisError(EVOLUTION_MESSAGES.analysisStopped);
+    await assertStillRunning(analysisId);
+    // La chiamata non può superare la scadenza complessiva (minimo 1 s) e si ferma con l'annullamento
+    const timeout = AbortSignal.timeout(Math.max(MIN_MODEL_CALL_MS, deadline - now()));
+    const signal = AbortSignal.any([timeout, abortSignal]);
     const options = {
       messages,
       tools,
@@ -392,9 +501,11 @@ function architectChat({
         }
       }
     };
+    let reply: ChatResult;
     try {
-      return await call();
+      reply = await call();
     } catch (err) {
+      if (abortSignal.aborted) throw new AnalysisError(EVOLUTION_MESSAGES.analysisStopped);
       // Messaggi propri: quelli dell'SDK potrebbero contenere URL
       if (signal.aborted) {
         throw new AnalysisError(`tempo massimo dell'analisi (${formatDuration(maxMs)}) scaduto durante la chiamata al modello`);
@@ -407,6 +518,9 @@ function architectChat({
       if (err instanceof ProviderError) throw new AnalysisError(err.message);
       throw new AnalysisError("chiamata al modello non riuscita");
     }
+    // Annullamento arrivato a chiamata conclusa: la fase non prosegue
+    if (abortSignal.aborted) throw new AnalysisError(EVOLUTION_MESSAGES.analysisStopped);
+    return reply;
   };
 }
 
@@ -418,7 +532,6 @@ function architectChat({
  */
 export async function startAnalysis(analysisId: number, opts: StartAnalysisOptions = {}): Promise<void> {
   const now = opts.now ?? Date.now;
-  const maxMs = opts.maxMs ?? ANALYSIS_MAX_MS;
 
   let analysis: Analysis | undefined;
   try {
@@ -433,7 +546,11 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
   }
   if (!analysis) return;
 
-  const budget: PhaseBudget = { tokensUsed: 0, cachedTokens: 0, maxTokens: analysis.maxTokens, deadline: now() + maxMs };
+  const evolution = analysis.mode === "evolution";
+  const maxMs = opts.maxMs ?? (evolution ? EVOLUTION_ANALYSIS_LIMITS.maxMs : ANALYSIS_MAX_MS);
+  const maxTokens = evolution ? Math.min(analysis.maxTokens, EVOLUTION_ANALYSIS_LIMITS.maxTokens) : analysis.maxTokens;
+  const abortSignal = registerAnalysisAbort(analysisId);
+  const budget: PhaseBudget = { tokensUsed: 0, cachedTokens: 0, maxTokens, deadline: now() + maxMs };
   const cost = new CostTracker();
   const progress = new ProgressWriter(analysisId, analysis.log ?? [], budget, cost);
   const log = (message: string) => progress.add(message);
@@ -468,11 +585,32 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
     // Scelta già rifiutata all'avvio; un'analisi accodata prima di quel controllo non chiama il nodo
     if (resolved.kind !== "openai_compatible") throw new AnalysisError(NODE_MODEL_NOT_ALLOWED);
 
+    // Analisi ridotta: sintesi e mappa dall'architettura dell'App (sottoprogetto 1), al posto delle prime fasi
+    let architectureSummary: string | null = null;
+    let savedRepoMap: string | null = null;
+    let rejectedTitles: string[] = [];
+    let pendingTitles: string[] = [];
+    if (evolution) {
+      const [arch] = await db
+        .select({ summary: appArchitectureTable.summary, repoMap: appArchitectureTable.repoMap })
+        .from(appArchitectureTable)
+        .where(eq(appArchitectureTable.appId, app.id))
+        .limit(1);
+      if (!arch?.summary?.trim()) throw new AnalysisError(EVOLUTION_MESSAGES.waitingArchitecture);
+      architectureSummary = arch.summary;
+      savedRepoMap = arch.repoMap ?? "";
+      rejectedTitles = analysis.evolutionRoundId === null ? [] : await rejectedTitlesForRound(analysis.evolutionRoundId);
+      pendingTitles = await pendingPlanTitles(app.id);
+      log(
+        `analisi ridotta del ciclo di evoluzione: ${rejectedTitles.length} voci rifiutate nei giri precedenti, ${pendingTitles.length} in attesa`,
+      );
+    }
+
     const loaded = await loadSources(app, opts, log);
     tree = loaded.tree;
     const { openapi, mcpTools, sources } = loaded;
-    // Mappa calcolata una volta; salvata subito, così resta anche se una fase fallisce
-    const repoMap = buildRepoMap(tree, openapi);
+    // Mappa calcolata una volta (o quella dell'architettura); salvata subito, così resta anche se una fase fallisce
+    const repoMap = savedRepoMap ?? buildRepoMap(tree, openapi);
     await progress.flush({ sources, architectureMap: { repoMap } });
 
     // Senza codice, OpenAPI né elenco MCP i tool derivano solo dalla descrizione: vanno sempre verificati
@@ -488,13 +626,15 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
       rateLimitDelaysMs: opts.rateLimitDelaysMs ?? RATE_LIMIT_DELAYS_MS,
       log,
       now,
+      abortSignal,
     });
     const previous: Partial<Record<PhaseName, unknown>> = {};
     const alreadyPlanned = await chatPlannedItems(app.id, analysisId);
     // Note del passo `best_practice` (eseguito una volta, prima di completion)
     let bestPracticeNotes: string | null = null;
 
-    for (const phase of PHASES) {
+    for (const phase of PHASES_BY_MODE[analysis.mode]) {
+      if (abortSignal.aborted) throw new AnalysisError(EVOLUTION_MESSAGES.analysisStopped);
       progress.phase = phase;
       if (phase === "completion" && analysis.bestPractice) {
         log("verifica delle best practice");
@@ -527,10 +667,12 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
         previous,
         alreadyPlanned,
         existingTools: phase === "catalog" ? await existingToolsForPrompt(app.id) : undefined,
+        ...(evolution ? { architectureSummary, rejectedTitles, pendingTitles } : {}),
         bestPracticeNotes,
       });
       // Quota morbida della fase: solo il sollecito a consegnare; il tetto rigido resta il totale
-      const phaseQuota = Math.floor(PHASE_TOKEN_SHARES[phase] * budget.maxTokens);
+      const share = evolution ? (EVOLUTION_PHASE_SHARES as Partial<Record<PhaseName, number>>)[phase]! : PHASE_TOKEN_SHARES[phase];
+      const phaseQuota = Math.floor(share * budget.maxTokens);
       const outcome = await runPhase({
         phase,
         system: withPersonalInstructions(SYSTEM_BASE, await personalInstructionsBlock(resolved.ownerUserId, "lucius")),
@@ -549,7 +691,8 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
       if (!outcome.ok) {
         log(`fase ${phase} non riuscita`);
         await progress.flush();
-        await close("failed", outcome.error);
+        // Un annullamento durante la fase arriva come errore della chiamata: vale il messaggio fisso
+        await close("failed", abortSignal.aborted ? EVOLUTION_MESSAGES.analysisStopped : outcome.error);
         return;
       }
 
@@ -560,6 +703,9 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
       }
       previous[phase] = result;
 
+      // Annullamento arrivato dopo l'ultima chiamata: nessuna voce scritta
+      if (abortSignal.aborted) throw new AnalysisError(EVOLUTION_MESSAGES.analysisStopped);
+      await assertStillRunning(analysisId);
       // Elementi della fase in un'unica INSERT, con `position` che prosegue nell'analisi
       const inserted = await recordPhaseResult({ analysisId, appId: app.id, phase, result });
 
@@ -567,6 +713,7 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
       await progress.flush(phase === "map" ? { architectureMap: { ...(result as object), repoMap } } : {});
     }
 
+    if (abortSignal.aborted) throw new AnalysisError(EVOLUTION_MESSAGES.analysisStopped);
     await close("completed", null);
   } catch (err) {
     if (!(err instanceof AnalysisError || err instanceof SourceError || err instanceof SourceTreeError)) {
@@ -591,6 +738,8 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
           logger.error({ analysisId, errName: err instanceof Error ? err.name : "unknown" }, "Chiusura dell'analisi non riuscita"),
         );
     }
+    releaseAnalysisAbort(analysisId);
+    notifyFinished(analysisId);
   }
 }
 

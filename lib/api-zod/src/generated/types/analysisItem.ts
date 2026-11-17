@@ -33,4 +33,6 @@ export interface AnalysisItem {
   appliedAt: Date | null;
   /** Issue GitHub collegata alla voce (null se non creata o ancora in prenotazione) */
   issue: ItemIssue | null;
+  /** Approvata dal ciclo di evoluzione automatica */
+  approvedByCycle: boolean;
 }

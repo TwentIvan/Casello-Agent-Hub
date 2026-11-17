@@ -20,6 +20,8 @@ export interface DashboardStats {
   pendingActions: number;
   /** Inneschi fermi in stato error (servono «Riprendi») */
   triggersInError: number;
+  /** Cicli di evoluzione in pausa attivati dall'utente corrente */
+  evolutionCyclesPaused: number;
   /** Nodi dell'utente collegati nelle ultime 24 ore (attivi) */
   recentlyPairedNodes: DashboardStatsRecentlyPairedNodesItem[];
   /** Nodi con un account «Claude Code (nodo)» dell'utente il cui Claude non è pronto */

@@ -109,8 +109,13 @@ le unità UTF-16, come `String.length` di JavaScript, Java e .NET; Python e PHP 
 contengono emoji o caratteri fuori dal piano base (due unità UTF-16 ciascuno) misura in UTF-16 o tronca in modo prudente (per esempio a 50).
 
 Botcave tollera 60 secondi di scarto tra gli orologi. I claim sconosciuti sono ignorati. Errori restituiti: «identità non valida»
-(formato, firma, `iss`, `aud`, lunghezze, `exp` oltre `iat + 600`) e «identità scaduta». Con un token non valido la segnalazione non
-parte con quell'identità: usa «Prova identità» per capire perché.
+(formato, firma, `iss`, `aud`, lunghezze, `exp` oltre `iat + 600`) e «identità scaduta».
+
+Con il segreto configurato, un token **presente ma non valido o scaduto blocca la segnalazione**: Botcave risponde `401` e non ripiega
+sulla chiave del browser. Il pannello chiede allora un token nuovo al tuo endpoint e riprova una volta sola; se anche il secondo token
+è rifiutato la segnalazione non parte e l'utente vede l'errore (se invece l'endpoint risponde `204`, la seconda prova parte anonima con
+la chiave del browser). Un endpoint che emette token sbagliati impedisce quindi di segnalare a tutti gli utenti collegati: usa «Prova
+identità» per capire perché.
 
 Se l'App non ha un segreto, un token presente è ignorato e si usa la chiave del browser.
 

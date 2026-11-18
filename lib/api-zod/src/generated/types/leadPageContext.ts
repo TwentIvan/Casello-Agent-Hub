@@ -5,10 +5,13 @@
  * Casello — hub per agentificare applicazioni
  * OpenAPI spec version: 0.1.0
  */
+import type { LeadPageContextHost } from './leadPageContextHost';
 import type { LeadPageContextPage } from './leadPageContextPage';
 
 export interface LeadPageContext {
   page: LeadPageContextPage;
   /** @pattern ^[A-Za-z0-9._:-]{1,100}$ */
   id?: string;
+  /** Pagina dell'app ospite (pannello incorporato); ammesso solo con page "host", che lo richiede */
+  host?: LeadPageContextHost;
 }

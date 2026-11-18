@@ -38,6 +38,7 @@ import { ownModel } from "../lib/ai/default-model";
 import { createConversation, getConversation } from "../lib/characters/conversations";
 import { decideCharacterProposal, toProposalView, type ProposalView } from "../lib/characters/proposals";
 import { findSubject } from "../lib/characters/registry";
+import { embedHostApp } from "../lib/embed/host-app";
 import { CHARACTER_CHAT_SPEC, TurnBusyError, startCharacterTurn } from "../lib/characters/run-turn";
 import { cancelQueued, getQueued, sendChatMessage, stopChatTurn } from "../lib/chat-turns/control";
 import { getAlfredThread, restartAlfredThread } from "../lib/characters/subjects/alfred-thread";
@@ -219,8 +220,14 @@ export function createCharactersRouter(): IRouter {
       res.status(400).json({ error: CHARACTER_MESSAGES.empty });
       return;
     }
-    const page = body.pageContext ?? null;
+    let page = body.pageContext ?? null;
     await guarded(res, async () => {
+      // Con il pannello incorporato `host.app` lo scrive la pagina ospite: lo slug vero è quello dell'App del token
+      if (page?.host && req.auth?.kind === "token" && req.auth.via === "embed") {
+        // Origine senza App registrata: nessun nome canonico, il contesto della pagina ospite si toglie invece di dare errore
+        const hostApp = req.auth.embedOrigin === undefined ? null : await embedHostApp(req.auth.embedOrigin);
+        page = hostApp ? { ...page, host: { ...page.host, app: hostApp.slug } } : null;
+      }
       const conv = await getConversation(userId, id);
       // Le regole dell'avvio del turno valgono anche per un messaggio che va in coda
       if (content.length > CHARACTER_MESSAGE_MAX_CHARS) throw new CharacterError(400, CHARACTER_MESSAGES.tooLong);

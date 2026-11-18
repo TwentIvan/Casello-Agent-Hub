@@ -1,6 +1,6 @@
 import { Router, type IRouter } from "express";
 import healthRouter from "./health";
-import embedRouter from "./embed";
+import embedRouter, { embedStatusRouter } from "./embed";
 import embedBugsRouter from "./embed-bugs";
 import appsRouter from "./apps";
 import appToolsRouter from "./app-tools";
@@ -53,6 +53,7 @@ router.use("/node", requireNodeToken, createNodeRouter());
 // Abbinamento dei nodi: `start` e `poll` sono pubbliche (il nodo non ha ancora un token), con limiti propri.
 router.use(createNodePairingPublicRouter());
 router.use(requireAuth);
+router.use(embedStatusRouter);
 router.use(appsRouter);
 router.use(appToolsRouter);
 router.use(appArchitectureRouter);

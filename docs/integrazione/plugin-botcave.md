@@ -33,7 +33,8 @@ L'abilitazione la fa l'amministratore di Botcave:
 | `data-position` | no | `right` (predefinito) o `left`. |
 | `data-identity-url` | no | Percorso dell'endpoint d'identità (vedi sotto). |
 
-Il pulsante apre un pannello laterale (a schermo intero sotto i 640 px). Il pannello vive in un iframe di Botcave: la tua pagina
+Il pulsante è una pillola «Botcave» con il LED di stato (a lavoro in corso o con una risposta non letta) e, quando la pagina ha azioni
+configurate, «Botcave · N azioni». Sotto i 640 px diventa un cerchio con il solo segno. Apre un pannello laterale (a schermo intero sotto i 640 px). Il pannello vive in un iframe di Botcave: la tua pagina
 non vede mai i token di accesso di Botcave.
 
 ### Contesto della pagina
@@ -48,7 +49,25 @@ Botcave.close();
 
 `page` e `id` sono 1..40 caratteri tra lettere, cifre e `. _ : -`; `title` al più 200 caratteri su una riga. Un contesto non valido è
 ignorato con un avviso in console. Le chiamate fatte prima del caricamento dello script si accodano da sole. Le schede per
-`open` sono `alfred`, `pending`, `bulletin`, `lucius` e `bugs`.
+`open` sono `alfred`, `lucius`, `lead`, `pending`, `bulletin` e `bugs`.
+
+### Cosa serve davvero nella tua app
+
+**Basta `setContext`.** Chiamalo a ogni cambio di pagina o di oggetto aperto, con un `page` che indica il tipo (`task`, `proposal`,
+`ordine`…) e l'`id` e il `title` dell'oggetto. Non servono pulsanti, endpoint né parti agentiche nella tua app: l'AI la gestisce Botcave.
+
+Le **azioni** (per esempio «Esegui il task» o «Discuti la proposta») si configurano **in Botcave**, non nella tua app:
+
+1. nella scheda dell'App, carta «Azioni del plugin», per ogni tipo di pagina (`page` di `setContext`) aggiungi fino a 6 azioni, ognuna con
+   un'etichetta (1..40 caratteri) e la richiesta che il Responsabile riceve (1..1 000 caratteri; se serve una lettura, di' quale: per esempio
+   «Leggi `GET /api/tasks/:id/abap-execution` e dimmi se si può eseguire»). In alternativa chiedi a Lucius: dalla chat del piano
+   propone le azioni a partire dagli strumenti dell'App e dai tipi di pagina già visti;
+2. sulla pagina con quel `page` il pannello mostra la barra «Stai guardando» con le azioni, e il pulsante «Botcave · N azioni»;
+3. un clic su un'azione apre la scheda del Responsabile e gli manda la richiesta configurata insieme al contesto della pagina. Il
+   Responsabile verifica con i suoi strumenti se è fattibile e risponde; le scritture finiscono in «Da confermare» e le decide l'utente.
+
+Il testo delle azioni non passa mai dalla tua pagina: un'etichetta non configurata in Botcave non si può inviare. Nella carta «Bot del plugin»
+puoi anche dare un nome diverso ad Alfred, a Lucius e al Responsabile per la tua App.
 
 ### Tema
 

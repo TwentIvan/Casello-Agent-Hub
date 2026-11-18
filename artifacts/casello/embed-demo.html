@@ -76,6 +76,7 @@
   <div class="card">
     <p>Fix ordini: pagina di prova dell'app ospite.</p>
     <button id="theme" type="button">Tema scuro</button>
+    <button id="ctx" type="button">Contesto: task</button>
   </div>
   <script>
     var btn = document.getElementById("theme");
@@ -90,7 +91,17 @@
     data-identity-url="/embed-demo-identity.json"
   ></script>
   <script>
+    // Le azioni di ogni tipo di pagina si configurano in Botcave (scheda App, carta «Azioni del plugin»), non qui.
     Botcave.setContext({ page: "workitem", id: "1174", title: "Fix ordini" });
+    var ctx = document.getElementById("ctx");
+    var onTask = false;
+    ctx.addEventListener("click", function () {
+      onTask = !onTask;
+      Botcave.setContext(onTask
+        ? { page: "task", id: "42", title: "Importa i clienti" }
+        : { page: "workitem", id: "1174", title: "Fix ordini" });
+      ctx.textContent = onTask ? "Contesto: work item" : "Contesto: task";
+    });
   </script>
 </body>
 </html>

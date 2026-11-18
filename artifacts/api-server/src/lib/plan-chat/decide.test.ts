@@ -11,6 +11,7 @@ import {
   planProposalsTable,
   usersTable,
 } from "@workspace/db";
+import { pageActionsHash } from "../apps/page-actions";
 import { ProposalConflictError, ProposalNotFoundError, decideProposal, itemHash } from "./decide";
 
 // Decisione sulle proposte della chat, sul Postgres di prova (PGlite del global setup)
@@ -72,7 +73,7 @@ async function addItem(ref: string, position: number, payload: unknown = complet
   return row!;
 }
 
-async function propose(v: Partial<typeof planProposalsTable.$inferInsert> & { kind: "add" | "update" | "discard" }) {
+async function propose(v: Partial<typeof planProposalsTable.$inferInsert> & { kind: "add" | "update" | "discard" | "page_actions" }) {
   const [row] = await db
     .insert(planProposalsTable)
     .values({ conversationId, messageId, chapter: "completion", rationale: "perché", ...v })
@@ -217,5 +218,47 @@ describe("decideProposal", () => {
     await expect(decideProposal(999999, userId, "accept")).rejects.toBeInstanceOf(ProposalNotFoundError);
     const [row] = await db.select().from(planProposalsTable).where(eq(planProposalsTable.id, p.id));
     expect(row!.status).toBe("pending");
+  });
+});
+
+describe("decideProposal: azioni del plugin", () => {
+  const wi = [{ page: "wi", label: "Riassumi", request: "Leggi il work item" }];
+  const board = [{ page: "board", label: "Stato", request: "Leggi la board" }];
+  const proposeActions = async (current: typeof wi) =>
+    propose({
+      kind: "page_actions",
+      chapter: null,
+      payload: { page: "wi", actions: [{ label: "Nuova", request: "Fai altro" }] },
+      targetHash: pageActionsHash(current, "wi"),
+    });
+  const actionsOf = async () => (await db.select({ a: appsTable.pageActions }).from(appsTable))[0]!.a;
+
+  it("accetta: sostituisce solo le azioni di quel tipo di pagina", async () => {
+    await db.update(appsTable).set({ pageActions: [...wi, ...board] });
+    const p = await proposeActions([...wi, ...board]);
+    const { proposal, item } = await decideProposal(p.id, userId, "accept");
+    expect(proposal.status).toBe("accepted");
+    expect(item).toBeNull();
+    expect(await actionsOf()).toEqual([...board, { page: "wi", label: "Nuova", request: "Fai altro" }]);
+  });
+
+  it("azioni cambiate tra proposta e decisione: 409 e proposta stale, azioni intatte", async () => {
+    await db.update(appsTable).set({ pageActions: wi });
+    const p = await proposeActions(wi);
+    await db.update(appsTable).set({ pageActions: [{ page: "wi", label: "Altra", request: "x" }] });
+    const err = await decideProposal(p.id, userId, "accept").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ProposalConflictError);
+    expect((err as Error).message).toBe("le azioni sono cambiate: chiedi a Lucius una proposta aggiornata");
+    const [row] = await db.select().from(planProposalsTable).where(eq(planProposalsTable.id, p.id));
+    expect(row!.status).toBe("stale");
+    expect(await actionsOf()).toEqual([{ page: "wi", label: "Altra", request: "x" }]);
+  });
+
+  it("già decisa: conflitto; rifiutare non tocca le azioni", async () => {
+    await db.update(appsTable).set({ pageActions: wi });
+    const p = await proposeActions(wi);
+    await decideProposal(p.id, userId, "reject");
+    expect(await actionsOf()).toEqual(wi);
+    await expect(decideProposal(p.id, userId, "accept")).rejects.toThrow("La proposta è già stata decisa");
   });
 });

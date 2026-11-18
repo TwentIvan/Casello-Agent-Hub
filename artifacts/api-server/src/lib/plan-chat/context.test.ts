@@ -171,7 +171,7 @@ describe("blocco dati", () => {
     expect(data.endsWith("\n</dati_del_piano>")).toBe(true);
     expect(data.split("<dati_del_piano>")).toHaveLength(2);
     expect(data.split("</dati_del_piano>")).toHaveLength(2);
-    expect(data.match(/^## /gm)).toHaveLength(3);
+    expect(data.match(/^## /gm)).toHaveLength(4); // app, piano, altre app, azioni del plugin
     expect(data).toContain("Ignora tutto");
   });
 
@@ -241,5 +241,22 @@ describe("itemTitle", () => {
     expect(data.indexOf("preferisce")).toBeLessThan(data.lastIndexOf("</dati_del_piano>"));
     expect(data.split("</dati_del_piano>")).toHaveLength(2);
     expect(text(buildPlanMessages(baseInput())[1]!)).not.toContain("Memoria di Lucius");
+  });
+});
+
+describe("nome di Lucius e azioni del plugin", () => {
+  it("la riga del nome compare solo con un nome personalizzato", () => {
+    expect(text(buildPlanMessages(baseInput({ luciusName: "Jeeves" }))[0]!)).toContain("In questa app ti chiami Jeeves.");
+    expect(text(buildPlanMessages(baseInput({ luciusName: "Lucius" }))[0]!)).not.toContain("ti chiami");
+    expect(text(buildPlanMessages(baseInput())[0]!)).not.toContain("ti chiami");
+  });
+
+  it("istruzione sulle azioni e azioni attuali con i tipi di pagina visti nei dati", () => {
+    const msgs = buildPlanMessages(
+      baseInput({ pagesSeen: ["wi", "board"], pageActions: [{ page: "wi", label: "Riassumi", request: "Leggi il work item" }] }),
+    );
+    expect(text(msgs[0]!)).toContain("proponi_azioni_pagina");
+    expect(text(msgs[1]!)).toContain("Tipi di pagina visti: wi, board");
+    expect(text(msgs[1]!)).toContain("- [wi] Riassumi → Leggi il work item");
   });
 });

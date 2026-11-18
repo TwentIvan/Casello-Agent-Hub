@@ -1790,3 +1790,22 @@ DO $$ BEGIN
   ALTER TABLE "evolution_rounds" ADD CONSTRAINT "evolution_rounds_pending_action_id_pending_actions_id_fk" FOREIGN KEY ("pending_action_id") REFERENCES "public"."pending_actions"("id") ON DELETE set null ON UPDATE no action;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
+
+-- Riordino del plugin, parte A (docs/migrations/2026-11-17-plugin-riordino.sql)
+ALTER TYPE "public"."plan_proposal_kind" ADD VALUE IF NOT EXISTS 'page_actions';
+ALTER TABLE "apps" ADD COLUMN IF NOT EXISTS "alfred_name" varchar(40);
+ALTER TABLE "apps" ADD COLUMN IF NOT EXISTS "lucius_name" varchar(40);
+ALTER TABLE "apps" ADD COLUMN IF NOT EXISTS "lead_name" varchar(40);
+ALTER TABLE "apps" ADD COLUMN IF NOT EXISTS "page_actions" jsonb DEFAULT '[]'::jsonb NOT NULL;
+ALTER TABLE "apps" ADD COLUMN IF NOT EXISTS "embed_pages_seen" jsonb DEFAULT '[]'::jsonb NOT NULL;
+ALTER TABLE "lead_conversations" ADD COLUMN IF NOT EXISTS "app_id" integer;
+DO $$ BEGIN
+  ALTER TABLE "lead_conversations" ADD CONSTRAINT "lead_conversations_app_id_apps_id_fk" FOREIGN KEY ("app_id") REFERENCES "public"."apps"("id") ON DELETE cascade ON UPDATE no action;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
+ALTER TABLE "plan_proposals" ALTER COLUMN "chapter" DROP NOT NULL;
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'plan_proposals_chapter_check') THEN
+    ALTER TABLE "plan_proposals" ADD CONSTRAINT "plan_proposals_chapter_check" CHECK ("kind"::text = 'page_actions' OR "chapter" IS NOT NULL);
+  END IF;
+END $$;

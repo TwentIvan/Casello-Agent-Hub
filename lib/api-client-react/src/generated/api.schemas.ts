@@ -229,6 +229,35 @@ export interface EmbedBugsConfig {
   identity: boolean;
 }
 
+export interface PageAction {
+  page: string;
+  label: string;
+  request: string;
+}
+
+export interface PageActionsUpdate {
+  actions: PageAction[];
+}
+
+export interface BotNames {
+  alfred: string;
+  lucius: string;
+  lead: string;
+}
+
+export type EmbedStatusActionsItem = {
+  label: string;
+};
+
+export interface EmbedStatus {
+  pending: number;
+  bugs: number;
+  actions: EmbedStatusActionsItem[];
+  leadAvailable: boolean;
+  leadWorking: boolean;
+  botNames: BotNames;
+}
+
 export interface EmbedConfig {
   bugs: EmbedBugsConfig;
   allowed: boolean;
@@ -447,6 +476,15 @@ export interface AppArchitectureVersion {
   summary?: string;
 }
 
+/**
+ * Nomi effettivi dei bot dell'App (scelti o predefiniti)
+ */
+export type AppBotNames = {
+  alfred: string;
+  lucius: string;
+  lead: string;
+};
+
 export interface App {
   id: number;
   name: string;
@@ -505,10 +543,31 @@ export interface App {
      */
   stagingBranch: string | null;
   /**
+     * Nome scelto per Alfred in questa App (null = predefinito)
+     * @nullable
+     */
+  alfredName: string | null;
+  /**
+     * Nome scelto per Lucius in questa App (null = predefinito)
+     * @nullable
+     */
+  luciusName: string | null;
+  /**
+     * Nome scelto per il Responsabile in questa App (null = predefinito)
+     * @nullable
+     */
+  leadName: string | null;
+  /** Nomi effettivi dei bot dell'App (scelti o predefiniti) */
+  botNames: AppBotNames;
+  /**
      * Indirizzo https dove la CI dell'App pubblica il branch di prova
      * @nullable
      */
   stagingUrl: string | null;
+  /** Azioni della pagina (richieste al Responsabile configurate per tipo di pagina) */
+  pageActions: PageAction[];
+  /** Tipi di pagina visti dal pannello incorporato (più recente in testa) */
+  embedPagesSeen: string[];
   status: AppStatus;
   createdAt: string;
   updatedAt: string;
@@ -881,6 +940,24 @@ export interface AppUpdate {
      * @nullable
      */
   stagingBranch?: string | null;
+  /**
+     * Nome di Alfred in questa App; null torna al predefinito
+     * @maxLength 40
+     * @nullable
+     */
+  alfredName?: string | null;
+  /**
+     * Nome di Lucius in questa App; null torna al predefinito
+     * @maxLength 40
+     * @nullable
+     */
+  luciusName?: string | null;
+  /**
+     * Nome del Responsabile in questa App; null torna al predefinito
+     * @maxLength 40
+     * @nullable
+     */
+  leadName?: string | null;
   /**
      * Indirizzo https della versione di prova; null lo toglie
      * @nullable
@@ -2155,10 +2232,11 @@ export const PlanProposalKind = {
   add: 'add',
   update: 'update',
   discard: 'discard',
+  page_actions: 'page_actions',
 } as const;
 
 /**
- * Contenuto proposto (add e update), null per discard
+ * Contenuto proposto (add e update; per page_actions {page, actions: [{label, request}]}), null per discard
  * @nullable
  */
 export type PlanProposalPayload = { [key: string]: unknown } | null;
@@ -2177,11 +2255,12 @@ export interface PlanProposal {
   id: number;
   messageId: number;
   kind: PlanProposalKind;
-  chapter: AnalysisChapter;
+  /** Capitolo della voce; null per page_actions (azioni del plugin) */
+  chapter: AnalysisChapter | null;
   /** Titolo della voce proposta (per discard, quello della voce di destinazione) */
   title: string;
   /**
-     * Contenuto proposto (add e update), null per discard
+     * Contenuto proposto (add e update; per page_actions {page, actions: [{label, request}]}), null per discard
      * @nullable
      */
   payload: PlanProposalPayload;
@@ -2580,6 +2659,10 @@ export interface LeadChatAvailability {
   aiModelId?: number | null;
   /** @nullable */
   modelName?: string | null;
+  /** Nome del Responsabile dell'App */
+  leadName: string;
+  /** Slug dell'App del Responsabile */
+  appSlug: string;
 }
 
 export interface LeadConversation {
@@ -2617,12 +2700,41 @@ export const LeadPageContextPage = {
   models: 'models',
   account: 'account',
   console: 'console',
+  host: 'host',
 } as const;
+
+/**
+ * Pagina dell'app ospite (pannello incorporato); ammesso solo con page "host", che lo richiede
+ */
+export type LeadPageContextHost = {
+  /** @pattern ^[a-z0-9][a-z0-9-]{0,63}$ */
+  app: string;
+  /**
+     * @minLength 1
+     * @maxLength 40
+     * @pattern ^[A-Za-z0-9._:-]+$
+     */
+  page: string;
+  /**
+     * @minLength 1
+     * @maxLength 40
+     * @pattern ^[A-Za-z0-9._:-]+$
+     */
+  id?: string;
+  /**
+     * @minLength 1
+     * @maxLength 200
+     * @pattern ^[^\r\n]+$
+     */
+  title?: string;
+};
 
 export interface LeadPageContext {
   page: LeadPageContextPage;
   /** @pattern ^[A-Za-z0-9._:-]{1,100}$ */
   id?: string;
+  /** Pagina dell'app ospite (pannello incorporato); ammesso solo con page "host", che lo richiede */
+  host?: LeadPageContextHost;
 }
 
 export interface LeadQueueItem {
@@ -2686,6 +2798,12 @@ export interface LeadMessageCreate {
   /** Da 1 a 4 000 caratteri (controllo del server con messaggi fissi) */
   content: string;
   pageContext?: LeadPageContext;
+  /**
+     * Etichetta di un'azione della pagina dell'app ospite (richiede pageContext.page = host)
+     * @minLength 1
+     * @maxLength 40
+     */
+  actionLabel?: string;
 }
 
 export interface LeadMessageAccepted {
@@ -5130,12 +5248,25 @@ export type EmbedIdentityParameter = string;
 
 export type CharacterQueryParameter = MemoryCharacter;
 
+/**
+ * Slug dell'App del Responsabile (senza: `casello`). Con il pannello incorporato vale solo l'App ospite del client (senza: quella; un'altra App → 404 «App non trovata»).
+ */
+export type LeadAppParamParameter = string;
+
 export type GetEmbedConfigParams = {
 origin?: string;
 /**
  * Slug dell'App ospite, per sapere se le segnalazioni dei bug sono attive.
  */
 app?: string;
+};
+
+export type GetEmbedStatusParams = {
+app?: string;
+/**
+ * Tipo di pagina (1..40 caratteri A-Za-z0-9._:-)
+ */
+page: string;
 };
 
 export type ListEmbedBugsParams = {
@@ -5478,6 +5609,54 @@ subjectType?: CharacterSubjectType;
  * @maxLength 100
  */
 subjectId?: string;
+};
+
+export type GetLeadChatParams = {
+/**
+ * Slug dell'App del Responsabile (senza: `casello`). Con il pannello incorporato vale solo l'App ospite del client (senza: quella; un'altra App → 404 «App non trovata»).
+ * @pattern ^[a-z0-9][a-z0-9-]{0,63}$
+ */
+app?: LeadAppParamParameter;
+};
+
+export type ListLeadConversationsParams = {
+/**
+ * Slug dell'App del Responsabile (senza: `casello`). Con il pannello incorporato vale solo l'App ospite del client (senza: quella; un'altra App → 404 «App non trovata»).
+ * @pattern ^[a-z0-9][a-z0-9-]{0,63}$
+ */
+app?: LeadAppParamParameter;
+};
+
+export type CreateLeadConversationParams = {
+/**
+ * Slug dell'App del Responsabile (senza: `casello`). Con il pannello incorporato vale solo l'App ospite del client (senza: quella; un'altra App → 404 «App non trovata»).
+ * @pattern ^[a-z0-9][a-z0-9-]{0,63}$
+ */
+app?: LeadAppParamParameter;
+};
+
+export type GetLeadConversationParams = {
+/**
+ * Slug dell'App del Responsabile (senza: `casello`). Con il pannello incorporato vale solo l'App ospite del client (senza: quella; un'altra App → 404 «App non trovata»).
+ * @pattern ^[a-z0-9][a-z0-9-]{0,63}$
+ */
+app?: LeadAppParamParameter;
+};
+
+export type DeleteLeadConversationParams = {
+/**
+ * Slug dell'App del Responsabile (senza: `casello`). Con il pannello incorporato vale solo l'App ospite del client (senza: quella; un'altra App → 404 «App non trovata»).
+ * @pattern ^[a-z0-9][a-z0-9-]{0,63}$
+ */
+app?: LeadAppParamParameter;
+};
+
+export type SendLeadMessageParams = {
+/**
+ * Slug dell'App del Responsabile (senza: `casello`). Con il pannello incorporato vale solo l'App ospite del client (senza: quella; un'altra App → 404 «App non trovata»).
+ * @pattern ^[a-z0-9][a-z0-9-]{0,63}$
+ */
+app?: LeadAppParamParameter;
 };
 
 export type ListMemoryNotesParams = {

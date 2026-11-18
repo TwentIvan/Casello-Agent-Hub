@@ -8,7 +8,15 @@ const agent: ChatTarget = { kind: "character", subjectType: "agent", subjectId: 
 
 describe("panelReducer", () => {
   it("stato iniziale chiuso sulla scheda alfred", () => {
-    expect(INITIAL_PANEL_STATE).toEqual({ open: false, tab: "alfred", draft: null, nonce: 0, pageLucius: null, override: null });
+    expect(INITIAL_PANEL_STATE).toEqual({
+      open: false,
+      tab: "alfred",
+      draft: null,
+      nonce: 0,
+      pageLucius: null,
+      override: null,
+      action: null,
+    });
   });
   it("open senza scheda apre sulla scheda corrente", () => {
     const s = panelReducer(base({ tab: "pending" }), { type: "open" });
@@ -72,5 +80,17 @@ describe("panelReducer", () => {
   it("clearOverride riporta all'argomento della pagina", () => {
     const s = panelReducer(base({ pageLucius: plan, override: agent }), { type: "clearOverride" });
     expect(luciusTarget(s)).toEqual(plan);
+  });
+  it("runAction apre il Responsabile con l'azione, una per numero", () => {
+    const s = panelReducer(base({ tab: "pending" }), { type: "runAction", label: "Leggi ABAP" });
+    expect(s).toMatchObject({ open: true, tab: "lead", action: { label: "Leggi ABAP", seq: 1 } });
+    expect(s.nonce).toBe(0);
+    const again = panelReducer(s, { type: "runAction", label: "Leggi ABAP" });
+    expect(again.action).toEqual({ label: "Leggi ABAP", seq: 2 });
+  });
+  it("actionDone toglie solo l'azione con lo stesso numero", () => {
+    const s = panelReducer(base(), { type: "runAction", label: "x" });
+    expect(panelReducer(s, { type: "actionDone", seq: 0 }).action).toEqual({ label: "x", seq: 1 });
+    expect(panelReducer(s, { type: "actionDone", seq: 1 }).action).toBeNull();
   });
 });

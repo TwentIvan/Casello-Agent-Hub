@@ -100,6 +100,44 @@ paths:
               schema:
                 $ref: "#/components/schemas/EmbedConfig"
 
+  /embed/status:
+    get:
+      operationId: getEmbedStatus
+      tags: [embed]
+      summary: Stato del pannello incorporato per una pagina
+      description: >-
+        Solo sessione o token del pannello. Con il token del pannello `app` deve essere l'App ospite del client (altrimenti
+        404 «App non trovata»). Registra il tipo di pagina visto. 60 richieste al minuto per collegamento.
+      parameters:
+        - name: app
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: true
+          description: Tipo di pagina (1..40 caratteri A-Za-z0-9._:-)
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Stato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EmbedStatus"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          description: Troppe richieste
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
   # ─── Segnalazioni dei bug dal plugin (pubbliche) ────────────────────────────
   /embed/bugs:
     get:
@@ -1642,6 +1680,33 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+
+  /apps/{id}/page-actions:
+    put:
+      operationId: updateAppPageActions
+      tags: [apps]
+      summary: Sostituisce le azioni della pagina dell'App
+      description: >-
+        Al più 6 azioni per tipo di pagina e 40 per App, etichette uniche per tipo di pagina. Non vale con il token `agent`.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PageActionsUpdate"
+      responses:
+        "200":
+          description: App aggiornata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/App"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /apps/{id}/architecture:
     get:
@@ -5730,7 +5795,9 @@ paths:
     get:
       operationId: getLeadChat
       tags: [lead-chat]
-      summary: Disponibilità del Responsabile di Botcave per l'utente
+      summary: Disponibilità del Responsabile di un'App per l'utente
+      parameters:
+        - $ref: "#/components/parameters/LeadAppParam"
       responses:
         "200":
           description: Disponibile o motivo
@@ -5738,12 +5805,16 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/LeadChatAvailability"
+        "404":
+          $ref: "#/components/responses/NotFound"
 
   /lead-conversations:
     get:
       operationId: listLeadConversations
       tags: [lead-chat]
-      summary: Conversazioni aperte con il Responsabile (al più 100)
+      summary: Conversazioni aperte con il Responsabile dell'App (al più 100)
+      parameters:
+        - $ref: "#/components/parameters/LeadAppParam"
       responses:
         "200":
           description: Elenco
@@ -5753,11 +5824,15 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/LeadConversation"
+        "404":
+          $ref: "#/components/responses/NotFound"
     post:
       operationId: createLeadConversation
       tags: [lead-chat]
       summary: Nuova conversazione con il Responsabile
       description: 409 se il Responsabile non è disponibile o se l'utente ha già 100 conversazioni aperte.
+      parameters:
+        - $ref: "#/components/parameters/LeadAppParam"
       responses:
         "201":
           description: Conversazione creata
@@ -5765,6 +5840,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/LeadConversation"
+        "404":
+          $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
 
@@ -5773,8 +5850,10 @@ paths:
       operationId: getLeadConversation
       tags: [lead-chat]
       summary: Conversazione con i messaggi e le loro run
+      description: 404 anche se la conversazione è di un'altra App.
       parameters:
         - $ref: "#/components/parameters/IdParam"
+        - $ref: "#/components/parameters/LeadAppParam"
       responses:
         "200":
           description: Conversazione trovata
@@ -5790,6 +5869,7 @@ paths:
       summary: Elimina la conversazione (le run restano)
       parameters:
         - $ref: "#/components/parameters/IdParam"
+        - $ref: "#/components/parameters/LeadAppParam"
       responses:
         "204":
           description: Conversazione eliminata
@@ -5804,8 +5884,11 @@ paths:
       description: >-
         Un messaggio alla volta (409 se la run precedente è in coda o in corso), al più 10 al minuto per utente (429),
         409 col motivo se il Responsabile non è disponibile o il tetto di spesa è raggiunto, 429 se la coda è piena.
+        Con `actionLabel` (solo con `pageContext.page = host`) il server cerca l'azione per pagina ed etichetta nelle azioni
+        dell'App e usa la richiesta salvata; non trovata → 400 «azione non trovata: ricarica il pannello».
       parameters:
         - $ref: "#/components/parameters/IdParam"
+        - $ref: "#/components/parameters/LeadAppParam"
       requestBody:
         required: true
         content:
@@ -6163,6 +6246,17 @@ components:
       required: true
       schema:
         type: integer
+
+    LeadAppParam:
+      name: app
+      in: query
+      required: false
+      description: >-
+        Slug dell'App del Responsabile (senza: `casello`). Con il pannello incorporato vale solo l'App ospite del client
+        (senza: quella; un'altra App → 404 «App non trovata»).
+      schema:
+        type: string
+        pattern: "^[a-z0-9][a-z0-9-]{0,63}$"
 
     AttachmentIdParam:
       name: attachmentId
@@ -6577,6 +6671,56 @@ components:
           type: boolean
         identity:
           type: boolean
+    PageAction:
+      type: object
+      required: [page, label, request]
+      properties:
+        page:
+          type: string
+        label:
+          type: string
+        request:
+          type: string
+    PageActionsUpdate:
+      type: object
+      required: [actions]
+      properties:
+        actions:
+          type: array
+          items:
+            $ref: "#/components/schemas/PageAction"
+    BotNames:
+      type: object
+      required: [alfred, lucius, lead]
+      properties:
+        alfred:
+          type: string
+        lucius:
+          type: string
+        lead:
+          type: string
+    EmbedStatus:
+      type: object
+      required: [pending, bugs, actions, leadAvailable, leadWorking, botNames]
+      properties:
+        pending:
+          type: integer
+        bugs:
+          type: integer
+        actions:
+          type: array
+          items:
+            type: object
+            required: [label]
+            properties:
+              label:
+                type: string
+        leadAvailable:
+          type: boolean
+        leadWorking:
+          type: boolean
+        botNames:
+          $ref: "#/components/schemas/BotNames"
     EmbedConfig:
       type: object
       required: [allowed, clientId, appName, bugs]
@@ -6817,7 +6961,7 @@ components:
 
     App:
       type: object
-      required: [id, name, slug, baseUrl, status, serviceSecretSet, extraHeaders, sourceType, sourceRepo, sourceBranch, sourceTokenSet, sourceInstallationId, openapiUrl, functionalDescription, architectureRefresh, stagingBranch, stagingUrl, createdAt, updatedAt]
+      required: [id, name, slug, baseUrl, status, serviceSecretSet, extraHeaders, sourceType, sourceRepo, sourceBranch, sourceTokenSet, sourceInstallationId, openapiUrl, functionalDescription, architectureRefresh, stagingBranch, stagingUrl, alfredName, luciusName, leadName, botNames, pageActions, embedPagesSeen, createdAt, updatedAt]
       properties:
         id:
           type: integer
@@ -6878,9 +7022,39 @@ components:
         stagingBranch:
           type: ["string", "null"]
           description: Branch di prova dell'App, riscritto da Botcave a ogni lavoro delle squadre (null = nessuna versione di prova)
+        alfredName:
+          type: ["string", "null"]
+          description: Nome scelto per Alfred in questa App (null = predefinito)
+        luciusName:
+          type: ["string", "null"]
+          description: Nome scelto per Lucius in questa App (null = predefinito)
+        leadName:
+          type: ["string", "null"]
+          description: Nome scelto per il Responsabile in questa App (null = predefinito)
+        botNames:
+          type: object
+          description: Nomi effettivi dei bot dell'App (scelti o predefiniti)
+          required: [alfred, lucius, lead]
+          properties:
+            alfred:
+              type: string
+            lucius:
+              type: string
+            lead:
+              type: string
         stagingUrl:
           type: ["string", "null"]
           description: Indirizzo https dove la CI dell'App pubblica il branch di prova
+        pageActions:
+          type: array
+          description: Azioni della pagina (richieste al Responsabile configurate per tipo di pagina)
+          items:
+            $ref: "#/components/schemas/PageAction"
+        embedPagesSeen:
+          type: array
+          description: Tipi di pagina visti dal pannello incorporato (più recente in testa)
+          items:
+            type: string
         status:
           $ref: "#/components/schemas/AppStatus"
         createdAt:
@@ -7342,6 +7516,18 @@ components:
         stagingBranch:
           type: ["string", "null"]
           description: Branch di prova (non il base, non main/master, non botcave/…); null lo toglie
+        alfredName:
+          type: ["string", "null"]
+          maxLength: 40
+          description: Nome di Alfred in questa App; null torna al predefinito
+        luciusName:
+          type: ["string", "null"]
+          maxLength: 40
+          description: Nome di Lucius in questa App; null torna al predefinito
+        leadName:
+          type: ["string", "null"]
+          maxLength: 40
+          description: Nome del Responsabile in questa App; null torna al predefinito
         stagingUrl:
           type: ["string", "null"]
           description: Indirizzo https della versione di prova; null lo toglie
@@ -8818,16 +9004,19 @@ components:
           type: integer
         kind:
           type: string
-          enum: [add, update, discard]
+          enum: [add, update, discard, page_actions]
         chapter:
-          $ref: "#/components/schemas/AnalysisChapter"
+          description: "Capitolo della voce; null per page_actions (azioni del plugin)"
+          oneOf:
+            - $ref: "#/components/schemas/AnalysisChapter"
+            - type: "null"
         title:
           type: string
           description: Titolo della voce proposta (per discard, quello della voce di destinazione)
         payload:
           type: ["object", "null"]
           additionalProperties: true
-          description: Contenuto proposto (add e update), null per discard
+          description: "Contenuto proposto (add e update; per page_actions {page, actions: [{label, request}]}), null per discard"
         rationale:
           type: string
         targetItemId:
@@ -9269,7 +9458,7 @@ components:
 
     LeadChatAvailability:
       type: object
-      required: [available]
+      required: [available, leadName, appSlug]
       properties:
         available:
           type: boolean
@@ -9286,6 +9475,12 @@ components:
           type: ["integer", "null"]
         modelName:
           type: ["string", "null"]
+        leadName:
+          type: string
+          description: Nome del Responsabile dell'App
+        appSlug:
+          type: string
+          description: Slug dell'App del Responsabile
 
     LeadConversation:
       type: object
@@ -9311,10 +9506,34 @@ components:
       properties:
         page:
           type: string
-          enum: [dashboard, apps, app, app_plan, analysis, agents, agent, runs, run, pending_actions, skills, skill, team_templates, team_template, teams, team, models, account, console]
+          enum: [dashboard, apps, app, app_plan, analysis, agents, agent, runs, run, pending_actions, skills, skill, team_templates, team_template, teams, team, models, account, console, host]
         id:
           type: string
           pattern: "^[A-Za-z0-9._:-]{1,100}$"
+        host:
+          type: object
+          description: Pagina dell'app ospite (pannello incorporato); ammesso solo con page "host", che lo richiede
+          required: [app, page]
+          additionalProperties: false
+          properties:
+            app:
+              type: string
+              pattern: "^[a-z0-9][a-z0-9-]{0,63}$"
+            page:
+              type: string
+              minLength: 1
+              maxLength: 40
+              pattern: "^[A-Za-z0-9._:-]+$"
+            id:
+              type: string
+              minLength: 1
+              maxLength: 40
+              pattern: "^[A-Za-z0-9._:-]+$"
+            title:
+              type: string
+              minLength: 1
+              maxLength: 200
+              pattern: "^[^\\r\\n]+$"
 
     LeadQueueItem:
       type: object
@@ -9413,6 +9632,11 @@ components:
           description: Da 1 a 4 000 caratteri (controllo del server con messaggi fissi)
         pageContext:
           $ref: "#/components/schemas/LeadPageContext"
+        actionLabel:
+          type: string
+          minLength: 1
+          maxLength: 40
+          description: Etichetta di un'azione della pagina dell'app ospite (richiede pageContext.page = host)
 
     LeadMessageAccepted:
       type: object

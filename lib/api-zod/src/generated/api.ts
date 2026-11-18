@@ -38,6 +38,31 @@ export const GetEmbedConfigResponse = zod.object({
 
 
 /**
+ * Solo sessione o token del pannello. Con il token del pannello `app` deve essere l'App ospite del client (altrimenti 404 «App non trovata»). Registra il tipo di pagina visto. 60 richieste al minuto per collegamento.
+ * @summary Stato del pannello incorporato per una pagina
+ */
+export const GetEmbedStatusQueryParams = zod.object({
+  "app": zod.coerce.string().optional(),
+  "page": zod.coerce.string().describe('Tipo di pagina (1..40 caratteri A-Za-z0-9._:-)')
+})
+
+export const GetEmbedStatusResponse = zod.object({
+  "pending": zod.number(),
+  "bugs": zod.number(),
+  "actions": zod.array(zod.object({
+  "label": zod.string()
+})),
+  "leadAvailable": zod.boolean(),
+  "leadWorking": zod.boolean(),
+  "botNames": zod.object({
+  "alfred": zod.string(),
+  "lucius": zod.string(),
+  "lead": zod.string()
+})
+})
+
+
+/**
  * Al più 50, le più recenti prima. Origine non ammessa o diversa da quella dell'App, App inesistente o con le segnalazioni spente: sempre 404 «segnalazioni non disponibili». 60 richieste al minuto per IP.
  * @summary Le segnalazioni del visitatore in un'App (pubblica)
  */
@@ -1675,7 +1700,21 @@ export const ListAppsResponseItem = zod.object({
   "functionalDescription": zod.string().nullable().describe('Descrizione funzionale dell\'app per l\'architetto'),
   "architectureRefresh": zod.enum(['off', 'hourly', '6h', 'daily', 'weekly']).describe('Frequenza di controllo della sintesi dell\'architettura'),
   "stagingBranch": zod.string().nullable().describe('Branch di prova dell\'App, riscritto da Botcave a ogni lavoro delle squadre (null = nessuna versione di prova)'),
+  "alfredName": zod.string().nullable().describe('Nome scelto per Alfred in questa App (null = predefinito)'),
+  "luciusName": zod.string().nullable().describe('Nome scelto per Lucius in questa App (null = predefinito)'),
+  "leadName": zod.string().nullable().describe('Nome scelto per il Responsabile in questa App (null = predefinito)'),
+  "botNames": zod.object({
+  "alfred": zod.string(),
+  "lucius": zod.string(),
+  "lead": zod.string()
+}).describe('Nomi effettivi dei bot dell\'App (scelti o predefiniti)'),
   "stagingUrl": zod.string().nullable().describe('Indirizzo https dove la CI dell\'App pubblica il branch di prova'),
+  "pageActions": zod.array(zod.object({
+  "page": zod.string(),
+  "label": zod.string(),
+  "request": zod.string()
+})).describe('Azioni della pagina (richieste al Responsabile configurate per tipo di pagina)'),
+  "embedPagesSeen": zod.array(zod.string()).describe('Tipi di pagina visti dal pannello incorporato (più recente in testa)'),
   "status": zod.enum(['active', 'inactive']),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -1758,7 +1797,21 @@ export const CreateAppResponse = zod.object({
   "functionalDescription": zod.string().nullable().describe('Descrizione funzionale dell\'app per l\'architetto'),
   "architectureRefresh": zod.enum(['off', 'hourly', '6h', 'daily', 'weekly']).describe('Frequenza di controllo della sintesi dell\'architettura'),
   "stagingBranch": zod.string().nullable().describe('Branch di prova dell\'App, riscritto da Botcave a ogni lavoro delle squadre (null = nessuna versione di prova)'),
+  "alfredName": zod.string().nullable().describe('Nome scelto per Alfred in questa App (null = predefinito)'),
+  "luciusName": zod.string().nullable().describe('Nome scelto per Lucius in questa App (null = predefinito)'),
+  "leadName": zod.string().nullable().describe('Nome scelto per il Responsabile in questa App (null = predefinito)'),
+  "botNames": zod.object({
+  "alfred": zod.string(),
+  "lucius": zod.string(),
+  "lead": zod.string()
+}).describe('Nomi effettivi dei bot dell\'App (scelti o predefiniti)'),
   "stagingUrl": zod.string().nullable().describe('Indirizzo https dove la CI dell\'App pubblica il branch di prova'),
+  "pageActions": zod.array(zod.object({
+  "page": zod.string(),
+  "label": zod.string(),
+  "request": zod.string()
+})).describe('Azioni della pagina (richieste al Responsabile configurate per tipo di pagina)'),
+  "embedPagesSeen": zod.array(zod.string()).describe('Tipi di pagina visti dal pannello incorporato (più recente in testa)'),
   "status": zod.enum(['active', 'inactive']),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -1808,7 +1861,21 @@ export const GetAppResponse = zod.object({
   "functionalDescription": zod.string().nullable().describe('Descrizione funzionale dell\'app per l\'architetto'),
   "architectureRefresh": zod.enum(['off', 'hourly', '6h', 'daily', 'weekly']).describe('Frequenza di controllo della sintesi dell\'architettura'),
   "stagingBranch": zod.string().nullable().describe('Branch di prova dell\'App, riscritto da Botcave a ogni lavoro delle squadre (null = nessuna versione di prova)'),
+  "alfredName": zod.string().nullable().describe('Nome scelto per Alfred in questa App (null = predefinito)'),
+  "luciusName": zod.string().nullable().describe('Nome scelto per Lucius in questa App (null = predefinito)'),
+  "leadName": zod.string().nullable().describe('Nome scelto per il Responsabile in questa App (null = predefinito)'),
+  "botNames": zod.object({
+  "alfred": zod.string(),
+  "lucius": zod.string(),
+  "lead": zod.string()
+}).describe('Nomi effettivi dei bot dell\'App (scelti o predefiniti)'),
   "stagingUrl": zod.string().nullable().describe('Indirizzo https dove la CI dell\'App pubblica il branch di prova'),
+  "pageActions": zod.array(zod.object({
+  "page": zod.string(),
+  "label": zod.string(),
+  "request": zod.string()
+})).describe('Azioni della pagina (richieste al Responsabile configurate per tipo di pagina)'),
+  "embedPagesSeen": zod.array(zod.string()).describe('Tipi di pagina visti dal pannello incorporato (più recente in testa)'),
   "status": zod.enum(['active', 'inactive']),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -1825,6 +1892,12 @@ export const UpdateAppParams = zod.object({
 
 
 
+
+export const updateAppBodyAlfredNameMax = 40;
+
+export const updateAppBodyLuciusNameMax = 40;
+
+export const updateAppBodyLeadNameMax = 40;
 
 
 
@@ -1856,6 +1929,9 @@ export const UpdateAppBody = zod.object({
   "functionalDescription": zod.string().nullish(),
   "architectureRefresh": zod.enum(['off', 'hourly', '6h', 'daily', 'weekly']).optional().describe('Frequenza di controllo della sintesi dell\'architettura'),
   "stagingBranch": zod.string().nullish().describe('Branch di prova (non il base, non main\/master, non botcave\/…); null lo toglie'),
+  "alfredName": zod.string().max(updateAppBodyAlfredNameMax).nullish().describe('Nome di Alfred in questa App; null torna al predefinito'),
+  "luciusName": zod.string().max(updateAppBodyLuciusNameMax).nullish().describe('Nome di Lucius in questa App; null torna al predefinito'),
+  "leadName": zod.string().max(updateAppBodyLeadNameMax).nullish().describe('Nome del Responsabile in questa App; null torna al predefinito'),
   "stagingUrl": zod.string().nullish().describe('Indirizzo https della versione di prova; null lo toglie'),
   "status": zod.enum(['active', 'inactive']).optional()
 })
@@ -1896,7 +1972,21 @@ export const UpdateAppResponse = zod.object({
   "functionalDescription": zod.string().nullable().describe('Descrizione funzionale dell\'app per l\'architetto'),
   "architectureRefresh": zod.enum(['off', 'hourly', '6h', 'daily', 'weekly']).describe('Frequenza di controllo della sintesi dell\'architettura'),
   "stagingBranch": zod.string().nullable().describe('Branch di prova dell\'App, riscritto da Botcave a ogni lavoro delle squadre (null = nessuna versione di prova)'),
+  "alfredName": zod.string().nullable().describe('Nome scelto per Alfred in questa App (null = predefinito)'),
+  "luciusName": zod.string().nullable().describe('Nome scelto per Lucius in questa App (null = predefinito)'),
+  "leadName": zod.string().nullable().describe('Nome scelto per il Responsabile in questa App (null = predefinito)'),
+  "botNames": zod.object({
+  "alfred": zod.string(),
+  "lucius": zod.string(),
+  "lead": zod.string()
+}).describe('Nomi effettivi dei bot dell\'App (scelti o predefiniti)'),
   "stagingUrl": zod.string().nullable().describe('Indirizzo https dove la CI dell\'App pubblica il branch di prova'),
+  "pageActions": zod.array(zod.object({
+  "page": zod.string(),
+  "label": zod.string(),
+  "request": zod.string()
+})).describe('Azioni della pagina (richieste al Responsabile configurate per tipo di pagina)'),
+  "embedPagesSeen": zod.array(zod.string()).describe('Tipi di pagina visti dal pannello incorporato (più recente in testa)'),
   "status": zod.enum(['active', 'inactive']),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
@@ -1911,6 +2001,79 @@ export const DeleteAppParams = zod.object({
 })
 
 export const DeleteAppResponse = zod.void()
+
+
+/**
+ * Al più 6 azioni per tipo di pagina e 40 per App, etichette uniche per tipo di pagina. Non vale con il token `agent`.
+ * @summary Sostituisce le azioni della pagina dell'App
+ */
+export const UpdateAppPageActionsParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateAppPageActionsBody = zod.object({
+  "actions": zod.array(zod.object({
+  "page": zod.string(),
+  "label": zod.string(),
+  "request": zod.string()
+}))
+})
+
+
+
+export const updateAppPageActionsResponseExtraHeadersMax = 10;
+
+
+
+export const UpdateAppPageActionsResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "slug": zod.string(),
+  "description": zod.string().nullish(),
+  "baseUrl": zod.string(),
+  "internalBaseUrl": zod.string().nullish().describe('URL raggiunto dall\'esecutore al posto di baseUrl (rete interna)'),
+  "mcpUrl": zod.string().nullish().describe('Indirizzo del server MCP dell\'app'),
+  "userAuth": zod.union([zod.object({
+  "header": zod.string().min(1),
+  "scheme": zod.string().nullable()
+}).describe('Come l\'app riceve le credenziali (scheme null = valore grezzo)'),zod.null()]).optional(),
+  "serviceAuth": zod.union([zod.object({
+  "header": zod.string().min(1),
+  "scheme": zod.string().nullable()
+}).describe('Come l\'app riceve le credenziali (scheme null = valore grezzo)'),zod.null()]).optional(),
+  "serviceSecretSet": zod.boolean().describe('Indica se il segreto di servizio è impostato (il valore non è mai esposto)'),
+  "extraHeaders": zod.array(zod.object({
+  "name": zod.string(),
+  "value": zod.string()
+}).describe('Header HTTP fisso (non segreto) mandato su ogni chiamata ai tool dell\'app, HTTP e MCP')).max(updateAppPageActionsResponseExtraHeadersMax).describe('Header fissi (non segreti) mandati su ogni chiamata ai tool dell\'app, HTTP e MCP'),
+  "sourceType": zod.enum(['github', 'zip', 'none']).describe('Da dove l\'architetto legge il codice dell\'app'),
+  "sourceRepo": zod.string().nullable().describe('Repository GitHub nel formato owner\/nome'),
+  "sourceBranch": zod.string().nullable(),
+  "sourceTokenSet": zod.boolean().describe('Indica se il token GitHub di sola lettura è impostato (il valore non è mai esposto)'),
+  "sourceInstallationId": zod.number().nullable().describe('Installazione della GitHub App da cui l\'architetto scarica il repo (con un token ristretto a quel repo); null = token manuale della fase 3'),
+  "openapiUrl": zod.string().nullable().describe('URL dell\'OpenAPI dell\'app, letto (GET) dall\'architetto'),
+  "functionalDescription": zod.string().nullable().describe('Descrizione funzionale dell\'app per l\'architetto'),
+  "architectureRefresh": zod.enum(['off', 'hourly', '6h', 'daily', 'weekly']).describe('Frequenza di controllo della sintesi dell\'architettura'),
+  "stagingBranch": zod.string().nullable().describe('Branch di prova dell\'App, riscritto da Botcave a ogni lavoro delle squadre (null = nessuna versione di prova)'),
+  "alfredName": zod.string().nullable().describe('Nome scelto per Alfred in questa App (null = predefinito)'),
+  "luciusName": zod.string().nullable().describe('Nome scelto per Lucius in questa App (null = predefinito)'),
+  "leadName": zod.string().nullable().describe('Nome scelto per il Responsabile in questa App (null = predefinito)'),
+  "botNames": zod.object({
+  "alfred": zod.string(),
+  "lucius": zod.string(),
+  "lead": zod.string()
+}).describe('Nomi effettivi dei bot dell\'App (scelti o predefiniti)'),
+  "stagingUrl": zod.string().nullable().describe('Indirizzo https dove la CI dell\'App pubblica il branch di prova'),
+  "pageActions": zod.array(zod.object({
+  "page": zod.string(),
+  "label": zod.string(),
+  "request": zod.string()
+})).describe('Azioni della pagina (richieste al Responsabile configurate per tipo di pagina)'),
+  "embedPagesSeen": zod.array(zod.string()).describe('Tipi di pagina visti dal pannello incorporato (più recente in testa)'),
+  "status": zod.enum(['active', 'inactive']),
+  "createdAt": zod.coerce.date(),
+  "updatedAt": zod.coerce.date()
+})
 
 
 /**
@@ -6979,10 +7142,10 @@ export const GetPlanConversationResponse = zod.object({
   "proposals": zod.array(zod.object({
   "id": zod.number(),
   "messageId": zod.number(),
-  "kind": zod.enum(['add', 'update', 'discard']),
-  "chapter": zod.enum(['tool', 'agent', 'skill', 'endpoint', 'completion', 'evolution']),
+  "kind": zod.enum(['add', 'update', 'discard', 'page_actions']),
+  "chapter": zod.union([zod.enum(['tool', 'agent', 'skill', 'endpoint', 'completion', 'evolution']),zod.null()]).describe('Capitolo della voce; null per page_actions (azioni del plugin)'),
   "title": zod.string().describe('Titolo della voce proposta (per discard, quello della voce di destinazione)'),
-  "payload": zod.record(zod.string(), zod.unknown()).nullable().describe('Contenuto proposto (add e update), null per discard'),
+  "payload": zod.record(zod.string(), zod.unknown()).nullable().describe('Contenuto proposto (add e update; per page_actions {page, actions: [{label, request}]}), null per discard'),
   "rationale": zod.string(),
   "targetItemId": zod.number().nullable(),
   "status": zod.enum(['pending', 'accepted', 'rejected', 'stale']),
@@ -7111,10 +7274,10 @@ export const DecidePlanProposalResponse = zod.object({
   "proposal": zod.object({
   "id": zod.number(),
   "messageId": zod.number(),
-  "kind": zod.enum(['add', 'update', 'discard']),
-  "chapter": zod.enum(['tool', 'agent', 'skill', 'endpoint', 'completion', 'evolution']),
+  "kind": zod.enum(['add', 'update', 'discard', 'page_actions']),
+  "chapter": zod.union([zod.enum(['tool', 'agent', 'skill', 'endpoint', 'completion', 'evolution']),zod.null()]).describe('Capitolo della voce; null per page_actions (azioni del plugin)'),
   "title": zod.string().describe('Titolo della voce proposta (per discard, quello della voce di destinazione)'),
-  "payload": zod.record(zod.string(), zod.unknown()).nullable().describe('Contenuto proposto (add e update), null per discard'),
+  "payload": zod.record(zod.string(), zod.unknown()).nullable().describe('Contenuto proposto (add e update; per page_actions {page, actions: [{label, request}]}), null per discard'),
   "rationale": zod.string(),
   "targetItemId": zod.number().nullable(),
   "status": zod.enum(['pending', 'accepted', 'rejected', 'stale']),
@@ -8028,8 +8191,15 @@ export const CancelQueuedCharacterMessageResponse = zod.void()
 
 
 /**
- * @summary Disponibilità del Responsabile di Botcave per l'utente
+ * @summary Disponibilità del Responsabile di un'App per l'utente
  */
+export const getLeadChatQueryAppRegExp = new RegExp('^[a-z0-9][a-z0-9-]{0,63}$');
+
+
+export const GetLeadChatQueryParams = zod.object({
+  "app": zod.coerce.string().regex(getLeadChatQueryAppRegExp).optional().describe('Slug dell\'App del Responsabile (senza: `casello`). Con il pannello incorporato vale solo l\'App ospite del client (senza: quella; un\'altra App → 404 «App non trovata»).')
+})
+
 export const GetLeadChatResponse = zod.object({
   "available": zod.boolean(),
   "reason": zod.string().nullish().describe('Motivo quando non disponibile'),
@@ -8037,13 +8207,22 @@ export const GetLeadChatResponse = zod.object({
   "agentName": zod.string().nullish(),
   "appName": zod.string().nullish(),
   "aiModelId": zod.number().nullish(),
-  "modelName": zod.string().nullish()
+  "modelName": zod.string().nullish(),
+  "leadName": zod.string().describe('Nome del Responsabile dell\'App'),
+  "appSlug": zod.string().describe('Slug dell\'App del Responsabile')
 })
 
 
 /**
- * @summary Conversazioni aperte con il Responsabile (al più 100)
+ * @summary Conversazioni aperte con il Responsabile dell'App (al più 100)
  */
+export const listLeadConversationsQueryAppRegExp = new RegExp('^[a-z0-9][a-z0-9-]{0,63}$');
+
+
+export const ListLeadConversationsQueryParams = zod.object({
+  "app": zod.coerce.string().regex(listLeadConversationsQueryAppRegExp).optional().describe('Slug dell\'App del Responsabile (senza: `casello`). Con il pannello incorporato vale solo l\'App ospite del client (senza: quella; un\'altra App → 404 «App non trovata»).')
+})
+
 export const ListLeadConversationsResponseItem = zod.object({
   "id": zod.number(),
   "title": zod.string(),
@@ -8058,6 +8237,13 @@ export const ListLeadConversationsResponse = zod.array(ListLeadConversationsResp
  * 409 se il Responsabile non è disponibile o se l'utente ha già 100 conversazioni aperte.
  * @summary Nuova conversazione con il Responsabile
  */
+export const createLeadConversationQueryAppRegExp = new RegExp('^[a-z0-9][a-z0-9-]{0,63}$');
+
+
+export const CreateLeadConversationQueryParams = zod.object({
+  "app": zod.coerce.string().regex(createLeadConversationQueryAppRegExp).optional().describe('Slug dell\'App del Responsabile (senza: `casello`). Con il pannello incorporato vale solo l\'App ospite del client (senza: quella; un\'altra App → 404 «App non trovata»).')
+})
+
 export const CreateLeadConversationResponse = zod.object({
   "id": zod.number(),
   "title": zod.string(),
@@ -8068,13 +8254,34 @@ export const CreateLeadConversationResponse = zod.object({
 
 
 /**
+ * 404 anche se la conversazione è di un'altra App.
  * @summary Conversazione con i messaggi e le loro run
  */
 export const GetLeadConversationParams = zod.object({
   "id": zod.coerce.number()
 })
 
+export const getLeadConversationQueryAppRegExp = new RegExp('^[a-z0-9][a-z0-9-]{0,63}$');
+
+
+export const GetLeadConversationQueryParams = zod.object({
+  "app": zod.coerce.string().regex(getLeadConversationQueryAppRegExp).optional().describe('Slug dell\'App del Responsabile (senza: `casello`). Con il pannello incorporato vale solo l\'App ospite del client (senza: quella; un\'altra App → 404 «App non trovata»).')
+})
+
 export const getLeadConversationResponseMessagesItemPageContextOneIdRegExp = new RegExp('^[A-Za-z0-9._:-]{1,100}$');
+export const getLeadConversationResponseMessagesItemPageContextOneHostAppRegExp = new RegExp('^[a-z0-9][a-z0-9-]{0,63}$');
+export const getLeadConversationResponseMessagesItemPageContextOneHostPageMax = 40;
+
+
+export const getLeadConversationResponseMessagesItemPageContextOneHostPageRegExp = new RegExp('^[A-Za-z0-9._:-]+$');
+export const getLeadConversationResponseMessagesItemPageContextOneHostIdMax = 40;
+
+
+export const getLeadConversationResponseMessagesItemPageContextOneHostIdRegExp = new RegExp('^[A-Za-z0-9._:-]+$');
+export const getLeadConversationResponseMessagesItemPageContextOneHostTitleMax = 200;
+
+
+export const getLeadConversationResponseMessagesItemPageContextOneHostTitleRegExp = new RegExp('^[^\\r\\n]+$');
 
 
 export const GetLeadConversationResponse = zod.object({
@@ -8091,8 +8298,14 @@ export const GetLeadConversationResponse = zod.object({
   "id": zod.number(),
   "content": zod.string(),
   "pageContext": zod.union([zod.object({
-  "page": zod.enum(['dashboard', 'apps', 'app', 'app_plan', 'analysis', 'agents', 'agent', 'runs', 'run', 'pending_actions', 'skills', 'skill', 'team_templates', 'team_template', 'teams', 'team', 'models', 'account', 'console']),
-  "id": zod.string().regex(getLeadConversationResponseMessagesItemPageContextOneIdRegExp).optional()
+  "page": zod.enum(['dashboard', 'apps', 'app', 'app_plan', 'analysis', 'agents', 'agent', 'runs', 'run', 'pending_actions', 'skills', 'skill', 'team_templates', 'team_template', 'teams', 'team', 'models', 'account', 'console', 'host']),
+  "id": zod.string().regex(getLeadConversationResponseMessagesItemPageContextOneIdRegExp).optional(),
+  "host": zod.object({
+  "app": zod.string().regex(getLeadConversationResponseMessagesItemPageContextOneHostAppRegExp),
+  "page": zod.string().min(1).max(getLeadConversationResponseMessagesItemPageContextOneHostPageMax).regex(getLeadConversationResponseMessagesItemPageContextOneHostPageRegExp),
+  "id": zod.string().min(1).max(getLeadConversationResponseMessagesItemPageContextOneHostIdMax).regex(getLeadConversationResponseMessagesItemPageContextOneHostIdRegExp).optional(),
+  "title": zod.string().min(1).max(getLeadConversationResponseMessagesItemPageContextOneHostTitleMax).regex(getLeadConversationResponseMessagesItemPageContextOneHostTitleRegExp).optional()
+}).optional().describe('Pagina dell\'app ospite (pannello incorporato); ammesso solo con page \"host\", che lo richiede')
 }),zod.null()]),
   "createdAt": zod.coerce.date(),
   "run": zod.union([zod.object({
@@ -8127,26 +8340,62 @@ export const DeleteLeadConversationParams = zod.object({
   "id": zod.coerce.number()
 })
 
+export const deleteLeadConversationQueryAppRegExp = new RegExp('^[a-z0-9][a-z0-9-]{0,63}$');
+
+
+export const DeleteLeadConversationQueryParams = zod.object({
+  "app": zod.coerce.string().regex(deleteLeadConversationQueryAppRegExp).optional().describe('Slug dell\'App del Responsabile (senza: `casello`). Con il pannello incorporato vale solo l\'App ospite del client (senza: quella; un\'altra App → 404 «App non trovata»).')
+})
+
 export const DeleteLeadConversationResponse = zod.void()
 
 
 /**
- * Un messaggio alla volta (409 se la run precedente è in coda o in corso), al più 10 al minuto per utente (429), 409 col motivo se il Responsabile non è disponibile o il tetto di spesa è raggiunto, 429 se la coda è piena.
+ * Un messaggio alla volta (409 se la run precedente è in coda o in corso), al più 10 al minuto per utente (429), 409 col motivo se il Responsabile non è disponibile o il tetto di spesa è raggiunto, 429 se la coda è piena. Con `actionLabel` (solo con `pageContext.page = host`) il server cerca l'azione per pagina ed etichetta nelle azioni dell'App e usa la richiesta salvata; non trovata → 400 «azione non trovata: ricarica il pannello».
  * @summary Invia un messaggio al Responsabile (crea una run)
  */
 export const SendLeadMessageParams = zod.object({
   "id": zod.coerce.number()
 })
 
+export const sendLeadMessageQueryAppRegExp = new RegExp('^[a-z0-9][a-z0-9-]{0,63}$');
+
+
+export const SendLeadMessageQueryParams = zod.object({
+  "app": zod.coerce.string().regex(sendLeadMessageQueryAppRegExp).optional().describe('Slug dell\'App del Responsabile (senza: `casello`). Con il pannello incorporato vale solo l\'App ospite del client (senza: quella; un\'altra App → 404 «App non trovata»).')
+})
+
 export const sendLeadMessageBodyPageContextIdRegExp = new RegExp('^[A-Za-z0-9._:-]{1,100}$');
+export const sendLeadMessageBodyPageContextHostAppRegExp = new RegExp('^[a-z0-9][a-z0-9-]{0,63}$');
+export const sendLeadMessageBodyPageContextHostPageMax = 40;
+
+
+export const sendLeadMessageBodyPageContextHostPageRegExp = new RegExp('^[A-Za-z0-9._:-]+$');
+export const sendLeadMessageBodyPageContextHostIdMax = 40;
+
+
+export const sendLeadMessageBodyPageContextHostIdRegExp = new RegExp('^[A-Za-z0-9._:-]+$');
+export const sendLeadMessageBodyPageContextHostTitleMax = 200;
+
+
+export const sendLeadMessageBodyPageContextHostTitleRegExp = new RegExp('^[^\\r\\n]+$');
+export const sendLeadMessageBodyActionLabelMax = 40;
+
 
 
 export const SendLeadMessageBody = zod.object({
   "content": zod.string().describe('Da 1 a 4 000 caratteri (controllo del server con messaggi fissi)'),
   "pageContext": zod.object({
-  "page": zod.enum(['dashboard', 'apps', 'app', 'app_plan', 'analysis', 'agents', 'agent', 'runs', 'run', 'pending_actions', 'skills', 'skill', 'team_templates', 'team_template', 'teams', 'team', 'models', 'account', 'console']),
-  "id": zod.string().regex(sendLeadMessageBodyPageContextIdRegExp).optional()
-}).optional()
+  "page": zod.enum(['dashboard', 'apps', 'app', 'app_plan', 'analysis', 'agents', 'agent', 'runs', 'run', 'pending_actions', 'skills', 'skill', 'team_templates', 'team_template', 'teams', 'team', 'models', 'account', 'console', 'host']),
+  "id": zod.string().regex(sendLeadMessageBodyPageContextIdRegExp).optional(),
+  "host": zod.object({
+  "app": zod.string().regex(sendLeadMessageBodyPageContextHostAppRegExp),
+  "page": zod.string().min(1).max(sendLeadMessageBodyPageContextHostPageMax).regex(sendLeadMessageBodyPageContextHostPageRegExp),
+  "id": zod.string().min(1).max(sendLeadMessageBodyPageContextHostIdMax).regex(sendLeadMessageBodyPageContextHostIdRegExp).optional(),
+  "title": zod.string().min(1).max(sendLeadMessageBodyPageContextHostTitleMax).regex(sendLeadMessageBodyPageContextHostTitleRegExp).optional()
+}).optional().describe('Pagina dell\'app ospite (pannello incorporato); ammesso solo con page \"host\", che lo richiede')
+}).optional(),
+  "actionLabel": zod.string().min(1).max(sendLeadMessageBodyActionLabelMax).optional().describe('Etichetta di un\'azione della pagina dell\'app ospite (richiede pageContext.page = host)')
 })
 
 export const SendLeadMessageResponse = zod.object({

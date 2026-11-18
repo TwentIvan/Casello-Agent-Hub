@@ -7,7 +7,7 @@
  */
 
 /**
- * Contenuto proposto (add e update), null per discard
+ * Contenuto proposto (add e update; per page_actions {page, actions: [{label, request}]}), null per discard
  * @nullable
  */
 export type PlanProposalPayload = { [key: string]: unknown } | null;

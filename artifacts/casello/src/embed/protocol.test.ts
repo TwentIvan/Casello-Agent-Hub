@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { contextMessage, parseFromFrame, parseToFrame } from "./protocol";
+import { tabOrder } from "../components/panel/tabs";
+import { TABS, contextMessage, parseFromFrame, parseToFrame } from "./protocol";
+
+describe("TABS", () => {
+  it("coincide con le schede del pannello incorporato", () => {
+    expect([...TABS]).toEqual([...tabOrder("embed")]);
+  });
+});
 
 describe("parseToFrame", () => {
   it("scarta i campi in più del contesto", () => {
@@ -70,6 +77,34 @@ describe("parseToFrame", () => {
 });
 
 describe("parseFromFrame", () => {
+  const status = { pending: 2, bugs: 1, working: true, unread: false, actions: 3 };
+
+  it("accetta status valido e scarta i campi in più", () => {
+    expect(parseFromFrame({ botcave: 1, type: "status", payload: { ...status, extra: "x" }, y: 1 })).toEqual({
+      botcave: 1,
+      type: "status",
+      payload: status,
+    });
+  });
+
+  it("rifiuta status con numeri o booleani sbagliati", () => {
+    expect(parseFromFrame({ botcave: 1, type: "status", payload: { ...status, pending: -1 } })).toBeNull();
+    expect(parseFromFrame({ botcave: 1, type: "status", payload: { ...status, bugs: 1.5 } })).toBeNull();
+    expect(parseFromFrame({ botcave: 1, type: "status", payload: { ...status, working: "sì" } })).toBeNull();
+    expect(parseFromFrame({ botcave: 1, type: "status", payload: { ...status, unread: 1 } })).toBeNull();
+    expect(parseFromFrame({ botcave: 1, type: "status", payload: { ...status, actions: 7 } })).toBeNull();
+    expect(parseFromFrame({ botcave: 1, type: "status", payload: { pending: 1 } })).toBeNull();
+    expect(parseFromFrame({ botcave: 1, type: "status" })).toBeNull();
+  });
+
+  it("badge (iframe di prima) diventa status", () => {
+    expect(parseFromFrame({ botcave: 1, type: "badge", payload: { pending: 3 } })).toEqual({
+      botcave: 1,
+      type: "status",
+      payload: { pending: 3, bugs: 0, working: false, unread: false, actions: 0 },
+    });
+  });
+
   it("rifiuta un badge negativo o non intero", () => {
     expect(parseFromFrame({ botcave: 1, type: "badge", payload: { pending: -1 } })).toBeNull();
     expect(parseFromFrame({ botcave: 1, type: "badge", payload: { pending: 1.5 } })).toBeNull();
@@ -78,16 +113,31 @@ describe("parseFromFrame", () => {
   it("accetta i messaggi validi", () => {
     expect(parseFromFrame({ botcave: 1, type: "ready", x: 1 })).toEqual({ botcave: 1, type: "ready" });
     expect(parseFromFrame({ botcave: 1, type: "close" })).toEqual({ botcave: 1, type: "close" });
-    expect(parseFromFrame({ botcave: 1, type: "badge", payload: { pending: 3 } })).toEqual({
-      botcave: 1,
-      type: "badge",
-      payload: { pending: 3 },
-    });
     expect(
       parseFromFrame({ botcave: 1, type: "error", payload: { code: "unreachable" } }),
     ).toEqual({ botcave: 1, type: "error", payload: { code: "unreachable" } });
     expect(parseFromFrame({ botcave: 1, type: "error", payload: { code: "boh" } })).toBeNull();
     expect(parseFromFrame({ botcave: 1, type: "nope" })).toBeNull();
+  });
+});
+
+describe("open con la barra del contesto", () => {
+  it("accetta focusContext true e scarta gli altri valori", () => {
+    expect(parseToFrame({ botcave: 1, type: "open", payload: { focusContext: true } })).toEqual({
+      botcave: 1,
+      type: "open",
+      payload: { focusContext: true },
+    });
+    expect(parseToFrame({ botcave: 1, type: "open", payload: { tab: "lead", focusContext: true } })).toEqual({
+      botcave: 1,
+      type: "open",
+      payload: { tab: "lead", focusContext: true },
+    });
+    expect(parseToFrame({ botcave: 1, type: "open", payload: { focusContext: "sì" } })).toEqual({
+      botcave: 1,
+      type: "open",
+      payload: {},
+    });
   });
 });
 
@@ -124,6 +174,13 @@ describe("identità e scheda bugs", () => {
     expect(parseToFrame({ botcave: 1, type: "identity", payload: { token: "a b" } })).toBeNull();
     expect(parseToFrame({ botcave: 1, type: "identity", payload: { token: "a".repeat(4097) } })).toBeNull();
     expect(parseToFrame({ botcave: 1, type: "identity" })).toBeNull();
+  });
+  it("open accetta lead", () => {
+    expect(parseToFrame({ botcave: 1, type: "open", payload: { tab: "lead" } })).toEqual({
+      botcave: 1,
+      type: "open",
+      payload: { tab: "lead" },
+    });
   });
   it("open accetta bugs", () => {
     expect(parseToFrame({ botcave: 1, type: "open", payload: { tab: "bugs" } })).toEqual({

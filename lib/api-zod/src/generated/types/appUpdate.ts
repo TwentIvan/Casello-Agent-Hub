@@ -60,6 +60,24 @@ export interface AppUpdate {
      */
   stagingBranch?: string | null;
   /**
+     * Nome di Alfred in questa App; null torna al predefinito
+     * @maxLength 40
+     * @nullable
+     */
+  alfredName?: string | null;
+  /**
+     * Nome di Lucius in questa App; null torna al predefinito
+     * @maxLength 40
+     * @nullable
+     */
+  luciusName?: string | null;
+  /**
+     * Nome del Responsabile in questa App; null torna al predefinito
+     * @maxLength 40
+     * @nullable
+     */
+  leadName?: string | null;
+  /**
      * Indirizzo https della versione di prova; null lo toglie
      * @nullable
      */

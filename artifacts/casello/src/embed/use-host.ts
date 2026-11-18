@@ -7,7 +7,7 @@ import { parseToFrame, type EmbedTab, type FromFrame, type HostContextMsg, type 
 import { cleanFontUrl, themeToCss } from "./theme";
 import { cleanAppSlug } from "./panel-helpers";
 
-export type HostOpenRequest = { tab?: EmbedTab; seq: number };
+export type HostOpenRequest = { tab?: EmbedTab; focusContext?: true; seq: number };
 
 /** Attesa massima della risposta a `identity_request`. */
 const IDENTITY_WAIT_MS = 5_000;
@@ -159,7 +159,7 @@ export function useHost(): HostState {
           break;
         case "open":
           seq += 1;
-          setOpenRequest({ tab: msg.payload.tab, seq });
+          setOpenRequest({ ...msg.payload, seq });
           break;
         case "identity": {
           const token = msg.payload.token;

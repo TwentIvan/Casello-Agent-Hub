@@ -13,7 +13,7 @@ export function targetKey(target: ChatTarget): string {
     case "team":
       return `team:${target.instanceId}`;
     case "lead":
-      return "lead";
+      return `lead:${target.app ?? ""}`;
   }
 }
 
@@ -23,6 +23,16 @@ export const CHARACTER_TEXT: Record<Character, { name: string; placeholder: stri
   lucius: { name: "Lucius", placeholder: "Scrivi a Lucius…", send: "Scrivi a Lucius" },
   responsabile: { name: "Barbara", placeholder: "Scrivi a Barbara…", send: "Scrivi a Barbara" },
 };
+
+/** «ad Alfred», «a Bea»: la preposizione davanti a un nome scelto dall'utente. */
+export function writeTo(name: string): string {
+  return /^[aA]/.test(name) ? `ad ${name}` : `a ${name}`;
+}
+
+/** Testi del campo di scrittura con un nome scelto dall'App (pannello incorporato). */
+export function namedCharacterText(name: string): { name: string; placeholder: string; send: string } {
+  return { name, placeholder: `Scrivi ${writeTo(name)}…`, send: `Scrivi ${writeTo(name)}` };
+}
 
 export const SUBJECT_LABELS: Record<Exclude<SubjectType, "alfred_thread">, string> = {
   agent: "Agente",

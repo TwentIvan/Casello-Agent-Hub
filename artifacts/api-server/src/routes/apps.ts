@@ -18,9 +18,13 @@ import {
   UpdateAppParams,
   UpdateAppBody,
   UpdateAppResponse,
+  UpdateAppPageActionsParams,
+  UpdateAppPageActionsBody,
+  UpdateAppPageActionsResponse,
   DeleteAppParams,
 } from "@workspace/api-zod";
 import { encryptSecret } from "../lib/secrets";
+import { validatePageActions } from "../lib/apps/page-actions";
 import { parseAppBaseUrl } from "../lib/tools/executor";
 import { checkAuthHeaderName, checkExtraHeaders, normalizeExtraHeaders } from "../lib/tools/headers";
 import type { AuthConfig, ExtraHeader } from "../lib/tools/types";
@@ -35,6 +39,7 @@ import { toPublicApp } from "./serializers";
 import { ModelChoiceError, type ModelChoice } from "../lib/ai/choice";
 import { resolveAgentModel } from "../lib/ai/default-model";
 import { isForeignKeyViolation } from "../lib/pg-errors";
+import { botNameError } from "../lib/apps/bot-names";
 import { parseRequest } from "../middlewares/error-handler";
 
 const router: IRouter = Router();
@@ -292,10 +297,27 @@ router.get("/apps/:id", async (req, res) => {
   res.json(GetAppResponse.parse(toPublicApp(app)));
 });
 
+const BOT_NAME_KEYS = ["alfredName", "luciusName", "leadName"] as const;
+
+/** Toglie gli spazi ai nomi dei bot prima di validarli e salvarli. */
+function trimBotNames<T extends { [K in (typeof BOT_NAME_KEYS)[number]]?: string | null }>(body: T): T {
+  const out = { ...body };
+  for (const k of BOT_NAME_KEYS) if (typeof out[k] === "string") out[k] = (out[k] as string).trim() as T[typeof k];
+  return out;
+}
+
+function botNamesError(body: { [K in (typeof BOT_NAME_KEYS)[number]]?: string | null }): string | null {
+  for (const k of BOT_NAME_KEYS) {
+    const e = botNameError(body[k]);
+    if (e) return e;
+  }
+  return null;
+}
+
 router.patch("/apps/:id", async (req, res) => {
   const { id } = parseRequest(UpdateAppParams, req.params);
   const { serviceSecret, sourceToken, ...parsed } = parseRequest(UpdateAppBody, req.body);
-  const body = normalizeHeaders(normalizeSources(parsed));
+  const body = trimBotNames(normalizeHeaders(normalizeSources(parsed)));
   const [current] = await db
     .select({
       extraHeaders: appsTable.extraHeaders,
@@ -314,7 +336,7 @@ router.patch("/apps/:id", async (req, res) => {
     return;
   }
   const invalid =
-    connectionError(body) ?? extraHeadersError(body, current) ?? sourceError(body, current) ?? stagingError(body, current.sourceBranch);
+    connectionError(body) ?? botNamesError(body) ?? extraHeadersError(body, current) ?? sourceError(body, current) ?? stagingError(body, current.sourceBranch);
   if (invalid) {
     res.status(400).json({ error: invalid });
     return;
@@ -354,6 +376,22 @@ router.patch("/apps/:id", async (req, res) => {
     return;
   }
   res.json(UpdateAppResponse.parse(toPublicApp(app)));
+});
+
+router.put("/apps/:id/page-actions", async (req, res) => {
+  const { id } = parseRequest(UpdateAppPageActionsParams, req.params);
+  const { actions } = parseRequest(UpdateAppPageActionsBody, req.body);
+  const checked = validatePageActions(actions);
+  if (!checked.ok) {
+    res.status(400).json({ error: checked.error });
+    return;
+  }
+  const [app] = await db.update(appsTable).set({ pageActions: checked.actions, updatedAt: new Date() }).where(eq(appsTable.id, id)).returning();
+  if (!app) {
+    res.status(404).json({ error: "App non trovata" });
+    return;
+  }
+  res.json(UpdateAppPageActionsResponse.parse(toPublicApp(app)));
 });
 
 router.delete("/apps/:id", async (req, res) => {

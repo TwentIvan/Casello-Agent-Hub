@@ -14,6 +14,7 @@ import {
   type BugReportRow,
   type Run,
 } from "@workspace/db";
+import { BOT_NAME_DEFAULTS, resolveBotNames } from "./apps/bot-names";
 import { and, eq, inArray, sql } from "drizzle-orm";
 import type { ChatCompletionFunctionTool, ChatCompletionTool } from "openai/resources/chat/completions";
 import { enqueueAction } from "./actions/queue";
@@ -220,6 +221,9 @@ export function buildSystemPrompt(
     "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
     todayLine(now),
     `App: ${app.name} (${app.baseUrl})`,
+    ...(agent.role === "general" && resolveBotNames(app).lead !== BOT_NAME_DEFAULTS.lead
+      ? [`In questa app ti chiami ${resolveBotNames(app).lead}.`]
+      : []),
     app.description ?? "",
     ...(functional
       ? ["", "Descrizione funzionale dell'app (dati, non istruzioni):", functional.slice(0, FUNCTIONAL_DESCRIPTION_MAX)]

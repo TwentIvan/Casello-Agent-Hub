@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { db, pool, usersTable, characterConversationsTable } from "@workspace/db";
+import { db, pool, appsTable, usersTable, characterConversationsTable } from "@workspace/db";
 import { ensureEmbedClients } from "../src/lib/embed/clients";
 
 // Token `cao_` con ambito embed su /api (lettura e scrittura, ma non le route solo-login) e sessioni di Alfred; mai su /mcp.
@@ -151,11 +151,20 @@ describe("token embed su /api", () => {
     expect(((await res.json()) as { error: string }).error).toBe("scegli il modello di Alfred in Account");
   });
 
-  it("chat con il Responsabile di Botcave: 403 (solo console)", async () => {
+  it("chat con il Responsabile: ammessa solo per l'App ospite", async () => {
     const t = await embedToken();
-    expect((await call("GET", "/api/lead-chat", t)).status).toBe(403);
-    expect((await call("GET", "/api/lead-conversations", t)).status).toBe(403);
-    expect((await call("POST", "/api/lead-conversations", t, {})).status).toBe(403);
+    // Nessuna App con l'origine del client: 404
+    expect((await call("GET", "/api/lead-chat", t)).status).toBe(404);
+    await db.insert(appsTable).values([
+      { name: "Botcave", slug: "casello", baseUrl: "http://casello.example" },
+      { name: "The Hub Up", slug: "thu", baseUrl: ORIGIN },
+    ]);
+    const avail = await call("GET", "/api/lead-chat", t);
+    expect(avail.status).toBe(200);
+    expect(await avail.json()).toMatchObject({ available: false, appSlug: "thu" });
+    expect((await call("GET", "/api/lead-conversations", t)).status).toBe(200);
+    expect((await call("POST", "/api/lead-conversations", t, {})).status).toBe(409);
+    expect((await call("GET", "/api/lead-chat?app=casello", t)).status).toBe(404);
   });
 
   it("/mcp rifiuta il token embed", async () => {

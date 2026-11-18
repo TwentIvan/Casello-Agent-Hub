@@ -13,4 +13,5 @@ export const PlanProposalKind = {
   add: 'add',
   update: 'update',
   discard: 'discard',
+  page_actions: 'page_actions',
 } as const;

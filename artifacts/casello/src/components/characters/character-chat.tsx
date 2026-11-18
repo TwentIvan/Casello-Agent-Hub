@@ -13,7 +13,7 @@ import { formatCost } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import { MAX_CHARS, targetKey, useCharacterAdapter, type ChatTarget, type ProposalLike } from "./adapters";
 import { CharacterMark } from "./character-mark";
-import { CHARACTER_TEXT } from "./targets";
+import { CHARACTER_TEXT, namedCharacterText } from "./targets";
 import { usePanel } from "@/components/panel/panel-context";
 import { handoffTarget } from "@/components/panel/page-subject";
 import { ChatMessages } from "./chat-messages";
@@ -40,6 +40,8 @@ const LOCK_MESSAGES: Record<string, string> = {
   "squadra chiusa": "Squadra chiusa: la conversazione si può solo leggere.",
 };
 
+const BOT_KEY = { alfred: "alfred", lucius: "lucius", responsabile: "lead" } as const;
+
 // Le schede che non toccano la pagina sotto il pannello non chiedono dell'editor
 const NO_PAGE_EFFECT = new Set(["decision", "handoff"]);
 
@@ -52,7 +54,7 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
   const adapter = useCharacterAdapter(target);
   const list = adapter.useConversations();
   const { toast } = useToast();
-  const { handoff, alfredPage } = usePanel();
+  const { handoff, alfredPage, env } = usePanel();
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const effectiveId = list ? (selectedId ?? list.items[0]?.id ?? null) : null;
   const conv = adapter.useConversation(effectiveId);
@@ -81,7 +83,9 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
     () => (adapter.instructionProposalsKind ? proposalsByMessage(instructions.proposals, (data?.messages ?? []).map((m) => m.id)) : undefined),
     [adapter.instructionProposalsKind, instructions.proposals, data?.messages],
   );
-  const texts = CHARACTER_TEXT[adapter.character];
+  // Nel pannello incorporato i bot hanno i nomi scelti dall'App ospite
+  const botNames = env.surface === "embed" ? env.botNames : null;
+  const texts = botNames ? namedCharacterText(botNames[BOT_KEY[adapter.character]]) : CHARACTER_TEXT[adapter.character];
   const maxChars = adapter.maxChars ?? MAX_CHARS;
   const name = texts.name;
 
@@ -319,6 +323,7 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
             <ChatMessages
               data={data}
               character={adapter.character}
+              name={name}
               readOnly={readOnly}
               deciding={decidingId !== null}
               renderProposal={adapter.renderProposal}

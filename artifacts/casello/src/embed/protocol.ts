@@ -31,7 +31,7 @@ export type FromFrame =
   | { botcave: 1; type: "status"; payload: StatusPayload }
   | { botcave: 1; type: "error"; payload: { code: "host_not_allowed" | "unreachable" } };
 
-const TABS: readonly string[] = ["alfred", "lucius", "lead", "pending", "bulletin", "bugs"];
+export const TABS: readonly string[] = ["alfred", "lucius", "lead", "pending", "bulletin", "bugs"];
 const TOKEN_RE = /^[A-Za-z0-9_.-]{1,4096}$/;
 const ID_RE = /^[A-Za-z0-9._:-]{1,40}$/;
 

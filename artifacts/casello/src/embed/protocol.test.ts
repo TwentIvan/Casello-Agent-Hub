@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { contextMessage, parseFromFrame, parseToFrame } from "./protocol";
+import { tabOrder } from "../components/panel/tabs";
+import { TABS, contextMessage, parseFromFrame, parseToFrame } from "./protocol";
+
+describe("TABS", () => {
+  it("coincide con le schede del pannello incorporato", () => {
+    expect([...TABS]).toEqual([...tabOrder("embed")]);
+  });
+});
 
 describe("parseToFrame", () => {
   it("scarta i campi in più del contesto", () => {

@@ -66,7 +66,7 @@ export function TabStrip({
                 <TabIcon tab={t} />
                 {busy && <LedDot state="work" className="absolute -bottom-0.5 -right-2.5" />}
                 {count > 0 && (
-                  <span className="absolute -right-4 -top-1.5 min-w-4 rounded-none bg-brand px-1 text-center font-mono text-[10px] leading-4 text-on-brand">
+                  <span className="absolute -right-4 -top-1.5 min-w-4 rounded-none bg-brand px-1 text-center text-label text-on-brand">
                     {count}
                   </span>
                 )}

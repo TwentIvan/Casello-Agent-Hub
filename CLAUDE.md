@@ -88,6 +88,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - Istruzioni personali dei personaggi: un testo Markdown per utente e per personaggio (Alfred, Lucius) che si aggiunge in fondo alle istruzioni di base in ogni contesto (chat, voce, analisi dell'architetto), con versioni e «Ripristina»; Alfred e Lucius lo propongono
   da soli come scheda da accettare nelle chat; Barbara legge e modifica il prompt del suo agente dalla stessa carta «Personaggi» (vedi "Istruzioni personali dei personaggi"). Spec: `docs/superpowers/specs/2026-11-17-botcave-istruzioni-personaggi-design.md`.
 - Segnalazione dei bug dal plugin: gli utenti di un'app ospite segnalano un bug dal plugin senza account Botcave (identità facoltativa con un token JWT firmato dall'app); il Responsabile dell'App vaglia, l'amministratore approva in «Da confermare» (voce `bug`), la squadra designata per i bug lavora e al merge della PR l'utente è avvisato nel plugin; migrazione applicata dal deploy, nessuna variabile nuova (vedi "Segnalazione dei bug dal plugin"). Spec: `docs/superpowers/specs/2026-11-17-botcave-segnalazione-bug-design.md`. Guida per i clienti: `docs/integrazione/plugin-botcave.md`.
+- Riordino del plugin (parte A): nomi dei bot per App, Responsabile dell'App ospite in una scheda del plugin (anche per le app ospiti), azioni della pagina definite in Botcave e barra «Stai guardando»,
+  schede con icone, pulsante a pillola con lo stato; l'app ospite passa solo il contesto con `Botcave.setContext` (vedi "Riordino del plugin"). Spec: `docs/superpowers/specs/2026-11-17-botcave-plugin-riordino-design.md`.
 - Frontend `artifacts/casello` completo: login Google, dashboard, App, Agenti (con Tool), lancio e
   monitoraggio delle Run. Pagine in `src/pages/`, componenti per area in `src/components/`; solo hook
   generati da Orval, mai fetch a mano.
@@ -150,11 +152,11 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 
 - `lib/api-spec/openapi.yaml` — contratto API, fonte di verità (contract-first)
 - `lib/api-client-react/src/generated/` — client generato da Orval: NON modificare a mano
-- `lib/db/src/schema/` — schema Drizzle, una tabella per file (apps, agents, app_tools, agent_tools, runs,
+- `lib/db/src/schema/` — schema Drizzle, una tabella per file (apps (con `alfred_name`, `lucius_name`, `lead_name`, `page_actions`, `embed_pages_seen`), agents, app_tools, agent_tools, runs,
   run_steps, sessions, analyses, analysis_items, agent_skills, users, user_identities, github_installations,
   ai_accounts, ai_models, providers, models, model_offers, catalog_runs, plan_conversations, plan_messages, plan_proposals,
   skills, skill_versions, team_templates, team_template_versions, team_instances, team_instance_skills,
-  team_plans, team_plan_versions, team_tasks, team_task_steps, team_turns, team_turn_steps, team_events, alfred_sessions, alfred_confirmations, team_chat_conversations, team_chat_messages, team_chat_proposals, character_notes, character_history, character_conversations, character_messages, character_proposals, nodes, node_turns, team_attachments, oauth_clients, oauth_grants, oauth_codes, oauth_tokens, agent_triggers, trigger_seen_items, pending_action_steps, team_code_tasks, lead_conversations, lead_messages, app_architecture, app_architecture_runs, best_practice_searches, character_instructions, character_instruction_proposals, bug_reports, bug_report_messages, evolution_cycles, evolution_rounds, team_works, schema_migrations)
+  team_plans, team_plan_versions, team_tasks, team_task_steps, team_turns, team_turn_steps, team_events, alfred_sessions, alfred_confirmations, team_chat_conversations, team_chat_messages, team_chat_proposals, character_notes, character_history, character_conversations, character_messages, character_proposals, nodes, node_turns, team_attachments, oauth_clients, oauth_grants, oauth_codes, oauth_tokens, agent_triggers, trigger_seen_items, pending_action_steps, team_code_tasks, lead_conversations (con `app_id`), lead_messages, app_architecture, app_architecture_runs, best_practice_searches, character_instructions, character_instruction_proposals, bug_reports, bug_report_messages, evolution_cycles, evolution_rounds, team_works, schema_migrations)
 - `artifacts/api-server/src/routes/` — route Express 5: `/api/apps`, `/api/apps/:id/tools` (catalogo dei
   tool dell'app, CRUD), `/api/agents`, `PUT /api/agents/:id/tools` (tool collegati a un agente di area),
   `POST /api/agents/:id/runs`, `/api/runs`, `GET /api/runs/:id/steps` (timeline dei passi),
@@ -270,6 +272,11 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   `protocol.ts`, `theme.ts`, `use-host.ts`, `use-badge.ts`, `loader/`; le schede sono in `components/panel/tabs/`: il caricatore `botcave.js`),
   `vite.loader.config.ts`, `embed-demo.html` (solo sviluppo); `docker/nginx.conf.template`, `docker/15-embed-origins.envsh`. Spec:
   `docs/superpowers/specs/2026-11-06-botcave-plugin-incorporabile-design.md`
+- Riordino del plugin (vedi "Riordino del plugin"): API in `artifacts/api-server/src/lib/apps/` (`bot-names.ts`, `page-actions.ts`), `lib/embed/` (`host-app.ts`, `status.ts`), `lib/lead-chat/` (`service.ts`, `input.ts`, `messages.ts`),
+  `lib/characters/host-page.ts`, `lib/plan-chat/` (strumento `proponi_azioni_pagina`, `decide.ts`), route in `routes/apps.ts` (`PUT /api/apps/:id/page-actions`), `routes/embed.ts` (`GET /api/embed/status`), `routes/lead-chat.ts`;
+  prova di flusso `artifacts/api-server/test/plugin-actions-flow.test.ts`; console `components/apps/` (`bot-names-card.tsx`, `page-actions-card.tsx`), `components/panel/` (`tab-strip.tsx`, `context-bar.tsx`, `tabs.ts`),
+  `embed/` (`use-status.ts`, `bot-activity.ts`, `unread.ts`, `loader/pill.ts`, `loader/brand-colors.ts`), `lib/page-actions.ts`; guida per i clienti `docs/integrazione/plugin-botcave.md`. Spec:
+  `docs/superpowers/specs/2026-11-17-botcave-plugin-riordino-design.md`
 - Inneschi (vedi "Inneschi"): `artifacts/api-server/src/lib/triggers/` (`config.ts`, `extract.ts`, `input.ts`, `eligibility.ts`, `queue-run.ts`, `poller.ts`,
   `webhook.ts`, `secrets.ts`, `service.ts`, `messages.ts`); route `src/routes/triggers.ts` (`/api/agents/:id/triggers`, `/api/triggers/*`) e `src/routes/hooks.ts`
   (`/api/hooks/*`, pubblico); schema `lib/db/src/schema/agent-triggers.ts`; console `artifacts/casello/src/components/agents/` (`agent-triggers-section.tsx`,
@@ -1095,11 +1102,13 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
 - Spec: `docs/superpowers/specs/2026-10-29-casello-chat-del-piano-design.md`.
 - Pagina `/apps/:id/plan` (`src/pages/app-plan.tsx`, `src/components/plan/`): piano dell'app e conversazioni con
   un modello; la chat è il pannello comune `CharacterChat` (`components/characters/`, adattatore `usePlanChatAdapter`) a pagina intera, i
-  vecchi `chat-panel.tsx` e `conversation-list.tsx` non esistono più (vedi "Alfred e Lucius nelle aree"). Il modello propone schede `add` / `update` / `discard`; solo quelle accettate dall'utente diventano
+  vecchi `chat-panel.tsx` e `conversation-list.tsx` non esistono più (vedi "Alfred e Lucius nelle aree"). Il modello propone schede `add` / `update` / `discard` (e `page_actions`, vedi "Riordino del plugin"); solo quelle accettate dall'utente diventano
   voci `analysis_items` con `origin = chat` (e `conversation_id`). Lucius può leggere il codice dell'app (vedi "Lucius legge il codice").
 - Riferimenti delle voci (`planItemRef` in `lib/plan-chat/plan-items.ts`): le voci dell'analisi della conversazione hanno il ref di sempre, quelle di altre analisi (giri del ciclo di evoluzione, voci approvate di analisi precedenti) il prefisso
   `a<idAnalisi>:` (le voci `chat-<id>` restano così), uguale in contesto, `read_item` e `propose`. Accettare `update`/`discard` (`decide.ts`) vale per ogni voce del piano della stessa app: dell'analisi della conversazione, di un'analisi `evolution`,
   nata in chat, con un'issue o approvata dal ciclo (impronta uguale, altrimenti `stale`).
+- Scheda `page_actions` (`plan_proposals.kind`, strumento `proponi_azioni_pagina`): `plan_proposals.chapter` è **nullable** (CHECK `plan_proposals_chapter_check`: obbligatorio salvo per `page_actions`); `PlanProposal.chapter` è null in OpenAPI
+  e la console mostra il badge «Plugin» al posto del capitolo.
 - Strumento `propose` (`lib/plan-chat/tools.ts`): la descrizione elenca i campi di ogni capitolo (`CHAPTER_FIELDS`); un payload non valido risponde col nome
   del campo tra virgolette (`campo "missing": campo obbligatorio`: in completion un campo si chiama proprio `missing`) e con l'elenco dei campi del capitolo;
   con `update` bastano i campi da cambiare (si fondono sulla voce esistente prima della validazione). Correzioni: 2 per proposta (stesso tipo, capitolo e voce;
@@ -1639,14 +1648,18 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
 - **Lettura**: `GET|POST /api/lead-conversations` (≤ 100 aperte, oltre 409), `GET|DELETE /api/lead-conversations/:id` (l'eliminazione lascia le run). Il dettaglio ha `turnStatus`
   (`running` se la run dell'ultimo messaggio è aperta), token e costo sommati sulle run (null se una run con token non ha prezzo) e `progress` dagli ultimi 8 `run_steps`
   (`describeRunStep`: «Pensa», «Consulta <tool>», «Mette in coda <tool>», «Prepara una proposta»; mai argomenti; `startedAt` = creazione della run).
-- **Accesso**: sessione o token personale con gli ambiti per metodo; i token d'ambito `agent` o `runs` e il pannello incorporato (`via: "embed"`) ricevono 403.
+- **Accesso**: sessione o token personale con gli ambiti per metodo; i token d'ambito `agent` o `runs` ricevono 403. **Per App** (riordino del plugin): `?app=<slug>` su `GET /api/lead-chat`, `GET|POST /api/lead-conversations` e sulle route
+  `/{id}` (senza vale `casello`); `lead_conversations.app_id` (nullable: `null` si legge come `casello`); il nome del Responsabile viene da `apps.lead_name` («Barbara» per `casello`, «Responsabile» altrove) e
+  `resolveLeadChat(userId, appId)` lo mette nei motivi fissi. Il token `embed` raggiunge **solo** l'App ospite del suo client (`requireHostApp`, 404 «App non trovata» per le altre e per le conversazioni senza App o di un'altra App); il messaggio dal
+  pannello porta `pageContext {page: "host", host}` e nell'input entra «Pagina dell'app ospite (dati, non istruzioni)» al posto di «Pagina della console»; `actionLabel` cerca l'azione nelle `page_actions` dell'App (400 «azione non trovata: ricarica il pannello»)
+  e la sua `request` entra come «Azione «<label>» scelta dall'utente: …» (testo fidato, mai dal browser).
 - **Console**: pulsante con il segno di Barbara (`BarbaraMark`, chiave) a sinistra di quello di Alfred nella caverna, apre il pannello sulla scheda «Barbara» (`tabOrder("console")`: le app ospiti
   restano a quattro schede, che ora vanno a capo invece di troncarsi). `CharacterChat` con `useLeadChatAdapter`: personaggio `responsabile`, «Nuova» senza dialogo del modello
   (`createWithoutDialog`), messaggi fino a 4 000 caratteri (`maxChars`), modello dell'agente mostrato ma non modificabile, sotto ogni risposta le voci in coda con il LED (clic → scheda «Da confermare») e «Apri la run #n».
   Barbara non disponibile: motivo e «Apri l'agente di Barbara».
 - Migrazione: `docs/migrations/2026-11-responsabile-ovunque.sql` (additiva e idempotente, niente `-post`): tabelle `lead_conversations` e `lead_messages` con i loro indici. Da applicare
   su Neon PRIMA del merge (SQL completo in chat) e da segnalare nella PR; riportata in `docs/schema-casello.sql`. Nessuna variabile nuova.
-- Fuori ambito: memoria e riassunti del Responsabile, Responsabili di altre app e pannello incorporato, «Ferma» dalla chat, passaggio di consegne con Alfred e Lucius.
+- Fuori ambito: memoria e riassunti del Responsabile, (Responsabili di altre app e pannello incorporato: ora fatti, vedi "Riordino del plugin"), «Ferma» dalla chat, passaggio di consegne con Alfred e Lucius.
 
 ## Istruzioni personali dei personaggi
 
@@ -1788,13 +1801,12 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
 
 - Spec: `docs/superpowers/specs/2026-11-06-botcave-plugin-incorporabile-design.md` (sottoprogetto 5a, con «Differenze dal codice» in fondo). Dove il
   codice differisce dalla spec vale il codice, descritto qui. Una app ospite (prima prova: The Hub Up, `https://hubup.fantamister.cloud`) incorpora
-  Botcave con una riga `<script src="https://casello.fantamister.cloud/embed/v1/botcave.js" data-app="<slug>" defer>`: pulsante con il contatore delle voci
-  da confermare e pannello laterale (~440 px, a schermo intero sotto i 640) il cui contenuto è un iframe della pagina `/embed`. Il token vive solo
+  Botcave con una riga `<script src="https://casello.fantamister.cloud/embed/v1/botcave.js" data-app="<slug>" defer>`: pulsante a pillola con lo stato e pannello laterale (~440 px, a schermo intero sotto i 640) il cui contenuto è un iframe della pagina `/embed`. Il token vive solo
   nell'origine di Botcave (iframe e popup): la pagina ospite non lo vede mai. 5b (registrazione e analisi di The Hub Up) e 5c (sostituzione dei suoi agenti AI)
   restano fuori.
 - **Script** (`src/embed/loader/`, costruito da `vite.loader.config.ts` come file unico senza dipendenze in `/embed/v1/botcave.js`, servito con CORS `*`;
   `v1` = versione del protocollo): attributi `data-app` (obbligatorio: senza, avviso in console e niente pulsante), `data-mount` (selettore), `data-position`
-  (`right` | `left`). Shadow DOM proprio; l'iframe si crea al primo clic (`/embed?app=<slug>&origin=<origine della pagina>`, `allow="microphone"`) e poi resta,
+  (`right` | `left`). Shadow DOM proprio; l'iframe si crea in anticipo, nascosto, con `requestIdleCallback` (al più 3 s dopo il caricamento della pagina; `/embed?app=<slug>&origin=<origine della pagina>`, `allow="microphone"`) e poi resta,
   nascosto a pannello chiuso. API globale `window.Botcave`: `setContext(ctx)`, `open(tab?)`, `close()`; le chiamate prima dell'iframe si accodano
   (`queue.ts`) e si consegnano a `ready`. Senza `ready` entro 10 s: «Questa app non è abilitata a Botcave»; `unreachable`: «Botcave non risponde: riprova tra poco» con «Riprova».
 - **Pagina `/embed`** (`embed.html`, seconda entrata di Vite nello stesso pacchetto; `embed-app.tsx`, stessi componenti e client Orval della console): il client
@@ -1810,7 +1822,7 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   rinnovati) prima di tornare a «Collega con Botcave»; su un errore temporaneo (rete, 5xx) con il token d'accesso già scaduto la richiesta non parte (errore transitorio,
   `TransientAuthError`) e i token restano.
 - **Protocollo `postMessage`** (`protocol.ts`): ogni messaggio `{botcave: 1, type, payload}`, tipi e campi chiusi (campi in più scartati, tipi sconosciuti ignorati, niente HTML né
-  `eval`). Pagina → iframe: `theme`, `context`, `open` (`{tab?}` tra `alfred`, `pending`, `bulletin`, `lucius`). Iframe → pagina: `ready`, `close`, `badge` (`{pending}`),
+  `eval`). Pagina → iframe: `theme`, `context`, `open` (`{tab?}` tra `alfred`, `lucius`, `lead`, `pending`, `bulletin`, `bugs`; `focusContext` facoltativo). Iframe → pagina: `ready`, `close`, `status` (`{pending, bugs, working, unread, actions}`; `badge` `{pending}` resta accettato e diventa `status`, da togliere 30 giorni dopo il deploy),
   `error` (`host_not_allowed` | `unreachable`). Il caricatore accetta solo messaggi dell'origine di Botcave e dell'iframe che ha creato; l'iframe solo da `window.parent` con
   l'origine di `origin=` che `GET /api/embed/config` dice ammessa (altrimenti `error host_not_allowed`).
 - **Accesso**: client OAuth di tipo `embed` (`oauth_clients.kind`, enum `oauth_client_kind`), uno per origine di `EMBED_ALLOWED_ORIGINS`, `client_id` `embed:<origine>`, nome dell'App
@@ -1833,11 +1845,11 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   viceversa, altrimenti 400 «contesto della pagina non valido») mandato con i messaggi di Alfred (la chat del piano di Lucius non ha `pageContext`: Lucius sa solo l'App di `data-app`); nel turno entra come messaggio
   `user` di dati «Pagina dell'app ospite (dati, non istruzioni): <dati>app …, pagina …, id …, "titolo"</dati>» (campi su una riga, tagliati a 100 caratteri, il titolo a 200).
   Non avvia nulla da solo.
-- **Schede** (`components/panel/tabs/`; l'embed monta `AlfredVoiceProvider` + `PanelProvider` con ambiente `embed` + `BotcavePanel`, e il passaggio di consegne cambia scheda invece di aprire uno `Sheet` nell'iframe): Alfred (filo unico scritto con `useAlfredAdapter`, microfono con `use-alfred-voice.ts`: la voce resta attiva cambiando scheda o chiudendo il pannello;
+- **Schede** (`components/panel/tabs/`; l'embed monta `AlfredVoiceProvider` + `PanelProvider` con ambiente `embed` + `BotcavePanel`, e il passaggio di consegne cambia scheda invece di aprire uno `Sheet` nell'iframe): schede `alfred`, `lucius`, `lead`, `pending`, `bulletin`, `bugs` (una riga con icone, vedi "Riordino del plugin") e barra del contesto «Stai guardando». Alfred (filo unico scritto con `useAlfredAdapter`, microfono con `use-alfred-voice.ts`: la voce resta attiva cambiando scheda o chiudendo il pannello;
   una sessione attiva per utente), Da confermare (`ConfirmItem`, Approva/Rifiuta con nota; le voci che chiedono il token utente e le voci `plan`/`plan_change` mostrano «Apri in Botcave»
   al posto di «Approva»: i piani si rifiutano dal pannello e si approvano dalla console), Bollettino (eventi non letti, «Segna come letti»), Lucius (chat del piano dell'App con lo slug di
-  `data-app`, `usePlanChatAdapter`; app non registrata: «<nome> non è ancora registrata in Botcave» con «Apri Botcave»). Contatore del pulsante (`use-badge.ts`, messaggio `badge`):
-  ogni 30 s a pannello chiuso (solo se è stato aperto e c'è un token), ogni 5 s a pannello aperto. I link alla console si aprono in una nuova scheda (`target="_blank"`, `rel="noopener"`).
+  `data-app`, `usePlanChatAdapter`; app non registrata: «<nome> non è ancora registrata in Botcave» con «Apri Botcave»). Stato del pulsante (`use-status.ts`, messaggio `status`, `GET /api/embed/status`):
+  ogni 30 s a pannello chiuso, ogni 5 s a pannello aperto e subito a ogni cambio di contesto; senza collegamento non chiama il server. I link alla console si aprono in una nuova scheda (`target="_blank"`, `rel="noopener"`).
 - **Tema** (`theme.ts`, `loader/read-theme.ts`): il caricatore legge dall'elemento `<html>` della pagina ospite `--background`, `--foreground`, `--primary`, `--primary-foreground`, `--muted`,
   `--muted-foreground`, `--border`, `--radius`, `--font-sans` e il tema chiaro o scuro, e li manda con `theme` (un `MutationObserver` lo rimanda al cambio); l'iframe tiene solo valori di
   colore (`H S% L%`, `#rgb[a]`, `rgb()`, `hsl()`, `oklch()`), lunghezze (`rem`, `px`) e famiglie di font, scarta tutto il resto (`url(`, `;`, `}`) e accetta `fontUrl` solo da
@@ -1856,6 +1868,32 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   transazione esplicita). Da applicare su Neon PRIMA del merge e da segnalare nella PR; riportata in `docs/schema-casello.sql`. Variabile nuova: `EMBED_ALLOWED_ORIGINS` su entrambi i container.
 - Prova: pagina `artifacts/casello/embed-demo.html` (solo sviluppo, tema chiaro e scuro); dopo il deploy, su `hubup.fantamister.cloud`: collegamento, Alfred scritto con il contesto di un work
   item, Alfred a voce dal telefono, un'approvazione, contatore, tema chiaro e scuro, revoca da Account → «App collegate».
+
+## Riordino del plugin
+
+- Spec: `docs/superpowers/specs/2026-11-17-botcave-plugin-riordino-design.md` (parte A; la parte B, The Hub Up senza parti agentiche, è nel repository dell'app). Dove il codice differisce dalla spec vale il codice, descritto qui. Nell'app ospite
+  resta solo il contesto della pagina (`Botcave.setContext`); le azioni, i nomi dei bot e il Responsabile si configurano e si usano in Botcave. Guida per i clienti: `docs/integrazione/plugin-botcave.md`.
+- **Nomi dei bot** (`apps.alfred_name|lucius_name|lead_name`, varchar 40, null = predefinito; `lib/apps/bot-names.ts`, `resolveBotNames`): 1..40 caratteri visibili su una riga, senza `<` `>`, altrimenti 400 «nome del bot non valido»;
+  predefiniti «Alfred», «Lucius», «Responsabile», per `casello` il Responsabile è «Barbara» (la migrazione imposta `lead_name`, ripiego nel codice). `PATCH /api/apps/:id` accetta i tre campi, `App.botNames` li espone risolti. Si usano nelle schede, nel campo
+  di scrittura, in «Torna a…» e nelle istruzioni dei turni («In questa app ti chiami <nome>.»: Responsabile in `buildSystemPrompt`, Lucius dall'App dell'argomento, Alfred dall'App della pagina `host.app`); Alfred a voce no.
+- **Azioni della pagina** (`apps.page_actions` jsonb `[{page, label, request}]`, `lib/apps/page-actions.ts`, `PAGE_ACTION_MESSAGES`): `page` `^[A-Za-z0-9._:-]{1,40}$`, `label` 1..40 visibili su una riga, `request` 1..1 000, ≤ 6 per `page`, ≤ 40 per App,
+  etichette uniche per `page`, nessuna credenziale (`looksLikeCredential`). `PUT /api/apps/:id/page-actions {actions}` sostituisce l'elenco intero (login o `api:write`; l'ambito `agent` riceve 403, in `AGENT_DENIED_ROUTES`). `apps.embed_pages_seen`
+  (≤ 50 tipi di pagina in ordine di ultimo uso) lo aggiorna `GET /api/embed/status`, al più una scrittura al minuto per App: serve solo da suggerimento. **Lucius** nella chat del piano: strumento `proponi_azioni_pagina {page, actions}` → scheda `page_actions`
+  (`chapter` null, impronta `pageActionsHash` dell'elenco del `page`); accettarla sostituisce le azioni di quel `page`, elenco cambiato → scheda `stale` e 409 «le azioni sono cambiate: chiedi a Lucius una proposta aggiornata».
+- **App ospite del token `embed`** (`lib/embed/host-app.ts`): `embedHostApp(origin)` = prima App per id con `base_url` di quell'origine (la stessa che dà `appName` a `GET /api/embed/config`); `requireHostApp(req, slug)` con l'embed dà quell'App e risponde 404 «App non trovata» per
+  uno slug diverso; con la sessione risolve lo slug (default `casello`). `req.auth.embedOrigin` si imposta in `requireAuth` dal `client_id` del token. Sul messaggio di Alfred dal pannello `host.app` si sovrascrive con lo slug dell'App ospite (la pagina può dichiarare altro).
+- **Stato** (`GET /api/embed/status?app=<slug>&page=<page>`, `sessionOrEmbed`, 60/min per collegamento, `lib/embed/status.ts`): `{pending, bugs, actions: [{label}], leadAvailable, leadWorking, botNames}`; `pending` = voci `pending` dell'utente, `bugs` = segnalazioni dell'App
+  `received|triage`, `leadWorking` = run `pending|running` di un messaggio del Responsabile di quell'App per l'utente; `page` non valido → 400 «tipo di pagina non valido».
+- **Plugin** (console `artifacts/casello/src/`): schede dell'embed `alfred`, `lucius`, `lead`, `pending`, `bulletin`, `bugs` (`tabOrder("embed")`; la console resta invariata, con Barbara) in `components/panel/tab-strip.tsx`: una riga con icona ed etichetta (`text-label`), solo icone
+  sotto i 360 px di larghezza (`aria-label` e `title`), contatori e LED `work` sul bot che risponde. Barra «Stai guardando» (`context-bar.tsx`): titolo (o tipo e id) e azioni del `page`, riducibile a una riga; il clic apre la scheda `lead` e manda `{content: label, pageContext, actionLabel}`
+  (`useLeadChatAdapter().sendAction`; se il Responsabile sta già rispondendo non manda nulla e dice «<nome> sta già rispondendo»). **Pulsante** (`loader/index.ts`, `pill.ts`): pillola di 40 px con segno e «Botcave» (cerchio di 48 px sotto i 640 px), LED `work` se `working`
+  e `ask` se `unread`, contatore `pending + bugs`, «Botcave · N azioni» quando la pagina ne ha (il clic apre con la barra in vista, `focusContext`); colori da `brand-colors.ts` (copiati da `design/tokens.json`, test di allineamento). `unread.ts`: risposta di un bot arrivata a pannello chiuso e non ancora vista.
+  Console: carte «Bot del plugin» e «Azioni del plugin» nella scheda App (`bot-names-card.tsx`, `page-actions-card.tsx`).
+- Migrazione: `docs/migrations/2026-11-17-plugin-riordino.sql` (additiva e idempotente, niente `-post`, senza BEGIN/COMMIT perché contiene `ALTER TYPE … ADD VALUE`): colonne `apps.alfred_name|lucius_name|lead_name|page_actions|embed_pages_seen`, `lead_conversations.app_id` (FK `CASCADE`,
+  riempita con l'App `casello`), valore `page_actions` di `plan_proposal_kind`, `plan_proposals.chapter` nullable con il CHECK, `lead_name = 'Barbara'` per `casello`. Applicata dal deploy; riportata in `docs/schema-casello.sql`. Nessuna variabile nuova.
+- Prova: `artifacts/api-server/test/plugin-actions-flow.test.ts` (embed collegato → stato con 2 azioni → clic → run del Responsabile con l'azione nell'input → voce in «Da confermare»; scheda `page_actions`; `host.app` verificato; conversazione senza App 404). A mano dopo il deploy
+  su `embed-demo.html` e su The Hub Up: tema chiaro e scuro, 375 px, pillola «Botcave · 2 azioni», clic su un'azione fino alla risposta del Responsabile.
+- Fuori ambito: la console con la stessa riga di schede e i nomi dei bot (C), azioni con parametri o eseguite senza il Responsabile, nomi per utente, icone per App, firma degli eventi `status` verso la pagina ospite.
 
 ## Segnalazione dei bug dal plugin
 

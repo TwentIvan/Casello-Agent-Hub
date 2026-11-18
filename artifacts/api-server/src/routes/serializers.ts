@@ -15,6 +15,7 @@ import {
   type Run,
 } from "@workspace/db";
 import { publicClientAction } from "../lib/client-actions";
+import { resolveBotNames } from "../lib/apps/bot-names";
 import { normalizeStoredToolPayload } from "../lib/architect/schemas";
 
 // Forma pubblica delle risorse: cosa esce dall'API e cosa no.
@@ -22,7 +23,7 @@ import { normalizeStoredToolPayload } from "../lib/architect/schemas";
 /** App senza i segreti (servizio e token GitHub): solo l'indicazione che sono impostati. */
 export function toPublicApp(app: App) {
   const { serviceSecretEnc, sourceTokenEnc, ...rest } = app;
-  return { ...rest, serviceSecretSet: serviceSecretEnc != null, sourceTokenSet: sourceTokenEnc != null };
+  return { ...rest, serviceSecretSet: serviceSecretEnc != null, sourceTokenSet: sourceTokenEnc != null, botNames: resolveBotNames(app) };
 }
 
 /** Colonna numeric (stringa dal driver) → numero, null se assente o non valida. */

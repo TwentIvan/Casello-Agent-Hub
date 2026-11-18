@@ -20,6 +20,23 @@ describe("buildSystemPrompt", () => {
   });
 });
 
+describe("buildSystemPrompt: nome del bot", () => {
+  const named = { ...app, slug: "hub", leadName: "Bea" } as App;
+  it("il Responsabile (general) sa come si chiama in questa app", () => {
+    const lead = { name: "Responsabile di prodotto", systemPrompt: "Istruzioni", role: "general" } as Agent;
+    expect(buildSystemPrompt(lead, named)).toContain("In questa app ti chiami Bea.");
+  });
+  it("il nome predefinito non si ripete; per casello c'è Barbara", () => {
+    const lead = { name: "Responsabile di prodotto", systemPrompt: "Istruzioni", role: "general" } as Agent;
+    expect(buildSystemPrompt(lead, { ...app, slug: "hub", leadName: null } as App)).not.toContain("ti chiami");
+    expect(buildSystemPrompt(lead, { ...app, slug: "casello", leadName: null } as App)).toContain("In questa app ti chiami Barbara.");
+  });
+  it("un agente di area non riceve la riga", () => {
+    const area = { name: "Area", systemPrompt: "Istruzioni", role: "area" } as Agent;
+    expect(buildSystemPrompt(area, named)).not.toContain("ti chiami");
+  });
+});
+
 describe("runLimitsFor", () => {
   it("il Responsabile (general) ha limiti più ampi, gli agenti di area quelli di sempre", async () => {
     const { runLimitsFor, PRODUCT_LEAD_LIMITS } = await import("./run-executor");

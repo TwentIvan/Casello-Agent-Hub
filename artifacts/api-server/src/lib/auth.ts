@@ -12,6 +12,7 @@ import { GetAuthProvidersResponse, GetCurrentUserResponse } from "@workspace/api
 import { githubConfig } from "./github/config";
 import { githubAuthRouter } from "./github/oauth-routes";
 import { logger } from "./logger";
+import { originOfEmbedClient } from "./embed/origins";
 import { verifyAccessToken } from "./oauth/tokens";
 import { tokenRateLimit } from "../middlewares/rate-limit";
 import { TOKEN_MESSAGES, authenticateApiToken, bearerToken, type TokenScope } from "./api-tokens";
@@ -59,7 +60,15 @@ declare global {
       /** Come è autenticata la richiesta: impostato da requireAuth. */
       auth?:
         | { kind: "session" }
-        | { kind: "token"; tokenId: number | null; scopes: TokenScope[]; grantId?: number; via?: "embed" };
+        | {
+            kind: "token";
+            tokenId: number | null;
+            scopes: TokenScope[];
+            grantId?: number;
+            via?: "embed";
+            /** Origine dell'app ospite del client `embed:<origine>` (solo con `via: "embed"`) */
+            embedOrigin?: string;
+          };
     }
   }
 }
@@ -226,6 +235,8 @@ export const AGENT_DENIED_ROUTES: ReadonlyArray<{ method: "POST" | "PUT" | "PATC
   { method: "PUT", path: /^\/team-instances\/[^/]+\/plan\/?$/i },
   { method: "POST", path: /^\/apps\/?$/i },
   { method: "PATCH", path: /^\/apps\/[^/]+\/?$/i },
+  // Azioni della pagina: richieste che il pannello manda al Responsabile, le configura solo l'utente
+  { method: "PUT", path: /^\/apps\/[^/]+\/page-actions\/?$/i },
   // Generazione a pagamento della sintesi dell'architettura: la avvia solo l'utente
   { method: "POST", path: /^\/apps\/[^/]+\/architecture\/refresh\/?$/i },
   // Ciclo di evoluzione: lo configura, lo ferma e lo fa girare solo l'utente (DELETE è già negato)
@@ -274,12 +285,20 @@ export const requireAuth: RequestHandler = async (req, res, next) => {
           res.status(500).json({ error: "errore interno" });
           return;
         }
-        if (!access || !access.scopes.includes("embed")) {
+        const embedOrigin = access ? originOfEmbedClient(access.clientId) : null;
+        if (!access || !access.scopes.includes("embed") || embedOrigin === null) {
           res.status(401).json({ error: TOKEN_MESSAGES.invalid });
           return;
         }
         req.userId = access.userId;
-        req.auth = { kind: "token", tokenId: null, grantId: access.grantId, scopes: ["api:read", "api:write"], via: "embed" };
+        req.auth = {
+          kind: "token",
+          tokenId: null,
+          grantId: access.grantId,
+          scopes: ["api:read", "api:write"],
+          via: "embed",
+          embedOrigin,
+        };
         tokenRateLimit(req, res, next);
         return;
       }

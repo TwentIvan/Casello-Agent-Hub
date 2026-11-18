@@ -1,6 +1,7 @@
 import { pgTable, serial, integer, text, timestamp, jsonb, index } from "drizzle-orm/pg-core";
 import { usersTable } from "./users";
 import { agentsTable } from "./agents";
+import { appsTable } from "./apps";
 import { runsTable } from "./runs";
 
 // Conversazione dell'utente con il Responsabile di prodotto di Botcave (pannello, scheda «Responsabile").
@@ -15,6 +16,8 @@ export const leadConversationsTable = pgTable(
     agentId: integer("agent_id")
       .notNull()
       .references(() => agentsTable.id, { onDelete: "cascade" }),
+    // App di cui è il Responsabile (le righe precedenti al riordino sono riempite dalla migrazione)
+    appId: integer("app_id").references(() => appsTable.id, { onDelete: "cascade" }),
     // Dal primo messaggio, max 80 caratteri
     title: text("title").notNull().default(""),
     createdAt: timestamp("created_at").notNull().defaultNow(),

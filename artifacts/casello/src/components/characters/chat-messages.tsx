@@ -20,6 +20,8 @@ interface ChatMessagesProps {
   /** Schede delle istruzioni personali già raggruppate per messaggio (`proposalsByMessage`). */
   instructionProposals?: { byMessage: Map<number, CharacterInstructionProposal[]>; trailing: CharacterInstructionProposal[] };
   onInstructionDecided?: () => void;
+  /** Nome del bot scelto dall'App (pannello incorporato); senza, quello di sempre. */
+  name?: string;
 }
 
 /** Messaggi della conversazione con le schede legate a ciascuna risposta. */
@@ -29,8 +31,9 @@ export function ChatMessages({
   onHandoff,
   instructionProposals,
   onInstructionDecided,
+  name: displayName,
 }: ChatMessagesProps) {
-  const name = CHARACTER_TEXT[character].name;
+  const name = displayName ?? CHARACTER_TEXT[character].name;
   const renderInstruction = (p: CharacterInstructionProposal) => (
     <div key={`i${p.id}`} className="min-w-0">
       <InstructionProposalCard proposal={p} readOnly={readOnly} onDecided={() => onInstructionDecided?.()} />

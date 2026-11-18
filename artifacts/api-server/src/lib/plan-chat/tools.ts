@@ -7,6 +7,8 @@ import type { ChatToolCall } from "../ai/chat-types";
 import { ITEM_SCHEMAS } from "../architect/schemas";
 import { formatIssues } from "../architect/phase-loop";
 import { MEMORY_TOOL_NAMES, runMemoryTool } from "../memory/tools";
+import type { PageAction } from "@workspace/db";
+import { pageActionsHash, validatePageActions } from "../apps/page-actions";
 import { PLAN_CHAPTERS, type PlanChapter } from "./context";
 
 function fn(name: string, description: string, parameters: Record<string, unknown>): ChatCompletionFunctionTool {
@@ -59,6 +61,30 @@ export const PLAN_TOOLS: ChatCompletionFunctionTool[] = [
       required: ["kind", "chapter", "rationale"],
     },
   ),
+  fn(
+    "proponi_azioni_pagina",
+    "Propone le azioni del plugin per un tipo di pagina dell'app ospite: sostituiscono quelle attuali di quel tipo. Non applica nulla: l'utente la vede come scheda e decide.",
+    {
+      type: "object",
+      properties: {
+        page: { type: "string", description: "Tipo di pagina (1..40 caratteri: lettere, cifre, . _ : -), uno di quelli visti nel contesto." },
+        actions: {
+          type: "array",
+          description: "Al massimo 6 azioni per tipo di pagina, con etichetta unica.",
+          items: {
+            type: "object",
+            properties: {
+              label: { type: "string", description: "Etichetta breve del pulsante (1..40 caratteri)." },
+              request: { type: "string", description: "Richiesta al Responsabile (1..1000 caratteri): dice quale lettura fare prima." },
+            },
+            required: ["label", "request"],
+          },
+        },
+        rationale: { type: "string", description: "Motivo della proposta, in poche frasi." },
+      },
+      required: ["page", "actions", "rationale"],
+    },
+  ),
 ];
 
 export interface PlanToolItem {
@@ -71,8 +97,9 @@ export interface PlanToolItem {
 }
 
 export interface NewProposal {
-  kind: "add" | "update" | "discard";
-  chapter: PlanChapter;
+  kind: "add" | "update" | "discard" | "page_actions";
+  /** null solo per `page_actions` */
+  chapter: PlanChapter | null;
   payload: unknown | null;
   rationale: string;
   targetItemId: number | null;
@@ -86,6 +113,10 @@ export interface PlanToolEnv {
   readApp(slug: string): Promise<string | null>;
   saveProposal(p: NewProposal): Promise<number>;
   hash(item: PlanToolItem): string;
+  /** Azioni del plugin attuali dell'App (tutte le pagine). */
+  pageActions(): PageAction[];
+  /** Tipi di pagina visti dal pannello incorporato nell'App. */
+  pagesSeen(): string[];
 }
 
 /** Correzioni ammesse per la stessa proposta (stessa voce): al tentativo successivo la proposta si abbandona. */
@@ -118,6 +149,12 @@ const ProposeArgs = z.object({
   rationale: z.string().trim().min(1, "rationale: non può essere vuota").max(RATIONALE_MAX, `rationale: massimo ${RATIONALE_MAX} caratteri`),
 });
 
+const PageActionsArgs = z.object({
+  page: z.string({ message: "page: deve essere un testo" }),
+  actions: z.array(z.object({ label: z.string(), request: z.string() }), { message: "actions: deve essere un elenco di {label, request}" }),
+  rationale: z.string().trim().min(1, "rationale: non può essere vuota").max(RATIONALE_MAX, `rationale: massimo ${RATIONALE_MAX} caratteri`),
+});
+
 function parseArgs(raw: string): Record<string, unknown> | null {
   try {
     const v: unknown = JSON.parse(raw);
@@ -141,7 +178,7 @@ export class PlanToolRunner {
   async run(call: ChatToolCall): Promise<string> {
     const args = parseArgs(call.arguments);
     if ((MEMORY_TOOL_NAMES as readonly string[]).includes(call.name)) return this.memory(call.name, args);
-    if (!args) return call.name === "propose" ? this.invalid("?", ["argomenti: JSON non valido"]) : "argomenti non validi: serve un oggetto JSON";
+    if (!args) return call.name === "propose" || call.name === "proponi_azioni_pagina" ? this.invalid("?", ["argomenti: JSON non valido"]) : "argomenti non validi: serve un oggetto JSON";
     switch (call.name) {
       case "read_item": {
         const ref = typeof args.ref === "string" ? args.ref : "";
@@ -154,6 +191,8 @@ export class PlanToolRunner {
       }
       case "propose":
         return this.propose(args);
+      case "proponi_azioni_pagina":
+        return this.proposePageActions(args);
       default:
         return `strumento sconosciuto: ${call.name}`;
     }
@@ -225,6 +264,31 @@ export class PlanToolRunner {
       targetHash: target ? this.env.hash(target) : null,
     });
     return `proposta registrata (#${id}): l'utente la vedrà come scheda`;
+  }
+
+  private async proposePageActions(args: Record<string, unknown>): Promise<string> {
+    if (this.invalidTotal >= MAX_INVALID_PER_TURN) return EXHAUSTED;
+    const key = `page_actions|${typeof args.page === "string" ? args.page.trim() : "?"}`;
+    if ((this.corrections.get(key) ?? 0) > MAX_PROPOSE_CORRECTIONS) return PROPOSAL_EXHAUSTED;
+    const parsed = PageActionsArgs.safeParse(args);
+    if (!parsed.success) return this.invalid(key, formatIssues(parsed.error.issues));
+    const page = parsed.data.page.trim();
+    const current = this.env.pageActions();
+    // Le azioni di quel tipo di pagina sostituiscono le attuali; l'elenco intero si rivalida (totale di 40, pagina, etichette)
+    const next = [...current.filter((a) => a.page !== page), ...parsed.data.actions.map((a) => ({ ...a, page }))];
+    const checked = validatePageActions(next);
+    if (!checked.ok) return this.invalid(key, [checked.error]);
+    const proposed = checked.actions.filter((a) => a.page === page).map((a) => ({ label: a.label, request: a.request }));
+    const id = await this.env.saveProposal({
+      kind: "page_actions",
+      chapter: null,
+      payload: { page, actions: proposed },
+      rationale: parsed.data.rationale.trim(),
+      targetItemId: null,
+      targetHash: pageActionsHash(current, page),
+    });
+    const unseen = this.env.pagesSeen().includes(page) ? "" : "; attenzione: il tipo di pagina non è tra quelli visti dal pannello";
+    return `proposta registrata (#${id}): l'utente la vedrà come scheda${unseen}`;
   }
 
   /** Ogni dipendenza è la key di una voce di completamento del piano o la key della voce stessa. */

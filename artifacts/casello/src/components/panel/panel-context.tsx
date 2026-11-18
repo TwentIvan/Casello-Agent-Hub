@@ -5,6 +5,7 @@ import { useLocation } from "wouter";
 import type { ChatTarget, PageContext } from "../characters/adapters";
 import { targetKey } from "../characters/targets";
 import { alfredPageContext } from "@/embed/panel-helpers";
+import type { BotNames, EmbedStatus } from "@workspace/api-client-react";
 import type { HostContextMsg } from "@/embed/protocol";
 import { pageFromPath } from "./page-subject";
 import { INITIAL_PANEL_STATE, panelReducer, type PanelAction, type PanelState } from "./panel-state";
@@ -12,7 +13,17 @@ import type { PanelTab } from "./tabs";
 
 export type PanelEnv =
   | { surface: "console" }
-  | { surface: "embed"; appSlug: string; appName: string | null; hostContext: HostContextMsg | null; onClose(): void };
+  | {
+      surface: "embed";
+      appSlug: string;
+      appName: string | null;
+      hostContext: HostContextMsg | null;
+      /** Nomi dei bot dell'App ospite (da GET /api/embed/status), null finché non letti. */
+      botNames: BotNames | null;
+      /** Ultimo stato letto (contatori, azioni della pagina, Responsabile), null finché non letto. */
+      status: EmbedStatus | null;
+      onClose(): void;
+    };
 
 export interface PanelApi {
   state: PanelState;
@@ -22,6 +33,10 @@ export interface PanelApi {
   selectTab(tab: PanelTab): void;
   handoff(target: ChatTarget, draft: string): void;
   clearOverride(): void;
+  /** Azione della barra del contesto: apre il Responsabile e gliela manda. */
+  runAction(label: string): void;
+  /** L'azione con quel numero è stata presa in carico dalla scheda del Responsabile. */
+  actionDone(seq: number): void;
   /** Contesto di Alfred: pageFromPath(location) nella console, alfredPageContext(appSlug, hostContext) nell'embed. */
   alfredPage: PageContext;
   hasUnsavedChanges(): boolean;
@@ -71,6 +86,8 @@ export function PanelProvider({ env, children }: { env: PanelEnv; children: Reac
   const selectTab = useCallback((tab: PanelTab) => dispatch({ type: "selectTab", tab }), []);
   const handoff = useCallback((target: ChatTarget, draft: string) => dispatch({ type: "handoff", target, draft }), []);
   const clearOverride = useCallback(() => dispatch({ type: "clearOverride" }), []);
+  const runAction = useCallback((label: string) => dispatch({ type: "runAction", label }), []);
+  const actionDone = useCallback((seq: number) => dispatch({ type: "actionDone", seq }), []);
   const hasUnsavedChanges = useCallback(() => unsavedRef.current?.() ?? false, []);
 
   const value = useMemo<PanelContextValue>(
@@ -82,12 +99,14 @@ export function PanelProvider({ env, children }: { env: PanelEnv; children: Reac
       selectTab,
       handoff,
       clearOverride,
+      runAction,
+      actionDone,
       alfredPage,
       hasUnsavedChanges,
       dispatch,
       unsavedRef,
     }),
-    [state, env, openPanel, closePanel, selectTab, handoff, clearOverride, alfredPage, hasUnsavedChanges],
+    [state, env, openPanel, closePanel, selectTab, handoff, clearOverride, runAction, actionDone, alfredPage, hasUnsavedChanges],
   );
 
   return <PanelContext.Provider value={value}>{children}</PanelContext.Provider>;

@@ -29,4 +29,5 @@ export const LeadPageContextPage = {
   models: 'models',
   account: 'account',
   console: 'console',
+  host: 'host',
 } as const;

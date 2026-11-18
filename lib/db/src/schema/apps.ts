@@ -1,4 +1,4 @@
-import { pgTable, serial, bigint, text, timestamp, pgEnum, jsonb, integer, boolean, check } from "drizzle-orm/pg-core";
+import { pgTable, serial, bigint, text, varchar, timestamp, pgEnum, jsonb, integer, boolean, check } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { sql } from "drizzle-orm";
 import { z } from "zod/v4";
@@ -15,6 +15,9 @@ export type AuthConfig = { header: string; scheme: string | null };
 
 // Header HTTP fisso (non segreto) che l'esecutore manda su ogni chiamata ai tool dell'app
 export type ExtraHeader = { name: string; value: string };
+
+// Azione proposta dal plugin su una pagina dell'app ospite
+export type PageAction = { page: string; label: string; request: string };
 
 export const appsTable = pgTable(
   "apps",
@@ -51,6 +54,13 @@ export const appsTable = pgTable(
     bugReportsDailyLimit: integer("bug_reports_daily_limit").notNull().default(20),
     identitySecretEnc: text("identity_secret_enc"),
     identitySecretSetAt: timestamp("identity_secret_set_at"),
+    // Nomi dei bot mostrati nel plugin (null = predefiniti)
+    alfredName: varchar("alfred_name", { length: 40 }),
+    luciusName: varchar("lucius_name", { length: 40 }),
+    leadName: varchar("lead_name", { length: 40 }),
+    pageActions: jsonb("page_actions").$type<PageAction[]>().notNull().default([]),
+    // Pagine dell'app ospite viste dal plugin (setContext)
+    embedPagesSeen: jsonb("embed_pages_seen").$type<string[]>().notNull().default([]),
     status: appStatusEnum("status").notNull().default("active"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),

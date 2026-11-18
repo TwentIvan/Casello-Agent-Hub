@@ -56,6 +56,7 @@ import { WEB_TOOLS, WebPageReader, isWebTool } from "../web-reader/tool";
 import { ARCHITECTURE_CHAT_TOOL, isArchitectureTool, runArchitectureChatTool } from "../architecture/tool";
 import { BEST_PRACTICE_TOOLS, BestPracticeSearcher, isBestPracticeTool } from "../best-practice/tool";
 import { bestPracticeData, parseToolArgs } from "../best-practice/context";
+import { resolveBotNames } from "../apps/bot-names";
 
 export const PLAN_MESSAGE_MAX_CHARS = 8_000;
 export const INTERRUPTED_TURN_MESSAGE = "Turno interrotto dal riavvio di Botcave: riscrivi il messaggio.";
@@ -172,7 +173,11 @@ async function loadHistory(conversationId: number, assistantMessageId: number): 
   const targetById = new Map(targets.map((t) => [t.id, t]));
 
   const titleOf = (p: (typeof proposals)[number]): string => {
-    if (p.payload !== null) return itemTitle(p.chapter as PlanChapter, p.payload);
+    if (p.kind === "page_actions") {
+      const page = (p.payload as { page?: unknown } | null)?.page;
+      return `Azioni per ${typeof page === "string" ? page : "pagina"}`;
+    }
+    if (p.payload !== null && p.chapter !== null) return itemTitle(p.chapter as PlanChapter, p.payload);
     const t = p.targetItemId !== null ? targetById.get(p.targetItemId) : undefined;
     return t ? itemTitle(t.chapter as PlanChapter, t.payload) : "voce non più disponibile";
   };
@@ -185,7 +190,7 @@ async function loadHistory(conversationId: number, assistantMessageId: number): 
       content: m.content,
       proposals: proposals
         .filter((p) => p.messageId === m.id)
-        .map((p): HistoryProposal => ({ kind: p.kind, title: titleOf(p), status: p.status })),
+        .map((p): HistoryProposal => ({ kind: p.kind as HistoryProposal["kind"], title: titleOf(p), status: p.status })),
       instructionProposals: instructionStatuses.get(m.id) ?? [],
     }));
 }
@@ -275,6 +280,9 @@ async function executePlanTurnInner(conversationId: number, assistantMessageId: 
         items: items.map((i) => toRow(i, analysis.id)),
         otherApps,
         history: await loadHistory(conversationId, assistantMessageId),
+        luciusName: resolveBotNames(app).lucius,
+        pageActions: app.pageActions,
+        pagesSeen: app.embedPagesSeen,
         memory: await memoryContextBlock(conv.userId, "lucius"),
         personalInstructions: await personalInstructionsBlock(conv.userId, "lucius"),
         code: codeInfo.ok ? { available: true, repo: codeInfo.repo, branch: codeInfo.branch } : { available: false, reason: codeInfo.reason },
@@ -288,6 +296,8 @@ async function executePlanTurnInner(conversationId: number, assistantMessageId: 
         items: toolItems,
         readApp: readAppCard,
         hash: itemHash,
+        pageActions: () => app.pageActions,
+        pagesSeen: () => app.embedPagesSeen,
         saveProposal: async (p) => {
           const [row] = await db
             .insert(planProposalsTable)

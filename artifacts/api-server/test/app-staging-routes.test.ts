@@ -53,6 +53,21 @@ beforeEach(async () => {
   appId = app!.id;
 });
 
+describe("PATCH /apps/:id nomi dei bot", () => {
+  it("salva il nome, rifiuta quelli non validi, null torna al predefinito", async () => {
+    const ok = await api("PATCH", `/apps/${appId}`, { leadName: " Bea " });
+    expect(ok.status, ok.text).toBe(200);
+    expect(ok.json.botNames).toEqual({ alfred: "Alfred", lucius: "Lucius", lead: "Bea" });
+    expect(ok.json.leadName).toBe("Bea");
+    const bad = await api("PATCH", `/apps/${appId}`, { leadName: "<x>" });
+    expect(bad.status).toBe(400);
+    expect(bad.json).toEqual({ error: "nome del bot non valido" });
+    const reset = await api("PATCH", `/apps/${appId}`, { leadName: null });
+    expect(reset.status, reset.text).toBe(200);
+    expect(reset.json.botNames.lead).toBe("Responsabile");
+  });
+});
+
 describe("PATCH /apps/:id versione di prova", () => {
   it("salva branch e indirizzo di prova, l'App li espone, null li toglie", async () => {
     const r = await api("PATCH", `/apps/${appId}`, { stagingBranch: "staging", stagingUrl: "https://staging.hub.example" });

@@ -105,9 +105,11 @@ import type {
   ConflictResponse,
   CostEstimate,
   CreateEmbedBugParams,
+  CreateLeadConversationParams,
   CurrentUser,
   DashboardStats,
   DefaultModel,
+  DeleteLeadConversationParams,
   DeleteMemoryHistoryEntryParams,
   DeleteMemoryNoteParams,
   EmbedBugCreate,
@@ -119,6 +121,7 @@ import type {
   EmbedBugSeenResult,
   EmbedBugSummary,
   EmbedConfig,
+  EmbedStatus,
   ErrorResponse,
   EstimateAnalysisCostParams,
   EvolutionConsentText,
@@ -131,6 +134,9 @@ import type {
   GetAppEvolutionConsentTextParams,
   GetEmbedBugParams,
   GetEmbedConfigParams,
+  GetEmbedStatusParams,
+  GetLeadChatParams,
+  GetLeadConversationParams,
   GetTeamInstanceUpdates200,
   GithubInstallations,
   GithubRepo,
@@ -151,6 +157,7 @@ import type {
   ListCharacterConversationsParams,
   ListCharacterInstructionProposalsParams,
   ListEmbedBugsParams,
+  ListLeadConversationsParams,
   ListMemoryHistoryParams,
   ListMemoryNotesParams,
   ListPendingActionsParams,
@@ -194,6 +201,7 @@ import type {
   NodeTurnReport,
   NotFoundResponse,
   OAuthGrant,
+  PageActionsUpdate,
   PayloadTooLargeResponse,
   PlanConversation,
   PlanConversationCreate,
@@ -216,6 +224,7 @@ import type {
   RunClientResult,
   RunStep,
   RunTrigger,
+  SendLeadMessageParams,
   StartZipAnalysisParams,
   TeamAttachment,
   TeamBudgetInput,
@@ -436,6 +445,91 @@ export function useGetEmbedConfig<TData = Awaited<ReturnType<typeof getEmbedConf
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetEmbedConfigQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetEmbedStatusUrl = (params: GetEmbedStatusParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/embed/status?${stringifiedParams}` : `/api/embed/status`
+}
+
+/**
+ * Solo sessione o token del pannello. Con il token del pannello `app` deve essere l'App ospite del client (altrimenti 404 «App non trovata»). Registra il tipo di pagina visto. 60 richieste al minuto per collegamento.
+ * @summary Stato del pannello incorporato per una pagina
+ */
+export const getEmbedStatus = async (params: GetEmbedStatusParams, options?: RequestInit): Promise<EmbedStatus> => {
+
+  return customFetch<EmbedStatus>(getGetEmbedStatusUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetEmbedStatusQueryKey = (params?: GetEmbedStatusParams,) => {
+    return [
+    `/api/embed/status`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getGetEmbedStatusQueryOptions = <TData = Awaited<ReturnType<typeof getEmbedStatus>>, TError = ErrorType<BadRequestResponse | NotFoundResponse | ErrorResponse>>(params: GetEmbedStatusParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEmbedStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetEmbedStatusQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getEmbedStatus>>> = ({ signal }) => getEmbedStatus(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getEmbedStatus>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetEmbedStatusQueryResult = NonNullable<Awaited<ReturnType<typeof getEmbedStatus>>>
+export type GetEmbedStatusQueryError = ErrorType<BadRequestResponse | NotFoundResponse | ErrorResponse>
+
+
+/**
+ * @summary Stato del pannello incorporato per una pagina
+ */
+
+export function useGetEmbedStatus<TData = Awaited<ReturnType<typeof getEmbedStatus>>, TError = ErrorType<BadRequestResponse | NotFoundResponse | ErrorResponse>>(
+ params: GetEmbedStatusParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getEmbedStatus>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetEmbedStatusQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -4907,6 +5001,78 @@ export const useDeleteApp = <TError = ErrorType<NotFoundResponse | ErrorResponse
         TContext
       > => {
       return useMutation(getDeleteAppMutationOptions(options));
+    }
+
+export const getUpdateAppPageActionsUrl = (id: number,) => {
+
+
+
+
+  return `/api/apps/${id}/page-actions`
+}
+
+/**
+ * Al più 6 azioni per tipo di pagina e 40 per App, etichette uniche per tipo di pagina. Non vale con il token `agent`.
+ * @summary Sostituisce le azioni della pagina dell'App
+ */
+export const updateAppPageActions = async (id: number,
+    pageActionsUpdate: PageActionsUpdate, options?: RequestInit): Promise<App> => {
+
+  return customFetch<App>(getUpdateAppPageActionsUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(pageActionsUpdate)
+  }
+);}
+
+
+
+
+export const getUpdateAppPageActionsMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAppPageActions>>, TError,{id: number;data: BodyType<PageActionsUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateAppPageActions>>, TError,{id: number;data: BodyType<PageActionsUpdate>}, TContext> => {
+
+const mutationKey = ['updateAppPageActions'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateAppPageActions>>, {id: number;data: BodyType<PageActionsUpdate>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateAppPageActions(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateAppPageActionsMutationResult = NonNullable<Awaited<ReturnType<typeof updateAppPageActions>>>
+    export type UpdateAppPageActionsMutationBody = BodyType<PageActionsUpdate>
+    export type UpdateAppPageActionsMutationError = ErrorType<BadRequestResponse | NotFoundResponse>
+
+    /**
+ * @summary Sostituisce le azioni della pagina dell'App
+ */
+export const useUpdateAppPageActions = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAppPageActions>>, TError,{id: number;data: BodyType<PageActionsUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateAppPageActions>>,
+        TError,
+        {id: number;data: BodyType<PageActionsUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateAppPageActionsMutationOptions(options));
     }
 
 export const getGetAppArchitectureUrl = (id: number,) => {
@@ -17198,20 +17364,27 @@ export const useCancelQueuedCharacterMessage = <TError = ErrorType<NotFoundRespo
       return useMutation(getCancelQueuedCharacterMessageMutationOptions(options));
     }
 
-export const getGetLeadChatUrl = () => {
+export const getGetLeadChatUrl = (params?: GetLeadChatParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/lead-chat`
+  return stringifiedParams.length > 0 ? `/api/lead-chat?${stringifiedParams}` : `/api/lead-chat`
 }
 
 /**
- * @summary Disponibilità del Responsabile di Botcave per l'utente
+ * @summary Disponibilità del Responsabile di un'App per l'utente
  */
-export const getLeadChat = async ( options?: RequestInit): Promise<LeadChatAvailability> => {
+export const getLeadChat = async (params?: GetLeadChatParams, options?: RequestInit): Promise<LeadChatAvailability> => {
 
-  return customFetch<LeadChatAvailability>(getGetLeadChatUrl(),
+  return customFetch<LeadChatAvailability>(getGetLeadChatUrl(params),
   {
     ...options,
     method: 'GET'
@@ -17224,23 +17397,23 @@ export const getLeadChat = async ( options?: RequestInit): Promise<LeadChatAvail
 
 
 
-export const getGetLeadChatQueryKey = () => {
+export const getGetLeadChatQueryKey = (params?: GetLeadChatParams,) => {
     return [
-    `/api/lead-chat`
+    `/api/lead-chat`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getGetLeadChatQueryOptions = <TData = Awaited<ReturnType<typeof getLeadChat>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLeadChat>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getGetLeadChatQueryOptions = <TData = Awaited<ReturnType<typeof getLeadChat>>, TError = ErrorType<NotFoundResponse>>(params?: GetLeadChatParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLeadChat>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getGetLeadChatQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getGetLeadChatQueryKey(params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getLeadChat>>> = ({ signal }) => getLeadChat({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getLeadChat>>> = ({ signal }) => getLeadChat(params, { signal, ...requestOptions });
 
 
 
@@ -17250,19 +17423,19 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 }
 
 export type GetLeadChatQueryResult = NonNullable<Awaited<ReturnType<typeof getLeadChat>>>
-export type GetLeadChatQueryError = ErrorType<unknown>
+export type GetLeadChatQueryError = ErrorType<NotFoundResponse>
 
 
 /**
- * @summary Disponibilità del Responsabile di Botcave per l'utente
+ * @summary Disponibilità del Responsabile di un'App per l'utente
  */
 
-export function useGetLeadChat<TData = Awaited<ReturnType<typeof getLeadChat>>, TError = ErrorType<unknown>>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLeadChat>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export function useGetLeadChat<TData = Awaited<ReturnType<typeof getLeadChat>>, TError = ErrorType<NotFoundResponse>>(
+ params?: GetLeadChatParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLeadChat>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getGetLeadChatQueryOptions(options)
+  const queryOptions = getGetLeadChatQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -17275,20 +17448,27 @@ export function useGetLeadChat<TData = Awaited<ReturnType<typeof getLeadChat>>, 
 
 
 
-export const getListLeadConversationsUrl = () => {
+export const getListLeadConversationsUrl = (params?: ListLeadConversationsParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/lead-conversations`
+  return stringifiedParams.length > 0 ? `/api/lead-conversations?${stringifiedParams}` : `/api/lead-conversations`
 }
 
 /**
- * @summary Conversazioni aperte con il Responsabile (al più 100)
+ * @summary Conversazioni aperte con il Responsabile dell'App (al più 100)
  */
-export const listLeadConversations = async ( options?: RequestInit): Promise<LeadConversation[]> => {
+export const listLeadConversations = async (params?: ListLeadConversationsParams, options?: RequestInit): Promise<LeadConversation[]> => {
 
-  return customFetch<LeadConversation[]>(getListLeadConversationsUrl(),
+  return customFetch<LeadConversation[]>(getListLeadConversationsUrl(params),
   {
     ...options,
     method: 'GET'
@@ -17301,23 +17481,23 @@ export const listLeadConversations = async ( options?: RequestInit): Promise<Lea
 
 
 
-export const getListLeadConversationsQueryKey = () => {
+export const getListLeadConversationsQueryKey = (params?: ListLeadConversationsParams,) => {
     return [
-    `/api/lead-conversations`
+    `/api/lead-conversations`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getListLeadConversationsQueryOptions = <TData = Awaited<ReturnType<typeof listLeadConversations>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listLeadConversations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getListLeadConversationsQueryOptions = <TData = Awaited<ReturnType<typeof listLeadConversations>>, TError = ErrorType<NotFoundResponse>>(params?: ListLeadConversationsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listLeadConversations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getListLeadConversationsQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getListLeadConversationsQueryKey(params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listLeadConversations>>> = ({ signal }) => listLeadConversations({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listLeadConversations>>> = ({ signal }) => listLeadConversations(params, { signal, ...requestOptions });
 
 
 
@@ -17327,19 +17507,19 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 }
 
 export type ListLeadConversationsQueryResult = NonNullable<Awaited<ReturnType<typeof listLeadConversations>>>
-export type ListLeadConversationsQueryError = ErrorType<unknown>
+export type ListLeadConversationsQueryError = ErrorType<NotFoundResponse>
 
 
 /**
- * @summary Conversazioni aperte con il Responsabile (al più 100)
+ * @summary Conversazioni aperte con il Responsabile dell'App (al più 100)
  */
 
-export function useListLeadConversations<TData = Awaited<ReturnType<typeof listLeadConversations>>, TError = ErrorType<unknown>>(
-  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listLeadConversations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export function useListLeadConversations<TData = Awaited<ReturnType<typeof listLeadConversations>>, TError = ErrorType<NotFoundResponse>>(
+ params?: ListLeadConversationsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listLeadConversations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getListLeadConversationsQueryOptions(options)
+  const queryOptions = getListLeadConversationsQueryOptions(params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -17352,21 +17532,28 @@ export function useListLeadConversations<TData = Awaited<ReturnType<typeof listL
 
 
 
-export const getCreateLeadConversationUrl = () => {
+export const getCreateLeadConversationUrl = (params?: CreateLeadConversationParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/lead-conversations`
+  return stringifiedParams.length > 0 ? `/api/lead-conversations?${stringifiedParams}` : `/api/lead-conversations`
 }
 
 /**
  * 409 se il Responsabile non è disponibile o se l'utente ha già 100 conversazioni aperte.
  * @summary Nuova conversazione con il Responsabile
  */
-export const createLeadConversation = async ( options?: RequestInit): Promise<LeadConversation> => {
+export const createLeadConversation = async (params?: CreateLeadConversationParams, options?: RequestInit): Promise<LeadConversation> => {
 
-  return customFetch<LeadConversation>(getCreateLeadConversationUrl(),
+  return customFetch<LeadConversation>(getCreateLeadConversationUrl(params),
   {
     ...options,
     method: 'POST'
@@ -17378,9 +17565,9 @@ export const createLeadConversation = async ( options?: RequestInit): Promise<Le
 
 
 
-export const getCreateLeadConversationMutationOptions = <TError = ErrorType<ConflictResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createLeadConversation>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof createLeadConversation>>, TError,void, TContext> => {
+export const getCreateLeadConversationMutationOptions = <TError = ErrorType<NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createLeadConversation>>, TError,{params?: CreateLeadConversationParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createLeadConversation>>, TError,{params?: CreateLeadConversationParams}, TContext> => {
 
 const mutationKey = ['createLeadConversation'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -17392,10 +17579,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createLeadConversation>>, void> = () => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createLeadConversation>>, {params?: CreateLeadConversationParams}> = (props) => {
+          const {params} = props ?? {};
 
-
-          return  createLeadConversation(requestOptions)
+          return  createLeadConversation(params,requestOptions)
         }
 
 
@@ -17407,36 +17594,46 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type CreateLeadConversationMutationResult = NonNullable<Awaited<ReturnType<typeof createLeadConversation>>>
 
-    export type CreateLeadConversationMutationError = ErrorType<ConflictResponse>
+    export type CreateLeadConversationMutationError = ErrorType<NotFoundResponse | ConflictResponse>
 
     /**
  * @summary Nuova conversazione con il Responsabile
  */
-export const useCreateLeadConversation = <TError = ErrorType<ConflictResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createLeadConversation>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+export const useCreateLeadConversation = <TError = ErrorType<NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createLeadConversation>>, TError,{params?: CreateLeadConversationParams}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof createLeadConversation>>,
         TError,
-        void,
+        {params?: CreateLeadConversationParams},
         TContext
       > => {
       return useMutation(getCreateLeadConversationMutationOptions(options));
     }
 
-export const getGetLeadConversationUrl = (id: number,) => {
+export const getGetLeadConversationUrl = (id: number,
+    params?: GetLeadConversationParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/lead-conversations/${id}`
+  return stringifiedParams.length > 0 ? `/api/lead-conversations/${id}?${stringifiedParams}` : `/api/lead-conversations/${id}`
 }
 
 /**
+ * 404 anche se la conversazione è di un'altra App.
  * @summary Conversazione con i messaggi e le loro run
  */
-export const getLeadConversation = async (id: number, options?: RequestInit): Promise<LeadConversationDetail> => {
+export const getLeadConversation = async (id: number,
+    params?: GetLeadConversationParams, options?: RequestInit): Promise<LeadConversationDetail> => {
 
-  return customFetch<LeadConversationDetail>(getGetLeadConversationUrl(id),
+  return customFetch<LeadConversationDetail>(getGetLeadConversationUrl(id,params),
   {
     ...options,
     method: 'GET'
@@ -17449,23 +17646,25 @@ export const getLeadConversation = async (id: number, options?: RequestInit): Pr
 
 
 
-export const getGetLeadConversationQueryKey = (id: number,) => {
+export const getGetLeadConversationQueryKey = (id: number,
+    params?: GetLeadConversationParams,) => {
     return [
-    `/api/lead-conversations/${id}`
+    `/api/lead-conversations/${id}`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getGetLeadConversationQueryOptions = <TData = Awaited<ReturnType<typeof getLeadConversation>>, TError = ErrorType<NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLeadConversation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+export const getGetLeadConversationQueryOptions = <TData = Awaited<ReturnType<typeof getLeadConversation>>, TError = ErrorType<NotFoundResponse>>(id: number,
+    params?: GetLeadConversationParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLeadConversation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getGetLeadConversationQueryKey(id);
+  const queryKey =  queryOptions?.queryKey ?? getGetLeadConversationQueryKey(id,params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getLeadConversation>>> = ({ signal }) => getLeadConversation(id, { signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getLeadConversation>>> = ({ signal }) => getLeadConversation(id,params, { signal, ...requestOptions });
 
 
 
@@ -17483,11 +17682,12 @@ export type GetLeadConversationQueryError = ErrorType<NotFoundResponse>
  */
 
 export function useGetLeadConversation<TData = Awaited<ReturnType<typeof getLeadConversation>>, TError = ErrorType<NotFoundResponse>>(
- id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLeadConversation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+ id: number,
+    params?: GetLeadConversationParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getLeadConversation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
 
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
-  const queryOptions = getGetLeadConversationQueryOptions(id,options)
+  const queryOptions = getGetLeadConversationQueryOptions(id,params,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 
@@ -17500,20 +17700,29 @@ export function useGetLeadConversation<TData = Awaited<ReturnType<typeof getLead
 
 
 
-export const getDeleteLeadConversationUrl = (id: number,) => {
+export const getDeleteLeadConversationUrl = (id: number,
+    params?: DeleteLeadConversationParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/lead-conversations/${id}`
+  return stringifiedParams.length > 0 ? `/api/lead-conversations/${id}?${stringifiedParams}` : `/api/lead-conversations/${id}`
 }
 
 /**
  * @summary Elimina la conversazione (le run restano)
  */
-export const deleteLeadConversation = async (id: number, options?: RequestInit): Promise<void> => {
+export const deleteLeadConversation = async (id: number,
+    params?: DeleteLeadConversationParams, options?: RequestInit): Promise<void> => {
 
-  return customFetch<void>(getDeleteLeadConversationUrl(id),
+  return customFetch<void>(getDeleteLeadConversationUrl(id,params),
   {
     ...options,
     method: 'DELETE'
@@ -17526,8 +17735,8 @@ export const deleteLeadConversation = async (id: number, options?: RequestInit):
 
 
 export const getDeleteLeadConversationMutationOptions = <TError = ErrorType<NotFoundResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteLeadConversation>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof deleteLeadConversation>>, TError,{id: number}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteLeadConversation>>, TError,{id: number;params?: DeleteLeadConversationParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteLeadConversation>>, TError,{id: number;params?: DeleteLeadConversationParams}, TContext> => {
 
 const mutationKey = ['deleteLeadConversation'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -17539,10 +17748,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteLeadConversation>>, {id: number}> = (props) => {
-          const {id} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteLeadConversation>>, {id: number;params?: DeleteLeadConversationParams}> = (props) => {
+          const {id,params} = props ?? {};
 
-          return  deleteLeadConversation(id,requestOptions)
+          return  deleteLeadConversation(id,params,requestOptions)
         }
 
 
@@ -17560,32 +17769,41 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Elimina la conversazione (le run restano)
  */
 export const useDeleteLeadConversation = <TError = ErrorType<NotFoundResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteLeadConversation>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteLeadConversation>>, TError,{id: number;params?: DeleteLeadConversationParams}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof deleteLeadConversation>>,
         TError,
-        {id: number},
+        {id: number;params?: DeleteLeadConversationParams},
         TContext
       > => {
       return useMutation(getDeleteLeadConversationMutationOptions(options));
     }
 
-export const getSendLeadMessageUrl = (id: number,) => {
+export const getSendLeadMessageUrl = (id: number,
+    params?: SendLeadMessageParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/lead-conversations/${id}/messages`
+  return stringifiedParams.length > 0 ? `/api/lead-conversations/${id}/messages?${stringifiedParams}` : `/api/lead-conversations/${id}/messages`
 }
 
 /**
- * Un messaggio alla volta (409 se la run precedente è in coda o in corso), al più 10 al minuto per utente (429), 409 col motivo se il Responsabile non è disponibile o il tetto di spesa è raggiunto, 429 se la coda è piena.
+ * Un messaggio alla volta (409 se la run precedente è in coda o in corso), al più 10 al minuto per utente (429), 409 col motivo se il Responsabile non è disponibile o il tetto di spesa è raggiunto, 429 se la coda è piena. Con `actionLabel` (solo con `pageContext.page = host`) il server cerca l'azione per pagina ed etichetta nelle azioni dell'App e usa la richiesta salvata; non trovata → 400 «azione non trovata: ricarica il pannello».
  * @summary Invia un messaggio al Responsabile (crea una run)
  */
 export const sendLeadMessage = async (id: number,
-    leadMessageCreate: LeadMessageCreate, options?: RequestInit): Promise<LeadMessageAccepted> => {
+    leadMessageCreate: LeadMessageCreate,
+    params?: SendLeadMessageParams, options?: RequestInit): Promise<LeadMessageAccepted> => {
 
-  return customFetch<LeadMessageAccepted>(getSendLeadMessageUrl(id),
+  return customFetch<LeadMessageAccepted>(getSendLeadMessageUrl(id,params),
   {
     ...options,
     method: 'POST',
@@ -17598,8 +17816,8 @@ export const sendLeadMessage = async (id: number,
 
 
 export const getSendLeadMessageMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendLeadMessage>>, TError,{id: number;data: BodyType<LeadMessageCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof sendLeadMessage>>, TError,{id: number;data: BodyType<LeadMessageCreate>}, TContext> => {
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendLeadMessage>>, TError,{id: number;data: BodyType<LeadMessageCreate>;params?: SendLeadMessageParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof sendLeadMessage>>, TError,{id: number;data: BodyType<LeadMessageCreate>;params?: SendLeadMessageParams}, TContext> => {
 
 const mutationKey = ['sendLeadMessage'];
 const {mutation: mutationOptions, request: requestOptions} = options ?
@@ -17611,10 +17829,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof sendLeadMessage>>, {id: number;data: BodyType<LeadMessageCreate>}> = (props) => {
-          const {id,data} = props ?? {};
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof sendLeadMessage>>, {id: number;data: BodyType<LeadMessageCreate>;params?: SendLeadMessageParams}> = (props) => {
+          const {id,data,params} = props ?? {};
 
-          return  sendLeadMessage(id,data,requestOptions)
+          return  sendLeadMessage(id,data,params,requestOptions)
         }
 
 
@@ -17632,11 +17850,11 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
  * @summary Invia un messaggio al Responsabile (crea una run)
  */
 export const useSendLeadMessage = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendLeadMessage>>, TError,{id: number;data: BodyType<LeadMessageCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendLeadMessage>>, TError,{id: number;data: BodyType<LeadMessageCreate>;params?: SendLeadMessageParams}, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof sendLeadMessage>>,
         TError,
-        {id: number;data: BodyType<LeadMessageCreate>},
+        {id: number;data: BodyType<LeadMessageCreate>;params?: SendLeadMessageParams},
         TContext
       > => {
       return useMutation(getSendLeadMessageMutationOptions(options));

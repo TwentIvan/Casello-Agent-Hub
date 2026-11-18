@@ -3,7 +3,7 @@ import type { QueryClient, QueryKey } from "@tanstack/react-query";
 import type { CharacterPageContext, CharacterSubjectType, TurnProgress } from "@workspace/api-client-react";
 import { useAlfredAdapter, useLuciusSubjectAdapter } from "./character-adapters";
 import { SUBJECT_LABELS, targetKey } from "./targets";
-import { useLeadChatAdapter } from "./lead-adapter";
+import { useLeadChatAdapter, type LeadPage } from "./lead-adapter";
 import { usePlanChatAdapter, useTeamChatAdapter } from "./plan-team-adapters";
 import type { SendMode } from "./chat-send";
 import type { InstructionConversationKind } from "./use-instruction-proposals";
@@ -32,8 +32,11 @@ export type ChatTarget =
   | { kind: "character"; subjectType: Exclude<SubjectType, "alfred_thread">; subjectId: string | null; title: string }
   | { kind: "plan"; appId: number }
   | { kind: "team"; instanceId: number; closed: boolean }
-  /** Chat con il Responsabile di Botcave (solo console): `page` è la pagina da cui si scrive. */
-  | { kind: "lead"; page: { page: string; id?: string } };
+  /**
+   * Chat con un Responsabile di prodotto: `page` è la pagina da cui si scrive (null = nessuna). Senza `app` è Barbara, la
+   * Responsabile di Botcave (console); con `app` il Responsabile dell'App ospite (pannello incorporato), di nome `leadName`.
+   */
+  | { kind: "lead"; page: LeadPage | null; app?: string; leadName?: string };
 
 export type ProposalStatus = "pending" | "accepted" | "rejected" | "stale";
 
@@ -148,7 +151,7 @@ export function useCharacterAdapter(target: ChatTarget): ChatAdapter {
       return useTeamChatAdapter(target.instanceId, target.closed);
     case "lead":
       // eslint-disable-next-line react-hooks/rules-of-hooks
-      return useLeadChatAdapter(target.page);
+      return useLeadChatAdapter(target.page, { app: target.app, leadName: target.leadName });
   }
 }
 

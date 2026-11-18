@@ -2428,6 +2428,8 @@ export const GetAppEvolutionParams = zod.object({
 })
 
 export const GetAppEvolutionResponse = zod.union([zod.object({
+  "teamInstanceId": zod.number().nullable().describe('Squadra del ciclo (creata al primo giro con voci dal modello scelto)'),
+  "teamName": zod.string().nullable(),
   "appId": zod.number(),
   "status": zod.enum(['active', 'paused']),
   "pausedReason": zod.string().nullable(),
@@ -2436,11 +2438,11 @@ export const GetAppEvolutionResponse = zod.union([zod.object({
   "analysisAiModelId": zod.number().nullable(),
   "analysisModelName": zod.string().nullable(),
   "teamTemplateId": zod.number().nullable(),
-  "mergeMode": zod.enum(['staging', 'direct']),
+  "mergeMode": zod.enum(['staging', 'direct']).describe('Non decide più nulla (3c); resta per compatibilità'),
   "stagingBranch": zod.string().nullable(),
   "stagingUrl": zod.string().nullable(),
   "monthlyBudgetUsd": zod.number(),
-  "spentUsd": zod.number().describe('Spesa del mese'),
+  "spentUsd": zod.number().describe('Spesa del mese (analisi del ciclo più turni e compiti delle sue squadre)'),
   "unpricedCount": zod.number(),
   "activatedByName": zod.string().nullable(),
   "isPayer": zod.boolean().describe('L\'utente della richiesta è chi ha attivato il ciclo (chi paga); solo lui avvia e riprende i giri'),
@@ -2449,6 +2451,10 @@ export const GetAppEvolutionResponse = zod.union([zod.object({
   "nextRoundAt": zod.coerce.date().nullable(),
   "lastError": zod.string().nullable(),
   "openRound": zod.union([zod.object({
+  "teamInstanceId": zod.number().nullable().describe('Squadra del ciclo a cui il giro ha affidato le voci (3c)'),
+  "workId": zod.number().nullable().describe('Lavoro su branch unico della squadra che il giro segue'),
+  "releaseActionNumber": zod.number().nullable().describe('Numero della voce «Porta in produzione» del lavoro, mentre il giro la aspetta'),
+  "rejectionNote": zod.string().nullable().describe('Nota dell\'utente sull\'ultimo rifiuto di «Porta in produzione»; entra nell\'analisi del giro dopo'),
   "id": zod.number(),
   "number": zod.number(),
   "status": zod.enum(['analyzing', 'approving', 'implementing', 'awaiting_release', 'done', 'blocked', 'rejected', 'stopped', 'failed']),
@@ -2473,9 +2479,9 @@ export const SaveAppEvolutionBody = zod.object({
   "itemsPerRound": zod.number(),
   "analysisAiModelId": zod.number(),
   "teamTemplateId": zod.number().nullable(),
-  "mergeMode": zod.enum(['staging', 'direct']),
-  "stagingBranch": zod.string().nullable(),
-  "stagingUrl": zod.string().nullable(),
+  "mergeMode": zod.enum(['staging', 'direct']).optional(),
+  "stagingBranch": zod.string().nullish(),
+  "stagingUrl": zod.string().nullish(),
   "monthlyBudgetUsd": zod.number(),
   "consent": zod.object({
   "accepted": zod.boolean(),
@@ -2483,9 +2489,11 @@ export const SaveAppEvolutionBody = zod.object({
   "version": zod.string(),
   "directMerge": zod.boolean().optional()
 }).optional()
-})
+}).describe('mergeMode, stagingBranch e stagingUrl non decidono più nulla (3c) e sono facoltativi')
 
 export const SaveAppEvolutionResponse = zod.object({
+  "teamInstanceId": zod.number().nullable().describe('Squadra del ciclo (creata al primo giro con voci dal modello scelto)'),
+  "teamName": zod.string().nullable(),
   "appId": zod.number(),
   "status": zod.enum(['active', 'paused']),
   "pausedReason": zod.string().nullable(),
@@ -2494,11 +2502,11 @@ export const SaveAppEvolutionResponse = zod.object({
   "analysisAiModelId": zod.number().nullable(),
   "analysisModelName": zod.string().nullable(),
   "teamTemplateId": zod.number().nullable(),
-  "mergeMode": zod.enum(['staging', 'direct']),
+  "mergeMode": zod.enum(['staging', 'direct']).describe('Non decide più nulla (3c); resta per compatibilità'),
   "stagingBranch": zod.string().nullable(),
   "stagingUrl": zod.string().nullable(),
   "monthlyBudgetUsd": zod.number(),
-  "spentUsd": zod.number().describe('Spesa del mese'),
+  "spentUsd": zod.number().describe('Spesa del mese (analisi del ciclo più turni e compiti delle sue squadre)'),
   "unpricedCount": zod.number(),
   "activatedByName": zod.string().nullable(),
   "isPayer": zod.boolean().describe('L\'utente della richiesta è chi ha attivato il ciclo (chi paga); solo lui avvia e riprende i giri'),
@@ -2507,6 +2515,10 @@ export const SaveAppEvolutionResponse = zod.object({
   "nextRoundAt": zod.coerce.date().nullable(),
   "lastError": zod.string().nullable(),
   "openRound": zod.union([zod.object({
+  "teamInstanceId": zod.number().nullable().describe('Squadra del ciclo a cui il giro ha affidato le voci (3c)'),
+  "workId": zod.number().nullable().describe('Lavoro su branch unico della squadra che il giro segue'),
+  "releaseActionNumber": zod.number().nullable().describe('Numero della voce «Porta in produzione» del lavoro, mentre il giro la aspetta'),
+  "rejectionNote": zod.string().nullable().describe('Nota dell\'utente sull\'ultimo rifiuto di «Porta in produzione»; entra nell\'analisi del giro dopo'),
   "id": zod.number(),
   "number": zod.number(),
   "status": zod.enum(['analyzing', 'approving', 'implementing', 'awaiting_release', 'done', 'blocked', 'rejected', 'stopped', 'failed']),
@@ -2537,7 +2549,7 @@ export const GetAppEvolutionConsentTextParams = zod.object({
 })
 
 export const GetAppEvolutionConsentTextQueryParams = zod.object({
-  "mergeMode": zod.enum(['staging', 'direct']),
+  "mergeMode": zod.enum(['staging', 'direct']).optional().describe('Non decide più nulla (3c); ignorato'),
   "stagingBranch": zod.coerce.string().optional(),
   "teamTemplateId": zod.coerce.number().optional(),
   "analysisAiModelId": zod.coerce.number(),
@@ -2559,6 +2571,8 @@ export const StopAppEvolutionParams = zod.object({
 })
 
 export const StopAppEvolutionResponse = zod.object({
+  "teamInstanceId": zod.number().nullable().describe('Squadra del ciclo (creata al primo giro con voci dal modello scelto)'),
+  "teamName": zod.string().nullable(),
   "appId": zod.number(),
   "status": zod.enum(['active', 'paused']),
   "pausedReason": zod.string().nullable(),
@@ -2567,11 +2581,11 @@ export const StopAppEvolutionResponse = zod.object({
   "analysisAiModelId": zod.number().nullable(),
   "analysisModelName": zod.string().nullable(),
   "teamTemplateId": zod.number().nullable(),
-  "mergeMode": zod.enum(['staging', 'direct']),
+  "mergeMode": zod.enum(['staging', 'direct']).describe('Non decide più nulla (3c); resta per compatibilità'),
   "stagingBranch": zod.string().nullable(),
   "stagingUrl": zod.string().nullable(),
   "monthlyBudgetUsd": zod.number(),
-  "spentUsd": zod.number().describe('Spesa del mese'),
+  "spentUsd": zod.number().describe('Spesa del mese (analisi del ciclo più turni e compiti delle sue squadre)'),
   "unpricedCount": zod.number(),
   "activatedByName": zod.string().nullable(),
   "isPayer": zod.boolean().describe('L\'utente della richiesta è chi ha attivato il ciclo (chi paga); solo lui avvia e riprende i giri'),
@@ -2580,6 +2594,10 @@ export const StopAppEvolutionResponse = zod.object({
   "nextRoundAt": zod.coerce.date().nullable(),
   "lastError": zod.string().nullable(),
   "openRound": zod.union([zod.object({
+  "teamInstanceId": zod.number().nullable().describe('Squadra del ciclo a cui il giro ha affidato le voci (3c)'),
+  "workId": zod.number().nullable().describe('Lavoro su branch unico della squadra che il giro segue'),
+  "releaseActionNumber": zod.number().nullable().describe('Numero della voce «Porta in produzione» del lavoro, mentre il giro la aspetta'),
+  "rejectionNote": zod.string().nullable().describe('Nota dell\'utente sull\'ultimo rifiuto di «Porta in produzione»; entra nell\'analisi del giro dopo'),
   "id": zod.number(),
   "number": zod.number(),
   "status": zod.enum(['analyzing', 'approving', 'implementing', 'awaiting_release', 'done', 'blocked', 'rejected', 'stopped', 'failed']),
@@ -2600,6 +2618,8 @@ export const ResumeAppEvolutionParams = zod.object({
 })
 
 export const ResumeAppEvolutionResponse = zod.object({
+  "teamInstanceId": zod.number().nullable().describe('Squadra del ciclo (creata al primo giro con voci dal modello scelto)'),
+  "teamName": zod.string().nullable(),
   "appId": zod.number(),
   "status": zod.enum(['active', 'paused']),
   "pausedReason": zod.string().nullable(),
@@ -2608,11 +2628,11 @@ export const ResumeAppEvolutionResponse = zod.object({
   "analysisAiModelId": zod.number().nullable(),
   "analysisModelName": zod.string().nullable(),
   "teamTemplateId": zod.number().nullable(),
-  "mergeMode": zod.enum(['staging', 'direct']),
+  "mergeMode": zod.enum(['staging', 'direct']).describe('Non decide più nulla (3c); resta per compatibilità'),
   "stagingBranch": zod.string().nullable(),
   "stagingUrl": zod.string().nullable(),
   "monthlyBudgetUsd": zod.number(),
-  "spentUsd": zod.number().describe('Spesa del mese'),
+  "spentUsd": zod.number().describe('Spesa del mese (analisi del ciclo più turni e compiti delle sue squadre)'),
   "unpricedCount": zod.number(),
   "activatedByName": zod.string().nullable(),
   "isPayer": zod.boolean().describe('L\'utente della richiesta è chi ha attivato il ciclo (chi paga); solo lui avvia e riprende i giri'),
@@ -2621,6 +2641,10 @@ export const ResumeAppEvolutionResponse = zod.object({
   "nextRoundAt": zod.coerce.date().nullable(),
   "lastError": zod.string().nullable(),
   "openRound": zod.union([zod.object({
+  "teamInstanceId": zod.number().nullable().describe('Squadra del ciclo a cui il giro ha affidato le voci (3c)'),
+  "workId": zod.number().nullable().describe('Lavoro su branch unico della squadra che il giro segue'),
+  "releaseActionNumber": zod.number().nullable().describe('Numero della voce «Porta in produzione» del lavoro, mentre il giro la aspetta'),
+  "rejectionNote": zod.string().nullable().describe('Nota dell\'utente sull\'ultimo rifiuto di «Porta in produzione»; entra nell\'analisi del giro dopo'),
   "id": zod.number(),
   "number": zod.number(),
   "status": zod.enum(['analyzing', 'approving', 'implementing', 'awaiting_release', 'done', 'blocked', 'rejected', 'stopped', 'failed']),
@@ -2641,6 +2665,10 @@ export const RunAppEvolutionNowParams = zod.object({
 })
 
 export const RunAppEvolutionNowResponse = zod.object({
+  "teamInstanceId": zod.number().nullable().describe('Squadra del ciclo a cui il giro ha affidato le voci (3c)'),
+  "workId": zod.number().nullable().describe('Lavoro su branch unico della squadra che il giro segue'),
+  "releaseActionNumber": zod.number().nullable().describe('Numero della voce «Porta in produzione» del lavoro, mentre il giro la aspetta'),
+  "rejectionNote": zod.string().nullable().describe('Nota dell\'utente sull\'ultimo rifiuto di «Porta in produzione»; entra nell\'analisi del giro dopo'),
   "id": zod.number(),
   "number": zod.number(),
   "status": zod.enum(['analyzing', 'approving', 'implementing', 'awaiting_release', 'done', 'blocked', 'rejected', 'stopped', 'failed']),
@@ -2660,6 +2688,10 @@ export const ListAppEvolutionRoundsParams = zod.object({
 })
 
 export const ListAppEvolutionRoundsResponseItem = zod.object({
+  "teamInstanceId": zod.number().nullable().describe('Squadra del ciclo a cui il giro ha affidato le voci (3c)'),
+  "workId": zod.number().nullable().describe('Lavoro su branch unico della squadra che il giro segue'),
+  "releaseActionNumber": zod.number().nullable().describe('Numero della voce «Porta in produzione» del lavoro, mentre il giro la aspetta'),
+  "rejectionNote": zod.string().nullable().describe('Nota dell\'utente sull\'ultimo rifiuto di «Porta in produzione»; entra nell\'analisi del giro dopo'),
   "id": zod.number(),
   "number": zod.number(),
   "status": zod.enum(['analyzing', 'approving', 'implementing', 'awaiting_release', 'done', 'blocked', 'rejected', 'stopped', 'failed']),
@@ -6090,7 +6122,7 @@ export const ListTeamEventsParams = zod.object({
 export const ListTeamEventsResponseItem = zod.object({
   "id": zod.number(),
   "instanceId": zod.number(),
-  "type": zod.enum(['piano_proposto', 'compito_finito', 'bloccato', 'decisione_richiesta', 'azione_manuale_richiesta', 'lavoro_finito', 'interrotto', 'risposta_capo']),
+  "type": zod.enum(['piano_proposto', 'compito_finito', 'bloccato', 'decisione_richiesta', 'azione_manuale_richiesta', 'lavoro_finito', 'interrotto', 'risposta_capo', 'lavoro_in_prova', 'giro_evoluzione']),
   "taskId": zod.number().nullable(),
   "bulletin": zod.string(),
   "detail": zod.string().nullable(),
@@ -6111,7 +6143,7 @@ export const ListUnreadTeamEventsQueryParams = zod.object({
 export const ListUnreadTeamEventsResponseItem = zod.object({
   "id": zod.number(),
   "instanceId": zod.number(),
-  "type": zod.enum(['piano_proposto', 'compito_finito', 'bloccato', 'decisione_richiesta', 'azione_manuale_richiesta', 'lavoro_finito', 'interrotto', 'risposta_capo']),
+  "type": zod.enum(['piano_proposto', 'compito_finito', 'bloccato', 'decisione_richiesta', 'azione_manuale_richiesta', 'lavoro_finito', 'interrotto', 'risposta_capo', 'lavoro_in_prova', 'giro_evoluzione']),
   "taskId": zod.number().nullable(),
   "bulletin": zod.string(),
   "detail": zod.string().nullable(),
@@ -8569,6 +8601,7 @@ export const ListPendingActionsResponse = zod.object({
   "result": zod.string().nullable(),
   "errorMessage": zod.string().nullable(),
   "decisionNote": zod.string().nullable(),
+  "decidedByCycle": zod.boolean().optional().describe('Voce di piano approvata dal ciclo di evoluzione della squadra, non da un clic'),
   "createdAt": zod.coerce.date(),
   "decidedAt": zod.coerce.date().nullable(),
   "finishedAt": zod.coerce.date().nullable()
@@ -8627,6 +8660,7 @@ export const GetPendingActionResponse = zod.object({
   "result": zod.string().nullable(),
   "errorMessage": zod.string().nullable(),
   "decisionNote": zod.string().nullable(),
+  "decidedByCycle": zod.boolean().optional().describe('Voce di piano approvata dal ciclo di evoluzione della squadra, non da un clic'),
   "createdAt": zod.coerce.date(),
   "decidedAt": zod.coerce.date().nullable(),
   "finishedAt": zod.coerce.date().nullable()
@@ -8698,6 +8732,7 @@ export const ApprovePendingActionResponse = zod.object({
   "result": zod.string().nullable(),
   "errorMessage": zod.string().nullable(),
   "decisionNote": zod.string().nullable(),
+  "decidedByCycle": zod.boolean().optional().describe('Voce di piano approvata dal ciclo di evoluzione della squadra, non da un clic'),
   "createdAt": zod.coerce.date(),
   "decidedAt": zod.coerce.date().nullable(),
   "finishedAt": zod.coerce.date().nullable()
@@ -8763,6 +8798,7 @@ export const RejectPendingActionResponse = zod.object({
   "result": zod.string().nullable(),
   "errorMessage": zod.string().nullable(),
   "decisionNote": zod.string().nullable(),
+  "decidedByCycle": zod.boolean().optional().describe('Voce di piano approvata dal ciclo di evoluzione della squadra, non da un clic'),
   "createdAt": zod.coerce.date(),
   "decidedAt": zod.coerce.date().nullable(),
   "finishedAt": zod.coerce.date().nullable()

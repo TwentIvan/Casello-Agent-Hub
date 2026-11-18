@@ -200,6 +200,11 @@ export function ActionDialog({
               </div>
             )}
             {action.errorMessage && <p className="break-words text-sm text-destructive">{action.errorMessage}</p>}
+            {action.decidedByCycle && (
+              <Row label="Decisione">
+                <span>Approvata dal ciclo di evoluzione</span>
+              </Row>
+            )}
             {action.decisionNote && (
               <Row label="Nota del rifiuto">
                 <span className="whitespace-pre-wrap">{action.decisionNote}</span>

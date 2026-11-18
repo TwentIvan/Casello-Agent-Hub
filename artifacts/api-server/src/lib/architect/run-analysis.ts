@@ -9,7 +9,7 @@
 // testo generico in italiano.
 
 import { setTimeout as sleep } from "node:timers/promises";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import { APIConnectionTimeoutError } from "openai";
 import type { ChatCompletionMessageParam, ChatCompletionTool } from "openai/resources/chat/completions";
 import {
@@ -91,6 +91,32 @@ function notifyFinished(analysisId: number): void {
         logger.error({ analysisId, errName: err instanceof Error ? err.name : "unknown" }, "Avviso di fine analisi non riuscito");
       });
   }
+}
+
+/**
+ * Nota dell'utente sull'ultimo «Porta in produzione» rifiutato nei giri precedenti dello stesso ciclo (3c): la più recente,
+ * null se non ce n'è.
+ */
+async function releaseNoteForRound(roundId: number): Promise<string | null> {
+  const [round] = await db
+    .select({ cycleId: evolutionRoundsTable.cycleId, number: evolutionRoundsTable.number })
+    .from(evolutionRoundsTable)
+    .where(eq(evolutionRoundsTable.id, roundId))
+    .limit(1);
+  if (!round) return null;
+  const [prev] = await db
+    .select({ note: evolutionRoundsTable.rejectionNote })
+    .from(evolutionRoundsTable)
+    .where(
+      and(
+        eq(evolutionRoundsTable.cycleId, round.cycleId),
+        lt(evolutionRoundsTable.number, round.number),
+        sql`${evolutionRoundsTable.rejectionNote} is not null`,
+      ),
+    )
+    .orderBy(desc(evolutionRoundsTable.number))
+    .limit(1);
+  return prev?.note ?? null;
 }
 
 /**
@@ -590,6 +616,7 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
     let savedRepoMap: string | null = null;
     let rejectedTitles: string[] = [];
     let pendingTitles: string[] = [];
+    let releaseRejectionNote: string | null = null;
     if (evolution) {
       const [arch] = await db
         .select({ summary: appArchitectureTable.summary, repoMap: appArchitectureTable.repoMap })
@@ -601,6 +628,7 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
       savedRepoMap = arch.repoMap ?? "";
       rejectedTitles = analysis.evolutionRoundId === null ? [] : await rejectedTitlesForRound(analysis.evolutionRoundId);
       pendingTitles = await pendingPlanTitles(app.id);
+      releaseRejectionNote = analysis.evolutionRoundId === null ? null : await releaseNoteForRound(analysis.evolutionRoundId);
       log(
         `analisi ridotta del ciclo di evoluzione: ${rejectedTitles.length} voci rifiutate nei giri precedenti, ${pendingTitles.length} in attesa`,
       );
@@ -667,7 +695,7 @@ export async function startAnalysis(analysisId: number, opts: StartAnalysisOptio
         previous,
         alreadyPlanned,
         existingTools: phase === "catalog" ? await existingToolsForPrompt(app.id) : undefined,
-        ...(evolution ? { architectureSummary, rejectedTitles, pendingTitles } : {}),
+        ...(evolution ? { architectureSummary, rejectedTitles, pendingTitles, releaseRejectionNote } : {}),
         bestPracticeNotes,
       });
       // Quota morbida della fase: solo il sollecito a consegnare; il tetto rigido resta il totale

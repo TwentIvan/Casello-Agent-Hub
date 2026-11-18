@@ -16,6 +16,7 @@ import { CodeWriteError } from "../code-writer/messages";
 import { enqueueTurnReason, notifyTurnQueued } from "./turn-queue";
 import { emitEvent } from "./events";
 import { WORK_MESSAGES, workRepo } from "./works";
+import { notifyWorkChanged } from "./work-hooks";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -80,6 +81,7 @@ async function failRelease(work: TeamWork, message: string): Promise<void> {
   });
   if (won) {
     notifyTurnQueued(work.instanceId);
+    notifyWorkChanged(work.instanceId);
     logger.info({ instanceId: work.instanceId, work: work.number }, "Porta in produzione non riuscita");
   }
 }
@@ -242,6 +244,7 @@ async function finishReleased(work: TeamWork, appId: number): Promise<void> {
     return true;
   });
   if (!won) return;
+  notifyWorkChanged(work.instanceId);
   void requestArchitectureRefresh(appId, { bypassOff: false, clearBackoff: false }).catch((e: unknown) =>
     logger.error({ appId, errName: e instanceof Error ? e.name : "Error" }, "Aggiornamento della sintesi dell'architettura non richiesto"),
   );

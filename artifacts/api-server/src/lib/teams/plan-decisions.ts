@@ -29,7 +29,11 @@ async function loadTeamStatus(instanceId: number | null): Promise<"draft" | "act
   return row?.status ?? null;
 }
 
-export async function decidePlanItem(row: PendingActionRow, approved: boolean, note: string | null): Promise<DecideResult> {
+/**
+ * Decide una voce `plan`/`plan_change`. Con `byCycle` l'approvazione la fa il ciclo di evoluzione della squadra (spec §15.8):
+ * `decided_by` resta chi paga (proprietario della voce) e `decided_by_cycle` la distingue da un clic.
+ */
+export async function decidePlanItem(row: PendingActionRow, approved: boolean, note: string | null, opts: { byCycle?: boolean } = {}): Promise<DecideResult> {
   if (row.status !== "pending") return fail(409, PLAN_DECISION_MESSAGES.alreadyDecided);
   const instanceId = row.teamInstanceId;
   const teamStatus = await loadTeamStatus(instanceId);
@@ -57,7 +61,7 @@ export async function decidePlanItem(row: PendingActionRow, approved: boolean, n
       .update(pendingActionsTable)
       .set(
         approved
-          ? { status: "done", decidedBy: row.userId, decidedAt, finishedAt: decidedAt }
+          ? { status: "done", decidedBy: row.userId, decidedAt, finishedAt: decidedAt, decidedByCycle: opts.byCycle === true }
           : { status: "rejected", decidedBy: row.userId, decidedAt, decisionNote: note },
       )
       .where(and(eq(pendingActionsTable.id, row.id), eq(pendingActionsTable.status, "pending")))

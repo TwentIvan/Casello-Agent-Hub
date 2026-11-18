@@ -24,6 +24,7 @@ import { checkStagingBranch } from "./staging";
 import { isUniqueViolation } from "../pg-errors";
 import { codeWrites } from "./manifest";
 import { userHasInstallation } from "../github/installations";
+import { notifyWorkChanged } from "./work-hooks";
 
 export const WORK_MESSAGES = {
   queueBusy: "un compito con codice è già in corso nel lavoro: aspetta che la sua PR sia unita",
@@ -234,8 +235,12 @@ export async function closeWorkIfDone(instanceId: number, opts: { fromLead?: boo
   });
   if (!won) return "already";
   logger.info({ instanceId, work: work.number, merged }, abandon ? "Lavoro abbandonato" : "Lavoro chiuso");
-  if (abandon) return "abandoned";
+  if (abandon) {
+    notifyWorkChanged(instanceId);
+    return "abandoned";
+  }
   await ensureReleaseItem(work.id);
+  notifyWorkChanged(instanceId);
   return "closed";
 }
 
@@ -324,16 +329,16 @@ export async function ensureReleaseItem(workId: number): Promise<void> {
     review: await reviewOutcome(instance, work),
     postScripts: work.postScripts,
   };
-  await db.transaction(async (tx) => {
+  const queuedItem = await db.transaction(async (tx) => {
     const [locked] = await tx.select().from(teamWorksTable).where(eq(teamWorksTable.id, work.id)).for("update").limit(1);
-    if (!locked || locked.status !== "awaiting_release" || locked.pendingActionId !== null) return;
+    if (!locked || locked.status !== "awaiting_release" || locked.pendingActionId !== null) return false;
     const queued = await enqueueReleaseItem(
       { userId: instance.activatedBy!, instanceId: instance.id, recipient: work.repo, summary: `Porta in produzione il lavoro ${work.number} di ${instance.name}`, detail },
       tx,
     );
     if (!queued.ok) {
       logger.warn({ instanceId: instance.id, work: work.number }, "Voce Porta in produzione non accodata: coda piena");
-      return;
+      return false;
     }
     const [item] = await tx
       .select({ id: pendingActionsTable.id })
@@ -341,7 +346,9 @@ export async function ensureReleaseItem(workId: number): Promise<void> {
       .where(and(eq(pendingActionsTable.userId, instance.activatedBy!), eq(pendingActionsTable.number, queued.number)))
       .limit(1);
     await tx.update(teamWorksTable).set({ pendingActionId: item!.id, headSha: head, updatedAt: new Date() }).where(eq(teamWorksTable.id, work.id));
+    return true;
   });
+  if (queuedItem) notifyWorkChanged(instance.id);
 }
 
 /** Esito dell'ultima revisione del lavoro: compito finito di un ruolo con il codice in lettura, creato dopo l'apertura del lavoro. */

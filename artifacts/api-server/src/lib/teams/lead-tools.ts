@@ -6,6 +6,7 @@ import { db, pendingActionsTable, teamCodeTasksTable, teamInstancesTable, teamPl
 import { completionData } from "../architect/issues";
 import { latestCompletedAnalysisId, loadPlanItems } from "../plan-chat/run-turn";
 import { enqueuePlanItem } from "../actions/queue";
+import { autoApprovePlanItem } from "../evolution/cycle-team";
 import { ATTACHMENT_MESSAGES, existingAttachmentIds } from "./attachments";
 import { logger } from "../logger";
 import type { CatalogTool, ToolResult } from "../tools/types";
@@ -79,6 +80,8 @@ export const ENVIRONMENT_FAILURE_PREFIXES = [
   "Claude Code non avviabile",
   "interrotto dal riavvio",
   "tetto di spesa della squadra raggiunto",
+  "tetto di spesa del ciclo raggiunto",
+  "ciclo di evoluzione fermato",
   // Lavoro su branch unico: CI mancante sui branch di Botcave (WORK_MESSAGES.noCi)
   "nessuna CI sul branch",
 ] as const;
@@ -519,6 +522,10 @@ async function proposePlan(ctx: LeadContext, args: Record<string, unknown>): Pro
       await emitEvent({ instanceId: ctx.instanceId, type: "bloccato", bulletin: `Piano non proposto: ${outcome.message}` });
       return fail(LEAD_MESSAGES.notQueued(outcome.message));
     case "proposed":
+      // Squadra di un ciclo di evoluzione attivo: il ciclo approva da solo il PLAN (spec §15.8)
+      if (await autoApprovePlanItem(ctx.instanceId, ctx.userId, outcome.number)) {
+        return done(`piano proposto (versione ${outcome.version}) e approvato dal ciclo di evoluzione (voce n. ${outcome.number}): assegna i compiti pronti con assegna_compito`);
+      }
       return done(`piano proposto (versione ${outcome.version}): voce n. ${outcome.number} in attesa dell'approvazione dell'utente`);
   }
 }

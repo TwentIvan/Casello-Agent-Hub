@@ -8,6 +8,7 @@ import { effectiveLevel } from "../tools/levels";
 import { approveMerge, notifyMergeRejected } from "../code-writer/merge";
 import { approveBug, lockBugReportFor, rejectBug } from "../bugs/approval";
 import { decidePlanItem } from "../teams/plan-decisions";
+import { notifyWorkChanged } from "../teams/work-hooks";
 import { approveRelease, rejectRelease } from "../teams/release";
 import { notifyTurnQueued } from "../teams/turn-queue";
 import { PROPOSAL_MESSAGES } from "./proposal";
@@ -193,7 +194,10 @@ export async function rejectAction(userId: number, number: number, note: string 
     return rejected;
   });
   if (row) {
-    if (releaseInstance !== null) notifyTurnQueued(releaseInstance);
+    if (releaseInstance !== null) {
+      notifyTurnQueued(releaseInstance);
+      notifyWorkChanged(releaseInstance);
+    }
     if (row.kind === "merge") {
       await notifyMergeRejected(row).catch((err: unknown) =>
         logger.error({ actionId: row.id, errName: err instanceof Error ? err.name : "unknown" }, "Rifiuto del merge non comunicato al capo"),

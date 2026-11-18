@@ -8,6 +8,26 @@
 import type { EvolutionRoundViewStatus } from './evolutionRoundViewStatus';
 
 export interface EvolutionRoundView {
+  /**
+     * Squadra del ciclo a cui il giro ha affidato le voci (3c)
+     * @nullable
+     */
+  teamInstanceId: number | null;
+  /**
+     * Lavoro su branch unico della squadra che il giro segue
+     * @nullable
+     */
+  workId: number | null;
+  /**
+     * Numero della voce «Porta in produzione» del lavoro, mentre il giro la aspetta
+     * @nullable
+     */
+  releaseActionNumber: number | null;
+  /**
+     * Nota dell'utente sull'ultimo rifiuto di «Porta in produzione»; entra nell'analisi del giro dopo
+     * @nullable
+     */
+  rejectionNote: string | null;
   id: number;
   number: number;
   status: EvolutionRoundViewStatus;

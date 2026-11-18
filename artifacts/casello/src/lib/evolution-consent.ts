@@ -1,18 +1,11 @@
 import type { EvolutionCycleView, EvolutionFrequency, EvolutionRoundViewStatus } from "@workspace/api-client-react";
 import type { LedState } from "@/components/brand/led";
 
-/** Il pulsante «Attiva» si abilita con la casella, lo slug scritto (trim, senza maiuscole) e, per il merge diretto, la seconda conferma. */
-export function canActivate(input: {
-  accepted: boolean;
-  typedSlug: string;
-  appSlug: string;
-  mergeMode: "staging" | "direct";
-  directAccepted: boolean;
-}): boolean {
+/** Il pulsante «Attiva» si abilita con la casella e lo slug scritto (trim, senza maiuscole). */
+export function canActivate(input: { accepted: boolean; typedSlug: string; appSlug: string }): boolean {
   if (!input.accepted) return false;
   const typed = input.typedSlug.trim().toLowerCase();
-  if (typed === "" || typed !== input.appSlug.trim().toLowerCase()) return false;
-  return input.mergeMode !== "direct" || input.directAccepted;
+  return typed !== "" && typed === input.appSlug.trim().toLowerCase();
 }
 
 const ROUND_LED: Record<EvolutionRoundViewStatus, LedState> = {
@@ -54,24 +47,29 @@ export const USER_PAUSE_REASON = "fermato dall'utente";
 export const MAX_ITEMS_PER_ROUND = 10;
 export const MAX_MONTHLY_BUDGET_USD = 10000;
 
-type Settings = { analysisAiModelId: number | null; itemsPerRound: number; monthlyBudgetUsd: number };
+type Settings = { analysisAiModelId: number | null; teamTemplateId: number | null; itemsPerRound: number; monthlyBudgetUsd: number };
 
 /**
  * Il consenso va rinnovato se non c'è un ciclo o un consenso valido, se salva chi non ha attivato il ciclo (con il consenso
- * diventa lui a pagare), o se cambiano modello e voci o sale il tetto; frequenza e tetto più basso no.
+ * diventa lui a pagare), o se cambiano modello, modello di squadra e voci o sale il tetto; frequenza e tetto più basso no.
  */
 export function needsConsent(saved: (Settings & { consentValid: boolean; isPayer: boolean }) | null, next: Settings): boolean {
   if (!saved || !saved.consentValid || !saved.isPayer) return true;
   return (
     saved.analysisAiModelId !== next.analysisAiModelId ||
+    saved.teamTemplateId !== next.teamTemplateId ||
     saved.itemsPerRound !== next.itemsPerRound ||
     next.monthlyBudgetUsd > saved.monthlyBudgetUsd
   );
 }
 
-/** LED del ciclo: giro aperto `work`, attivo `ok`, pausa dell'utente `idle`, altre pause `ko`. */
+/**
+ * LED del ciclo: «Porta in produzione» da decidere `ask`, giro aperto `work` (con il ciclo attivo), attivo `ok`, pausa
+ * dell'utente `idle`, altre pause `ko`.
+ */
 export function cycleLed(view: Pick<EvolutionCycleView, "status" | "pausedReason" | "openRound">): LedState {
-  if (view.openRound) return "work";
+  if (view.openRound?.status === "awaiting_release") return "ask";
+  if (view.openRound && view.status === "active") return "work";
   if (view.status === "active") return "ok";
   return view.pausedReason && view.pausedReason !== USER_PAUSE_REASON ? "ko" : "idle";
 }

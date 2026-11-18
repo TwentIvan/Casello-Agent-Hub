@@ -25,6 +25,8 @@ const EVENT_LABELS: Record<TeamEventType, string> = {
   decisione_richiesta: "Decisione richiesta",
   azione_manuale_richiesta: "Azione manuale richiesta",
   lavoro_finito: "Lavoro finito",
+  lavoro_in_prova: "Lavoro in prova",
+  giro_evoluzione: "Ciclo di evoluzione",
   interrotto: "Interrotto",
   risposta_capo: "Risposta del capo",
 };

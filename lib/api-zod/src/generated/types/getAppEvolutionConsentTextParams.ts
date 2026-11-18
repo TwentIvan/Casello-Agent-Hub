@@ -8,7 +8,10 @@
 import type { GetAppEvolutionConsentTextMergeMode } from './getAppEvolutionConsentTextMergeMode';
 
 export type GetAppEvolutionConsentTextParams = {
-mergeMode: GetAppEvolutionConsentTextMergeMode;
+/**
+ * Non decide più nulla (3c); ignorato
+ */
+mergeMode?: GetAppEvolutionConsentTextMergeMode;
 stagingBranch?: string;
 teamTemplateId?: number;
 analysisAiModelId: number;

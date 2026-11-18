@@ -145,16 +145,16 @@ beforeEach(async () => {
 });
 
 describe("saveCycle e consenso", () => {
-  it("senza consenso, con lo slug sbagliato o in modalità staging rifiuta", async () => {
+  it("senza consenso o con lo slug sbagliato rifiuta; staging non decide più nulla e si salva direct", async () => {
     const noConsent = await rejection(saveCycle(appId, userId, input({ consent: undefined })));
     expect([noConsent.status, noConsent.message]).toEqual([400, EVOLUTION_MESSAGES.consentInvalid]);
     const wrongSlug = await rejection(saveCycle(appId, userId, input({ consent: { accepted: true, appSlug: "altra", version: CONSENT_VERSION } })));
     expect([wrongSlug.status, wrongSlug.message]).toEqual([400, EVOLUTION_MESSAGES.consentInvalid]);
     const wrongVersion = await rejection(saveCycle(appId, userId, input({ consent: { accepted: true, appSlug: "botcave", version: "2020-01-01" } })));
     expect(wrongVersion.message).toBe(EVOLUTION_MESSAGES.consentInvalid);
-    const staging = await rejection(saveCycle(appId, userId, input({ mergeMode: "staging", stagingBranch: "prova" })));
-    expect([staging.status, staging.message]).toEqual([400, EVOLUTION_MESSAGES.modeUnavailable]);
     expect(await getCycle(appId)).toBeNull();
+    const staging = await saveCycle(appId, userId, input({ mergeMode: "staging", stagingBranch: "prova" }));
+    expect([staging.mergeMode, staging.stagingBranch]).toEqual(["direct", null]);
   });
 
   it("un ciclo nuovo nasce attivo, dovuto subito, con il consenso di chi lo salva", async () => {
@@ -175,7 +175,7 @@ describe("saveCycle e consenso", () => {
     const down = await saveCycle(appId, userId, input({ monthlyBudgetUsd: 5, consent: undefined }));
     expect(Number(down.monthlyBudgetUsd)).toBe(5);
     expect(down.consentHash).toBe(
-      consentHash({ mergeMode: "direct", stagingBranch: null, teamTemplateId: null, analysisAiModelId: modelId, itemsPerRound: 2, monthlyBudgetUsd: 5 }),
+      consentHash({ teamTemplateId: null, analysisAiModelId: modelId, itemsPerRound: 2, monthlyBudgetUsd: 5 }),
     );
     // La frequenza non è nell'impronta
     const freq = await saveCycle(appId, userId, input({ monthlyBudgetUsd: 5, frequency: "daily", consent: undefined }));

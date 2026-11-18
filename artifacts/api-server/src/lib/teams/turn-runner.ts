@@ -16,6 +16,7 @@ import { readinessText, teamReadiness } from "./readiness";
 import { loadRoleTools, roleFunctionTools, roleToolExecutor, teamQueueAction, toolSchemaLookup } from "./role-tools";
 import { TASK_MESSAGES, errName, skillTexts } from "./task-runner";
 import { teamBudgetBlock } from "./team-budget";
+import { cyclePausedForTeam } from "../evolution/cycle-team";
 import { enqueueTurnReason, notifyTurnQueued } from "./turn-queue";
 
 // Turni del capo: il capo non resta acceso, lavora a turni guidati dagli eventi (richieste, compiti finiti, decisioni
@@ -129,6 +130,8 @@ export function pumpTurnInBackground(instanceId: number): void {
 export async function pumpTurn(instanceId: number): Promise<TeamTurnRow | null> {
   const [instance] = await db.select({ status: teamInstancesTable.status }).from(teamInstancesTable).where(eq(teamInstancesTable.id, instanceId)).limit(1);
   if (!instance) return null;
+  // Squadra di un ciclo di evoluzione fermato: il turno resta in coda (i motivi si accumulano) e parte con «Riprendi»
+  if (instance.status === "active" && (await cyclePausedForTeam(instanceId))) return null;
   if (instance.status !== "active") {
     if (instance.status === "closed") {
       await db

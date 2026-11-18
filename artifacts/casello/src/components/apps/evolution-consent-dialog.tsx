@@ -6,7 +6,9 @@ import {
   type EvolutionFrequency,
   getGetAppEvolutionQueryKey,
   getGetDashboardStatsQueryKey,
+  getListTeamTemplatesQueryKey,
   useGetAppEvolutionConsentText,
+  useListTeamTemplates,
   useSaveAppEvolution,
 } from "@workspace/api-client-react";
 import { ModelPicker } from "@/components/ai/model-picker";
@@ -36,6 +38,8 @@ export function EvolutionConsentDialog({ app, cycle, activating, onClose }: Prop
   const [itemsPerRound, setItemsPerRound] = useState(String(cycle?.itemsPerRound ?? 3));
   const [modelId, setModelId] = useState<number | null>(cycle?.analysisAiModelId ?? null);
   const [budget, setBudget] = useState(String(cycle?.monthlyBudgetUsd ?? 10));
+  const [templateId, setTemplateId] = useState<number | null>(cycle?.teamTemplateId ?? null);
+  const templates = useListTeamTemplates(undefined, { query: { queryKey: getListTeamTemplatesQueryKey() } });
   const [forceConsent, setForceConsent] = useState(false);
   const [accepted, setAccepted] = useState(false);
   const [typedSlug, setTypedSlug] = useState("");
@@ -49,12 +53,17 @@ export function EvolutionConsentDialog({ app, cycle, activating, onClose }: Prop
   const consentNeeded =
     activating ||
     forceConsent ||
-    needsConsent(cycle, { analysisAiModelId: modelId, itemsPerRound: items, monthlyBudgetUsd: budgetNum });
+    needsConsent(cycle, { analysisAiModelId: modelId, teamTemplateId: templateId, itemsPerRound: items, monthlyBudgetUsd: budgetNum });
 
   const consent = useGetAppEvolutionConsentText(
     app.id,
-    { mergeMode: "direct", analysisAiModelId: modelId ?? 0, itemsPerRound: itemsValid ? items : 1, monthlyBudgetUsd: budgetValid ? budgetNum : 1 },
-    { query: { queryKey: ["evolution-consent-text", app.id, modelId, items, budgetNum], enabled: consentNeeded && settingsValid } },
+    {
+      analysisAiModelId: modelId ?? 0,
+      itemsPerRound: itemsValid ? items : 1,
+      monthlyBudgetUsd: budgetValid ? budgetNum : 1,
+      ...(templateId !== null ? { teamTemplateId: templateId } : {}),
+    },
+    { query: { queryKey: ["evolution-consent-text", app.id, modelId, templateId, items, budgetNum], enabled: consentNeeded && settingsValid } },
   );
 
   const save = useSaveAppEvolution({
@@ -80,7 +89,7 @@ export function EvolutionConsentDialog({ app, cycle, activating, onClose }: Prop
     !save.isPending &&
     (!consentNeeded ||
       (consentVersion !== undefined &&
-        canActivate({ accepted, typedSlug, appSlug: app.slug, mergeMode: "direct", directAccepted: true })));
+        canActivate({ accepted, typedSlug, appSlug: app.slug })));
 
   const submit = () => {
     if (modelId === null) return;
@@ -90,7 +99,7 @@ export function EvolutionConsentDialog({ app, cycle, activating, onClose }: Prop
         frequency,
         itemsPerRound: items,
         analysisAiModelId: modelId,
-        teamTemplateId: null,
+        teamTemplateId: templateId,
         mergeMode: "direct",
         stagingBranch: null,
         stagingUrl: null,
@@ -107,7 +116,10 @@ export function EvolutionConsentDialog({ app, cycle, activating, onClose }: Prop
       <DialogContent className="max-w-xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{activating ? "Attiva l'evoluzione automatica" : "Impostazioni dell'evoluzione automatica"}</DialogTitle>
-          <DialogDescription>Ogni giro analizza l'app, sceglie alcune voci del piano e le fa implementare alla squadra.</DialogDescription>
+          <DialogDescription>
+            Ogni giro analizza l'app e sceglie alcune voci del piano; con un modello di squadra le fa implementare alla squadra del ciclo, e portare il
+            lavoro in produzione resta una tua decisione.
+          </DialogDescription>
         </DialogHeader>
         <div className="min-w-0 space-y-4">
           <div className="grid gap-3 sm:grid-cols-2">
@@ -134,6 +146,25 @@ export function EvolutionConsentDialog({ app, cycle, activating, onClose }: Prop
             <div className="space-y-1.5 sm:col-span-2">
               <Label htmlFor="evo-model">Modello per l'analisi e la scelta</Label>
               <ModelPicker id="evo-model" cloudOnly value={modelId} onChange={setModelId} />
+            </div>
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label>Modello di squadra</Label>
+              <Select value={templateId === null ? "none" : String(templateId)} onValueChange={(v) => setTemplateId(v === "none" ? null : Number(v))}>
+                <SelectTrigger aria-label="Modello di squadra del ciclo">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Nessuno: le voci restano nel piano per «Implementa»</SelectItem>
+                  {(templates.data ?? []).map((t) => (
+                    <SelectItem key={t.id} value={String(t.id)}>
+                      {t.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-ink-muted">
+                Serve un ruolo che scrive codice. La squadra nasce al primo giro con voci e usa il tetto del ciclo.
+              </p>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="evo-budget">Tetto mensile (USD)</Label>

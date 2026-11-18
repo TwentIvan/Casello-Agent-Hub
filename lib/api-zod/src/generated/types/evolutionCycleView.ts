@@ -11,6 +11,13 @@ import type { EvolutionFrequency } from './evolutionFrequency';
 import type { EvolutionRoundView } from './evolutionRoundView';
 
 export interface EvolutionCycleView {
+  /**
+     * Squadra del ciclo (creata al primo giro con voci dal modello scelto)
+     * @nullable
+     */
+  teamInstanceId: number | null;
+  /** @nullable */
+  teamName: string | null;
   appId: number;
   status: EvolutionCycleViewStatus;
   /** @nullable */
@@ -23,13 +30,14 @@ export interface EvolutionCycleView {
   analysisModelName: string | null;
   /** @nullable */
   teamTemplateId: number | null;
+  /** Non decide più nulla (3c); resta per compatibilità */
   mergeMode: EvolutionCycleViewMergeMode;
   /** @nullable */
   stagingBranch: string | null;
   /** @nullable */
   stagingUrl: string | null;
   monthlyBudgetUsd: number;
-  /** Spesa del mese */
+  /** Spesa del mese (analisi del ciclo più turni e compiti delle sue squadre) */
   spentUsd: number;
   unpricedCount: number;
   /** @nullable */

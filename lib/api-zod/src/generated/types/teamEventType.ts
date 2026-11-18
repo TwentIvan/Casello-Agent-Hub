@@ -18,4 +18,6 @@ export const TeamEventType = {
   lavoro_finito: 'lavoro_finito',
   interrotto: 'interrotto',
   risposta_capo: 'risposta_capo',
+  lavoro_in_prova: 'lavoro_in_prova',
+  giro_evoluzione: 'giro_evoluzione',
 } as const;

@@ -9,17 +9,20 @@ import type { EvolutionCycleInputConsent } from './evolutionCycleInputConsent';
 import type { EvolutionCycleInputMergeMode } from './evolutionCycleInputMergeMode';
 import type { EvolutionFrequency } from './evolutionFrequency';
 
+/**
+ * mergeMode, stagingBranch e stagingUrl non decidono più nulla (3c) e sono facoltativi
+ */
 export interface EvolutionCycleInput {
   frequency: EvolutionFrequency;
   itemsPerRound: number;
   analysisAiModelId: number;
   /** @nullable */
   teamTemplateId: number | null;
-  mergeMode: EvolutionCycleInputMergeMode;
+  mergeMode?: EvolutionCycleInputMergeMode;
   /** @nullable */
-  stagingBranch: string | null;
+  stagingBranch?: string | null;
   /** @nullable */
-  stagingUrl: string | null;
+  stagingUrl?: string | null;
   monthlyBudgetUsd: number;
   consent?: EvolutionCycleInputConsent;
 }

@@ -6,6 +6,9 @@
  * OpenAPI spec version: 0.1.0
  */
 
+/**
+ * Non decide più nulla (3c); resta per compatibilità
+ */
 export type EvolutionCycleViewMergeMode = typeof EvolutionCycleViewMergeMode[keyof typeof EvolutionCycleViewMergeMode];
 
 

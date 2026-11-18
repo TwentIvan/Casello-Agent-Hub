@@ -81,6 +81,7 @@ function toQueuedAction(
     result: action.result,
     errorMessage: action.errorMessage,
     decisionNote: action.decisionNote,
+    decidedByCycle: action.decidedByCycle,
     createdAt: action.createdAt,
     decidedAt: action.decidedAt,
     finishedAt: action.finishedAt,

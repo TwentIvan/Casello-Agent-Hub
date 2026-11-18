@@ -1,14 +1,24 @@
 // Schedulatore del ciclo di evoluzione (spec §5): all'avvio chiude i giri rimasti senza analisi viva, poi un controllo ogni
 // 5 minuti, uno alla volta: chiude come interrotte le analisi dei giri rimaste in coda oltre 30 minuti, fa avanzare i giri
-// `analyzing` con l'analisi finita (avvisi di fine persi) e avvia i giri dei cicli dovuti (al più 20). La fine di ogni
-// analisi fa avanzare subito il suo giro. Nei log solo id, conteggi ed esiti.
+// `analyzing` con l'analisi finita (avvisi di fine persi), fa seguire ai giri della squadra il suo lavoro e avvia i giri dei
+// cicli dovuti (al più 20). La fine di ogni analisi e ogni cambio di stato di un lavoro fanno avanzare subito il giro. Nei log solo id, conteggi ed esiti.
 
 import { and, asc, eq, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { db, analysesTable, evolutionCyclesTable, evolutionRoundsTable } from "@workspace/db";
 import { onAnalysisFinished } from "../architect/run-analysis";
 import { logger } from "../logger";
 import { EVOLUTION_MESSAGES } from "./messages";
-import { EvolutionError, advanceRound, failInterruptedRounds, handleAnalysisFinished, startRound, trackBackground } from "./service";
+import { setOnWorkChanged } from "../teams/work-hooks";
+import {
+  EvolutionError,
+  advanceRound,
+  failInterruptedRounds,
+  handleAnalysisFinished,
+  startRound,
+  syncOpenTeamRounds,
+  syncTeamRounds,
+  trackBackground,
+} from "./service";
 
 export {
   EvolutionError,
@@ -21,6 +31,8 @@ export {
   saveCycle,
   startRound,
   stopCycle,
+  syncRound,
+  syncTeamRounds,
   waitEvolutionIdleForTests,
   type CycleInput,
 } from "./service";
@@ -85,6 +97,9 @@ export async function runEvolutionTick(): Promise<number> {
     }
   }
 
+  // Giri che seguono la squadra del ciclo (3c): lavoro, voce «Porta in produzione», scadenza, messaggio da riprovare
+  await syncOpenTeamRounds(EVOLUTION_CYCLES_PER_TICK);
+
   const now = new Date();
   const due = await db
     .select({ id: evolutionCyclesTable.id })
@@ -117,6 +132,13 @@ export async function runEvolutionTick(): Promise<number> {
 /** Avvia lo schedulatore; risponde con la funzione che lo ferma. */
 export function startEvolutionScheduler(): () => void {
   onAnalysisFinished((analysisId) => trackBackground(handleAnalysisFinished(analysisId)));
+  setOnWorkChanged((instanceId) => {
+    void trackBackground(
+      syncTeamRounds(instanceId).catch((err: unknown) =>
+        logger.error({ instanceId, errName: err instanceof Error ? err.name : "unknown" }, "Avanzamento del giro dopo il lavoro non riuscito"),
+      ),
+    );
+  });
 
   let checking = false;
   const check = async () => {

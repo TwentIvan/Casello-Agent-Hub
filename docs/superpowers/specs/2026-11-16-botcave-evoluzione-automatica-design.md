@@ -398,3 +398,10 @@ sua approvazione. Decisioni del 17/11:
   squadra, PLAN approvato da solo, merge automatici sul branch del lavoro e riscrittura del branch di prova dell'App.
 - «Ferma» si estende alla squadra del ciclo (compiti in coda annullati, nessun turno nuovo, nessun merge automatico sul branch del lavoro
   finché il ciclo è in pausa); la voce `release` aperta resta decidibile.
+
+### 15.9 Differenze dal codice della 3c
+
+Piano: `docs/superpowers/plans/2026-11-17-botcave-evoluzione-automatica-3c.md` (con le decisioni sui punti aperti). In breve: il modello
+di squadra resta facoltativo (senza, il giro chiude come in 3a); la squadra nasce al primo giro con voci; «Ferma» chiude solo i giri
+`analyzing|approving`, mentre un giro che segue la squadra resta aperto e i turni del capo restano in coda fino a «Riprendi»; un giro
+scaduto lascia aperto il lavoro; il consenso passa alla versione `2026-11-17` e non contiene più `merge_mode`.

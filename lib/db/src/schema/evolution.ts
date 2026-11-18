@@ -6,6 +6,8 @@ import { teamTemplatesTable } from "./team-templates";
 import { teamInstancesTable } from "./team-instances";
 import { usersTable } from "./users";
 import { analysesTable } from "./analyses";
+import { teamWorksTable } from "./team-works";
+import { pendingActionsTable } from "./pending-actions";
 
 export const evolutionCycleStatusEnum = pgEnum("evolution_cycle_status", ["active", "paused"]);
 export const evolutionFrequencyEnum = pgEnum("evolution_frequency", ["daily", "every_3_days", "weekly", "monthly"]);
@@ -76,7 +78,13 @@ export const evolutionRoundsTable = pgTable(
     // Voci approvate dal ciclo
     itemIds: jsonb("item_ids").$type<number[]>().notNull().default([]),
     outcome: text("outcome"),
+    // Nota dell'utente sull'ultimo rifiuto di «Porta in produzione» del giro: entra nell'analisi del giro dopo
     rejectionNote: text("rejection_note"),
+    // 3c: squadra del ciclo, lavoro del giro, voce «Porta in produzione» del lavoro, istante (orologio del DB) del messaggio al capo
+    teamInstanceId: integer("team_instance_id").references(() => teamInstancesTable.id, { onDelete: "set null" }),
+    workId: integer("work_id").references(() => teamWorksTable.id, { onDelete: "set null" }),
+    pendingActionId: integer("pending_action_id").references(() => pendingActionsTable.id, { onDelete: "set null" }),
+    implementationStartedAt: timestamp("implementation_started_at"),
     startedAt: timestamp("started_at").notNull().defaultNow(),
     finishedAt: timestamp("finished_at"),
   },

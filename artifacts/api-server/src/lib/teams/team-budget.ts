@@ -1,38 +1,38 @@
-import { and, eq, gte, sql } from "drizzle-orm";
-import { db, teamInstancesTable, teamTasksTable, teamTurnsTable } from "@workspace/db";
-import { isExhausted, monthStart, unpricedOf, userBudgetBlock, type Spend } from "../budget";
+import { eq } from "drizzle-orm";
+import { db, evolutionCyclesTable, teamInstancesTable } from "@workspace/db";
+import { isExhausted, userBudgetBlock } from "../budget";
+import { cycleSpend } from "../evolution/spend";
+import { EVOLUTION_MESSAGES } from "../evolution/messages";
+import { EVOLUTION_REF_TYPE, teamSpend } from "./team-spend";
 
 // Tetto di spesa di una squadra: spesa del mese di compiti e turni dell'istanza (con qualsiasi modello). Prima di
 // ogni compito o turno si controlla il tetto della squadra, poi quelli del modello, dell'account e dell'utente.
+// La squadra di un ciclo di evoluzione usa il tetto del ciclo, che somma analisi, turni e compiti (spec §15.8).
+
+export { teamSpend } from "./team-spend";
 
 export const TEAM_BUDGET_REACHED = "tetto di spesa della squadra raggiunto";
-
-/** Spesa del mese della squadra: compiti e turni del capo; i costi null con token si contano a parte. */
-export async function teamSpend(instanceId: number, since: Date = monthStart()): Promise<Spend> {
-  const [tasks, turns] = await Promise.all([
-    db
-      .select({ spent: sql<string>`coalesce(sum(${teamTasksTable.costUsd}), 0)`, unpriced: unpricedOf(teamTasksTable) })
-      .from(teamTasksTable)
-      .where(and(eq(teamTasksTable.instanceId, instanceId), gte(teamTasksTable.createdAt, since))),
-    db
-      .select({ spent: sql<string>`coalesce(sum(${teamTurnsTable.costUsd}), 0)`, unpriced: unpricedOf(teamTurnsTable) })
-      .from(teamTurnsTable)
-      .where(and(eq(teamTurnsTable.instanceId, instanceId), gte(teamTurnsTable.createdAt, since))),
-  ]);
-  return [...tasks, ...turns].reduce<Spend>(
-    (acc, r) => ({ spentUsd: acc.spentUsd + Number(r.spent), unpricedCount: acc.unpricedCount + r.unpriced }),
-    { spentUsd: 0, unpricedCount: 0 },
-  );
-}
 
 /** Tetto della squadra raggiunto: il messaggio fisso, altrimenti null (vale anche per i compiti dei nodi). */
 export async function teamCapBlock(instanceId: number): Promise<string | null> {
   const [row] = await db
-    .select({ cap: teamInstancesTable.monthlyBudgetUsd })
+    .select({ cap: teamInstancesTable.monthlyBudgetUsd, refType: teamInstancesTable.refType, appId: teamInstancesTable.refAppId })
     .from(teamInstancesTable)
     .where(eq(teamInstancesTable.id, instanceId))
     .limit(1);
-  if (row?.cap != null) {
+  if (!row) return null;
+  if (row.refType === EVOLUTION_REF_TYPE) {
+    const [cycle] = await db
+      .select({ cap: evolutionCyclesTable.monthlyBudgetUsd, teamInstanceId: evolutionCyclesTable.teamInstanceId })
+      .from(evolutionCyclesTable)
+      .where(eq(evolutionCyclesTable.appId, row.appId))
+      .limit(1);
+    if (cycle) {
+      const { spentUsd } = await cycleSpend(row.appId);
+      return isExhausted(spentUsd, Number(cycle.cap)) ? EVOLUTION_MESSAGES.budgetReached : null;
+    }
+  }
+  if (row.cap != null) {
     const { spentUsd } = await teamSpend(instanceId);
     if (isExhausted(spentUsd, Number(row.cap))) return TEAM_BUDGET_REACHED;
   }

@@ -26,6 +26,11 @@ describe("buildSystemPrompt: nome del bot", () => {
     const lead = { name: "Responsabile di prodotto", systemPrompt: "Istruzioni", role: "general" } as Agent;
     expect(buildSystemPrompt(lead, named)).toContain("In questa app ti chiami Bea.");
   });
+  it("il nome predefinito non si ripete; per casello c'è Barbara", () => {
+    const lead = { name: "Responsabile di prodotto", systemPrompt: "Istruzioni", role: "general" } as Agent;
+    expect(buildSystemPrompt(lead, { ...app, slug: "hub", leadName: null } as App)).not.toContain("ti chiami");
+    expect(buildSystemPrompt(lead, { ...app, slug: "casello", leadName: null } as App)).toContain("In questa app ti chiami Barbara.");
+  });
   it("un agente di area non riceve la riga", () => {
     const area = { name: "Area", systemPrompt: "Istruzioni", role: "area" } as Agent;
     expect(buildSystemPrompt(area, named)).not.toContain("ti chiami");

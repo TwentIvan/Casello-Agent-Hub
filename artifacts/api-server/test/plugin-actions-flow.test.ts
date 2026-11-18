@@ -279,6 +279,31 @@ describe("plugin: azioni della pagina", () => {
     }
   });
 
+  it("messaggio al Responsabile dal pannello: host.app è lo slug dell'App risolta", async () => {
+    const t = await embedToken();
+    const conv = await api("POST", "/lead-conversations", undefined, t);
+    const forged = { page: "host", host: { app: "casello", page: "task", id: "7", title: "T" } };
+    const sent = await api("POST", `/lead-conversations/${conv.json.id}/messages`, { content: "Ciao", pageContext: forged }, t);
+    expect(sent.status).toBe(202);
+    const [run] = await db.select().from(runsTable).where(eq(runsTable.id, sent.json.runId));
+    expect(run!.input).toContain(`<dati>app thu, pagina task, id 7, "T"</dati>`);
+  });
+
+  it("Alfred dal pannello di un'origine senza App registrata: 202 e contesto della pagina tolto, non 500", async () => {
+    const t = await embedToken();
+    const id = (await api("GET", "/characters/alfred/thread", undefined, t)).json.id as number;
+    // Il token resta quello dell'origine ammessa, ma nessuna App ha più quel base_url
+    await db.update(appsTable).set({ baseUrl: "https://altro.example" }).where(eq(appsTable.id, thuId));
+    const sent = await api("POST", `/character-conversations/${id}/messages`, { content: "Ciao", pageContext: HOST_PAGE }, t);
+    expect(sent.status).toBe(202);
+    expect(sent.json.pageContext ?? null).toBeNull();
+    for (let i = 0; i < 100; i++) {
+      const d = await api("GET", `/character-conversations/${id}`, undefined, t);
+      if (d.json?.turnStatus === "idle") break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+  });
+
   it("conversazione del Responsabile senza App: irraggiungibile dal pannello (404)", async () => {
     const t = await embedToken();
     const [legacy] = await db.insert(leadConversationsTable).values({ userId, agentId: caselloLeadId, title: "vecchia" }).returning();

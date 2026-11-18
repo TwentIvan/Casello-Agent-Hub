@@ -141,6 +141,25 @@ describe("GET /api/embed/status", () => {
     expect((await status("page=dashboard", token)).status).toBe(403);
   });
 
+  it("un errore nella scrittura dei tipi di pagina visti non fa fallire lo stato", async () => {
+    await pool.query(`CREATE OR REPLACE FUNCTION fail_seen() RETURNS trigger AS $$ BEGIN RAISE EXCEPTION 'scrittura rifiutata'; END; $$ LANGUAGE plpgsql`);
+    await pool.query(`CREATE TRIGGER fail_seen_trg BEFORE UPDATE OF embed_pages_seen ON apps FOR EACH ROW EXECUTE FUNCTION fail_seen()`);
+    try {
+      const t = await embedToken();
+      const r = await status("page=task", t);
+      expect(r.status).toBe(200);
+      const [row] = await db.select().from(appsTable).where(eq(appsTable.slug, "thu"));
+      expect(row!.embedPagesSeen).toEqual([]);
+    } finally {
+      await pool.query("DROP TRIGGER fail_seen_trg ON apps");
+    }
+    // Il limite di scrittura non si è consumato: ora la scrittura riesce
+    const t2 = await embedToken();
+    expect((await status("page=task", t2)).status).toBe(200);
+    const [row2] = await db.select().from(appsTable).where(eq(appsTable.slug, "thu"));
+    expect(row2!.embedPagesSeen).toEqual(["task"]);
+  });
+
   it("il 61° giro in un minuto → 429", async () => {
     for (let i = 0; i < 60; i++) expect((await status("page=task")).status).toBe(200);
     expect((await status("page=task")).status).toBe(429);

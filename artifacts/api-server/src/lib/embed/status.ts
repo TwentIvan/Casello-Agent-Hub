@@ -43,11 +43,14 @@ export function resetPageSeen(): void {
 export async function recordPageSeen(appId: number, page: string, now: number = Date.now()): Promise<void> {
   const last = lastSeenWrite.get(appId);
   if (last !== undefined && now - last < PAGE_SEEN_WRITE_MS) return;
-  lastSeenWrite.set(appId, now);
   const [row] = await db.select({ seen: appsTable.embedPagesSeen }).from(appsTable).where(eq(appsTable.id, appId)).limit(1);
-  if (!row || row.seen[0] === page) return;
+  if (!row || row.seen[0] === page) {
+    lastSeenWrite.set(appId, now);
+    return;
+  }
   const next = [page, ...row.seen.filter((p) => p !== page)].slice(0, PAGE_SEEN_MAX);
   await db.update(appsTable).set({ embedPagesSeen: next }).where(eq(appsTable.id, appId));
+  lastSeenWrite.set(appId, now);
 }
 
 /** Segnalazioni dell'App nuove o da vagliare (stati `received` e `triage`). */

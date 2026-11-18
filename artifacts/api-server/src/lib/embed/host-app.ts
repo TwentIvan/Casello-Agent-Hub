@@ -19,8 +19,11 @@ function originOf(url: string): string | null {
 
 /** Prima App (per id) con `base_url` di quell'origine, altrimenti null. */
 export async function embedHostApp(origin: string): Promise<App | null> {
-  const apps = await db.select().from(appsTable).orderBy(asc(appsTable.id));
-  return apps.find((a) => originOf(a.baseUrl) === origin) ?? null;
+  const apps = await db.select({ id: appsTable.id, baseUrl: appsTable.baseUrl }).from(appsTable).orderBy(asc(appsTable.id));
+  const found = apps.find((a) => originOf(a.baseUrl) === origin);
+  if (!found) return null;
+  const [app] = await db.select().from(appsTable).where(eq(appsTable.id, found.id)).limit(1);
+  return app ?? null;
 }
 
 /**

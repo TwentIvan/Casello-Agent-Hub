@@ -123,7 +123,12 @@ export function createLeadChatRouter(): IRouter {
       const app = await requireHostApp(req, slug);
       await requireConversationOfApp(currentUserId(req), id, app.id);
       // La pagina si ricontrolla sul corpo originale: campi in più → 400
-      const raw = (req.body as { pageContext?: unknown }).pageContext;
+      let raw = (req.body as { pageContext?: unknown }).pageContext;
+      // `host.app` lo scrive la pagina ospite: lo slug vero è quello dell'App risolta (come per Alfred)
+      if (raw && typeof raw === "object" && "host" in raw && (raw as { host?: unknown }).host && typeof (raw as { host: unknown }).host === "object") {
+        const r = raw as { host: Record<string, unknown> };
+        raw = { ...r, host: { ...r.host, app: app.slug } };
+      }
       const sent = await sendLeadMessage(currentUserId(req), id, { content: body.content, pageContext: raw, actionLabel: body.actionLabel });
       res.status(202).json(SendLeadMessageResponse.parse(sent));
     });

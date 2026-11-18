@@ -162,6 +162,19 @@ describe("conversazioni per App", () => {
     expect((await listLeadConversations(me.userId, thu!.id)).map((c) => c.id)).toEqual([hub.id]);
   });
 
+  it("il tetto di conversazioni vale per App", async () => {
+    const me = await seedUser();
+    const { lead } = await seedBotcave(me.modelId);
+    const [thu] = await db.insert(appsTable).values({ name: "The Hub Up", slug: "thu", baseUrl: "https://hubup.example" }).returning();
+    await db.insert(agentsTable).values({ appId: thu!.id, name: "Resp", role: "general", status: "active", aiModelId: me.modelId });
+    // 99 su casello (una senza App) e una su thu: casello non è pieno, thu non è influenzata
+    await db.insert(leadConversationsTable).values(Array.from({ length: 98 }, () => ({ userId: me.userId, agentId: lead.id, appId: botcaveId })));
+    await db.insert(leadConversationsTable).values({ userId: me.userId, agentId: lead.id });
+    await createLeadConversation(me.userId, botcaveId);
+    await expectError(createLeadConversation(me.userId, botcaveId), 409, LEAD_CHAT_MESSAGES.tooManyConversations);
+    expect((await createLeadConversation(me.userId, thu!.id)).appId).toBe(thu!.id);
+  });
+
   it("azione della pagina: richiesta salvata nell'input, non trovata → 400 senza run", async () => {
     const me = await seedUser();
     const [thu] = await db

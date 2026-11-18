@@ -168,10 +168,11 @@ export async function leadConversationAppId(userId: number, id: number): Promise
 
 export async function createLeadConversation(userId: number, appId: number): Promise<LeadConversation> {
   const a = await requireAvailable(userId, appId);
+  // Il tetto vale per App (per `casello` contano anche le conversazioni senza App)
   const [row] = await db
     .select({ n: count() })
     .from(leadConversationsTable)
-    .where(and(eq(leadConversationsTable.userId, userId), isNull(leadConversationsTable.archivedAt)));
+    .where(and(eq(leadConversationsTable.userId, userId), isNull(leadConversationsTable.archivedAt), await appCondition(appId)));
   if (Number(row?.n ?? 0) >= LEAD_CONVERSATIONS_MAX) throw new LeadChatError(409, LEAD_CHAT_MESSAGES.tooManyConversations);
   const [conv] = await db.insert(leadConversationsTable).values({ userId, agentId: a.agentId, appId }).returning();
   return conv!;

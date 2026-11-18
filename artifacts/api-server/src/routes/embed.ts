@@ -2,16 +2,15 @@ import { Router, type IRouter } from "express";
 import { GetEmbedConfigQueryParams, GetEmbedConfigResponse, GetEmbedStatusQueryParams, GetEmbedStatusResponse } from "@workspace/api-zod";
 import { currentUserId, sessionOrEmbed } from "../lib/auth";
 import { HttpError } from "../lib/ai/node-account";
-import { PAGE_ACTION_MESSAGES } from "../lib/apps/page-actions";
+import { PAGE_ACTION_MESSAGES, PAGE_RE } from "../lib/apps/page-actions";
 import { requireHostApp } from "../lib/embed/host-app";
 import { embedStatus, recordPageSeen } from "../lib/embed/status";
 import { consumeEmbedStatus } from "../middlewares/rate-limit";
 import { hasIdentitySecret, resolveEmbedBugApp } from "../lib/bugs/embed-access";
 import { embedAppName } from "../lib/embed/clients";
 import { embedAllowedOrigins, embedClientId, normalizeEmbedOrigin } from "../lib/embed/origins";
+import { logger } from "../lib/logger";
 import { parseRequest } from "../middlewares/error-handler";
-
-const PAGE_RE = /^[A-Za-z0-9._:-]{1,40}$/;
 
 const router: IRouter = Router();
 
@@ -46,7 +45,12 @@ embedStatusRouter.get("/embed/status", sessionOrEmbed, async (req, res) => {
   }
   try {
     const app = await requireHostApp(req, slug);
-    await recordPageSeen(app.id, page);
+    try {
+      await recordPageSeen(app.id, page);
+    } catch (e) {
+      // Il tipo di pagina visto è un di più: un errore di scrittura non deve far fallire lo stato
+      logger.warn({ appId: app.id, err: e instanceof Error ? e.name : "errore" }, "embed: tipo di pagina non registrato");
+    }
     res.json(GetEmbedStatusResponse.parse(await embedStatus(userId, app, page)));
   } catch (err) {
     if (!(err instanceof HttpError)) throw err;

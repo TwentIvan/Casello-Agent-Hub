@@ -18,7 +18,7 @@ export const PAGE_ACTIONS_PER_PAGE_MAX = 6;
 export const PAGE_ACTIONS_TOTAL_MAX = 40;
 const LABEL_MAX = 40;
 const REQUEST_MAX = 1000;
-const PAGE_RE = /^[A-Za-z0-9._:-]{1,40}$/;
+export const PAGE_RE = /^[A-Za-z0-9._:-]{1,40}$/;
 // eslint-disable-next-line no-control-regex
 const CONTROL_RE = /[\u0000-\u001f\u007f]/;
 

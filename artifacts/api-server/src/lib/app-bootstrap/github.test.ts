@@ -5,7 +5,8 @@ import { resetGithubConfigForTests } from "../github/config";
 import { commitFiles } from "../code-writer/github-git";
 import { loadGithubConfig } from "../github/config";
 import { APP_BOOTSTRAP_MESSAGES as M } from "./messages";
-import { checkInitChanges, inspectRepo, initializeRepo } from "./github";
+import { INIT_LIMITS, checkInitChanges, inspectRepo, initializeRepo } from "./github";
+import { MAX_FILES, personalizeFiles } from "./personalize";
 
 const REPO = "ivan/portfolio";
 const INST = 7;
@@ -153,16 +154,69 @@ describe("initializeRepo", () => {
   });
 });
 
+describe("inspectRepo + personalizeFiles + initializeRepo: voci non di testo e modi", () => {
+  const vars = { slug: "portfolio", name: "Portfolio", domain: "portfolio.example.com", brief: "Il brief" };
+
+  it("binario sotto __SLUG__ spostato col suo blob, script 100755 rinominato resta eseguibile, cartella vecchia sparita", async () => {
+    gh.seedRepo(REPO, "main", {
+      ".botcave/modello.json": MARKER,
+      "artifacts/__SLUG__-web/index.html": "<title>__APP_NAME__</title>",
+      "artifacts/__SLUG__-web/public/favicon.png": "\u0089PNG-finto",
+      "artifacts/__SLUG__-web/dist/bundle.js": "ignorato dallo zipball",
+      "scripts/__SLUG__-start.sh": { content: "#!/bin/sh\necho __SLUG__\n", mode: "100755" },
+      "public/logo.png": "fuori dai segnaposto",
+    });
+    const r = await inspectRepo(input);
+    if (r.kind !== "fresh") throw new Error(JSON.stringify(r));
+    expect(r.files.has("artifacts/__SLUG__-web/public/favicon.png")).toBe(false);
+    expect(r.entries.get("scripts/__SLUG__-start.sh")?.mode).toBe("100755");
+    const p = personalizeFiles(r.files, vars, r.entries);
+    if ("error" in p) throw new Error(p.error);
+    const res = await initializeRepo({ repo: REPO, installationId: INST, parentSha: r.headSha, baseTreeSha: r.treeSha, changes: p.changes, modes: p.modes, reuse: p.reuse, message: "m" });
+    if (!("sha" in res)) throw new Error(res.error);
+    const repo = gh.git.get(REPO)!;
+    const tree = repo.trees.get(repo.commits.get(res.sha)!.tree)!;
+    const byPath = new Map(tree.map((e) => [e.path, e]));
+    const oldFavicon = r.entries.get("artifacts/__SLUG__-web/public/favicon.png")!;
+    expect(byPath.get("artifacts/portfolio-web/public/favicon.png")?.sha).toBe(oldFavicon.sha);
+    expect(byPath.get("artifacts/portfolio-web/dist/bundle.js")?.sha).toBe(r.entries.get("artifacts/__SLUG__-web/dist/bundle.js")!.sha);
+    expect(byPath.get("scripts/portfolio-start.sh")?.mode).toBe("100755");
+    expect(gh.filesAt(REPO, "main")["scripts/portfolio-start.sh"]).toBe("#!/bin/sh\necho portfolio\n");
+    expect([...byPath.keys()].some((k) => k.includes("__SLUG__"))).toBe(false);
+    expect(byPath.get("public/logo.png")?.sha).toBe(r.entries.get("public/logo.png")!.sha);
+  });
+
+  it("collegamento simbolico sotto un segnaposto: pathRefused", () => {
+    const entries = new Map([["artifacts/__SLUG__-web/link", { mode: "120000", sha: "a".repeat(40) }]]);
+    expect(personalizeFiles(new Map(), vars, entries)).toEqual({ error: M.pathRefused });
+  });
+
+  it("albero troncato da GitHub: treeTruncated", async () => {
+    gh.seedRepo(REPO, "main", { ".botcave/modello.json": MARKER });
+    gh.truncatedTrees.add(REPO);
+    try {
+      expect(await inspectRepo(input)).toEqual({ kind: "error", message: M.treeTruncated });
+    } finally {
+      gh.truncatedTrees.delete(REPO);
+    }
+  });
+});
+
 describe("checkInitChanges", () => {
-  it("ammette 400 voci (oltre il limite dei compiti), rifiuta la 401esima", () => {
+  it("limite allineato alla personalizzazione: 200 file rinominati più brief e marcatore passano, una voce in più no", () => {
+    expect(INIT_LIMITS.maxEntries).toBe(2 * MAX_FILES + 2);
     const ok = new Map<string, string | null>();
-    for (let i = 0; i < 200; i++) {
+    for (let i = 0; i < MAX_FILES; i++) {
       ok.set(`artifacts/portfolio-web/f${i}.ts`, "x");
       ok.set(`artifacts/__SLUG__-web/f${i}.ts`, null);
     }
+    ok.set("AGENT_BRIEF.md", "brief");
+    ok.set(".botcave/modello.json", "{}");
     expect(checkInitChanges(ok)).toBeNull();
     ok.set("extra.txt", "x");
     expect(checkInitChanges(ok)).toBe(M.tooManyFiles);
+    // Le voci riusate contano nel limite e passano dalla guardia dei percorsi
+    expect(checkInitChanges(new Map([["a", "x"]]), [{ path: ".github/x.png", mode: "100644", sha: "a".repeat(40) }])).toBe(M.pathRefused);
   });
 
   it("file oltre 1 MiB, totale oltre 5 MiB o con NUL: tooManyFiles", () => {

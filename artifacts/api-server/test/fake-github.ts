@@ -174,6 +174,8 @@ export interface FakeGithub {
   git: Map<string, FakeGitRepo>;
   /** proprietario/nome → pull request. */
   pulls: Map<string, FakePull[]>;
+  /** Repository (`proprietario/nome`) i cui alberi ricorsivi rispondono con `truncated: true`. */
+  truncatedTrees: Set<string>;
   /** `proprietario/nome:base...head` → confronto (`GET /repos/{repo}/compare/{base}...{head}`; commit dal più vecchio, senza voce: 404). */
   comparisons: Map<string, { commits: string[]; files: { filename: string; status: string }[] }>;
   /** sha → check run. */
@@ -375,6 +377,7 @@ export async function startFakeGithub(opts: { appId?: string; slug?: string } = 
     commits: new Map(),
     git: new Map(),
     pulls: new Map(),
+    truncatedTrees: new Set(),
     comparisons: new Map(),
     mergeConflicts: new Set(),
     checkRuns: new Map(),
@@ -623,7 +626,7 @@ export async function startFakeGithub(opts: { appId?: string; slug?: string } = 
       if (method === "GET" && (g = /^\/git\/trees\/([0-9a-f]{40})$/.exec(rest))) {
         const entries = repo.trees.get(g[1]!);
         if (!entries) return send(res, 404, NOT_FOUND);
-        return send(res, 200, { sha: g[1], truncated: false, tree: entries.map((e) => ({ path: e.path, mode: e.mode, type: e.type, sha: e.sha })) });
+        return send(res, 200, { sha: g[1], truncated: fake.truncatedTrees.has(fullName), tree: entries.map((e) => ({ path: e.path, mode: e.mode, type: e.type, sha: e.sha })) });
       }
       if (method === "GET" && rest === "/git/refs") return send(res, 200, [...repo.refs.keys()].map(refJson));
       if (method === "GET" && (g = /^\/git\/refs?\/(heads\/.+)$/.exec(rest))) {

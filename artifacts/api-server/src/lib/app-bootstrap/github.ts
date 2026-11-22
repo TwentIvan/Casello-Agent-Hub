@@ -5,6 +5,7 @@ import { CODE_WRITE_MESSAGES, CodeWriteError } from "../code-writer/messages";
 import { findCredential } from "../code-writer/secrets-check";
 import { commitInitOnBase } from "../code-writer/github-git";
 import { appTemplateRepo } from "./config";
+import { MAX_FILES, type TemplateEntry } from "./personalize";
 import { APP_BOOTSTRAP_MESSAGES as M } from "./messages";
 
 /**
@@ -17,7 +18,7 @@ const MARKER_TEMPLATE = "botcave-modello-app";
 const BASE_BRANCH = "main";
 
 export type RepoInspection =
-  | { kind: "fresh"; headSha: string; treeSha: string; files: Map<string, string> }
+  | { kind: "fresh"; headSha: string; treeSha: string; files: Map<string, string>; entries: Map<string, TemplateEntry> }
   | { kind: "initialized"; headSha: string }
   | { kind: "error"; message: string };
 
@@ -79,7 +80,20 @@ export async function inspectRepo(input: { repo: string; installationId: number;
     const marker = parseMarker(tree.text(MARKER_PATH));
     if (!marker) return err(M.notFromTemplate);
 
-    if (list.json.length === 1) return { kind: "fresh", headSha, treeSha, files: tree.allFiles() };
+    if (list.json.length === 1) {
+      // Albero completo: le voci che lo zipball non dà come testo (binari, cartelle ignorate, file grandi) si spostano col loro blob
+      const t = await get(`/git/trees/${encodeURIComponent(treeSha)}?recursive=1`);
+      if (t.status === 401 || t.status === 403 || t.status === 404) return err(M.notVisible);
+      if (!isObj(t.json) || !Array.isArray(t.json["tree"])) return err(M.githubUnavailable);
+      if (t.json["truncated"] === true) return err(M.treeTruncated);
+      const entries = new Map<string, TemplateEntry>();
+      for (const e of t.json["tree"] as unknown[]) {
+        if (!isObj(e) || typeof e["path"] !== "string" || typeof e["mode"] !== "string" || typeof e["sha"] !== "string") continue;
+        if (e["type"] !== "blob" && e["type"] !== "commit") continue;
+        entries.set(e["path"], { mode: e["mode"], sha: e["sha"] });
+      }
+      return { kind: "fresh", headSha, treeSha, files: tree.allFiles(), entries };
+    }
     if (list.json.length === 2 && marker.slug === input.slug) return { kind: "initialized", headSha };
     return err(M.notFresh);
   } catch (e) {
@@ -88,8 +102,13 @@ export async function inspectRepo(input: { repo: string; installationId: number;
   }
 }
 
-/** Limiti del commit di inizializzazione: un modello vero rinomina molti file (due voci per file). */
-export const INIT_LIMITS = { maxEntries: 400, maxFileBytes: 1_048_576, maxTotalBytes: 5_242_880 } as const;
+/**
+ * Limiti del commit di inizializzazione: ogni file del modello rinominato vale due voci (nuovo ed eliminato), più
+ * AGENT_BRIEF.md e il marcatore. Lo stesso `MAX_FILES` della personalizzazione: i due limiti sono uno solo.
+ */
+export const INIT_LIMITS = { maxEntries: 2 * MAX_FILES + 2, maxFileBytes: 1_048_576, maxTotalBytes: 5_242_880 } as const;
+
+export type ReusedEntry = { path: string; mode: string; sha: string };
 
 /** Percorsi che Botcave non scrive mai: `.git/`, `.github/`, `.env` e `.env.*` (anche in sottocartelle). */
 function pathRefused(path: string): boolean {
@@ -99,9 +118,10 @@ function pathRefused(path: string): boolean {
 }
 
 /** null = commit di inizializzazione ammissibile, altrimenti il messaggio fisso. */
-export function checkInitChanges(changes: Map<string, string | null>): string | null {
-  if (changes.size === 0) return CODE_WRITE_MESSAGES.nothingToCommit;
-  if (changes.size > INIT_LIMITS.maxEntries) return M.tooManyFiles;
+export function checkInitChanges(changes: Map<string, string | null>, reuse: ReusedEntry[] = []): string | null {
+  if (changes.size === 0 && reuse.length === 0) return CODE_WRITE_MESSAGES.nothingToCommit;
+  if (changes.size + reuse.length > INIT_LIMITS.maxEntries) return M.tooManyFiles;
+  for (const e of reuse) if (pathRefused(e.path)) return M.pathRefused;
   let total = 0;
   for (const [path, content] of changes) {
     if (pathRefused(path)) return M.pathRefused;
@@ -123,15 +143,24 @@ export async function initializeRepo(input: {
   baseTreeSha: string;
   changes: Map<string, string | null>;
   message: string;
+  modes?: Map<string, string>;
+  reuse?: ReusedEntry[];
 }): Promise<{ sha: string } | { error: string }> {
   const cfg = githubConfig();
   if (!cfg) return { error: M.githubUnavailable };
-  const problem = checkInitChanges(input.changes);
+  const problem = checkInitChanges(input.changes, input.reuse);
   if (problem) return { error: problem };
   try {
     return await commitInitOnBase(
       { cfg, installationId: input.installationId, repo: input.repo },
-      { parentSha: input.parentSha, baseTreeSha: input.baseTreeSha, changes: input.changes, message: input.message },
+      {
+        parentSha: input.parentSha,
+        baseTreeSha: input.baseTreeSha,
+        changes: input.changes,
+        message: input.message,
+        modes: input.modes,
+        reuse: input.reuse,
+      },
     );
   } catch (e) {
     if (e instanceof CodeWriteError) {

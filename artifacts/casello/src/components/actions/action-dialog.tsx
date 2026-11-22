@@ -23,6 +23,7 @@ import { ACTION_KIND_LABELS, PlanProposalDetail, isPlanItem } from "./plan-propo
 import { BugDetail } from "./bug-detail";
 import { MergeDetail } from "./merge-detail";
 import { ReleaseDetail } from "./release-detail";
+import { AppBootstrapDetail } from "./app-bootstrap-detail";
 import { ProposalSteps } from "./proposal-steps";
 import { useProposalSelection } from "./use-proposal-selection";
 
@@ -179,6 +180,10 @@ export function ActionDialog({
               <div className="rounded-md border p-3">
                 <ReleaseDetail args={action.args} status={action.status} />
               </div>
+            ) : action.kind === "app_bootstrap" ? (
+              <div className="rounded-md border p-3">
+                <AppBootstrapDetail args={action.args} status={action.status} number={action.number} />
+              </div>
             ) : plan ? (
               <div className="rounded-md border p-3">
                 <PlanProposalDetail args={action.args} />
@@ -262,7 +267,7 @@ export function ActionDialog({
                       setUserToken("");
                     }}
                   >
-                    {approve.isPending ? (plan ? "Approvazione…" : "Esecuzione…") : plan ? "Approva" : action.kind === "proposal" ? selection.approveLabel : action.kind === "merge" ? "Approva e unisci" : action.kind === "release" ? "Porta in produzione" : action.kind === "bug" ? "Approva e affida alla squadra" : "Approva ed esegui"}
+                    {approve.isPending ? (plan ? "Approvazione…" : "Esecuzione…") : plan ? "Approva" : action.kind === "proposal" ? selection.approveLabel : action.kind === "merge" ? "Approva e unisci" : action.kind === "release" ? "Porta in produzione" : action.kind === "app_bootstrap" ? "Approva e crea" : action.kind === "bug" ? "Approva e affida alla squadra" : "Approva ed esegui"}
                   </Button>
                 </DialogFooter>
               </div>

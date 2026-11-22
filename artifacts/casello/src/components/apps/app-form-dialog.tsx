@@ -13,6 +13,7 @@ import {
   useUpdateApp,
 } from "@workspace/api-client-react";
 import { ModelPicker } from "@/components/ai/model-picker";
+import { AppBootstrapForm } from "@/components/apps/app-bootstrap-form";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -207,6 +208,8 @@ export function AppFormDialog({ open, onOpenChange, app }: AppFormDialogProps) {
   const { toast } = useToast();
   // Il segreto non torna mai dall'API: resta invariato salvo nuovo valore o rimozione esplicita.
   const [clearSecret, setClearSecret] = useState(false);
+  // Solo in creazione: collegare un'App esistente o farne nascere una da zero
+  const [mode, setMode] = useState<"existing" | "scratch">("existing");
   const secretSet = app?.serviceSecretSet === true && !clearSecret;
   // Solo in creazione: modello dell'agente generale, precompilato col predefinito dell'utente.
   const defaultModel = useGetDefaultModel({ query: { queryKey: getGetDefaultModelQueryKey(), enabled: !app } });
@@ -287,8 +290,25 @@ export function AppFormDialog({ open, onOpenChange, app }: AppFormDialogProps) {
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>{app ? "Modifica app" : "Nuova app"}</DialogTitle>
-          <DialogDescription>L'applicazione che i suoi agenti potranno chiamare tramite i propri strumenti.</DialogDescription>
+          <DialogDescription>
+            {mode === "scratch"
+              ? "Botcave crea l'app da un repository modello, la registra e la fa analizzare."
+              : "L'applicazione che i suoi agenti potranno chiamare tramite i propri strumenti."}
+          </DialogDescription>
         </DialogHeader>
+        {!app && (
+          <div className="flex gap-2" role="group" aria-label="Tipo di nuova app">
+            <Button type="button" size="sm" variant={mode === "existing" ? "default" : "outline"} aria-pressed={mode === "existing"} onClick={() => setMode("existing")}>
+              App esistente
+            </Button>
+            <Button type="button" size="sm" variant={mode === "scratch" ? "default" : "outline"} aria-pressed={mode === "scratch"} onClick={() => setMode("scratch")}>
+              Da zero
+            </Button>
+          </div>
+        )}
+        {!app && mode === "scratch" ? (
+          <AppBootstrapForm onDone={() => onOpenChange(false)} onCancel={() => onOpenChange(false)} />
+        ) : (
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             <FormField
@@ -449,6 +469,7 @@ export function AppFormDialog({ open, onOpenChange, app }: AppFormDialogProps) {
             </DialogFooter>
           </form>
         </Form>
+        )}
       </DialogContent>
     </Dialog>
   );

@@ -16,6 +16,7 @@ import { ACTION_KIND_LABELS, isPlanItem } from "./plan-proposal";
 import { BugDetail } from "./bug-detail";
 import { MergeDetail } from "./merge-detail";
 import { ReleaseDetail } from "./release-detail";
+import { AppBootstrapDetail } from "./app-bootstrap-detail";
 import { ProposalSteps } from "./proposal-steps";
 import { useProposalSelection } from "./use-proposal-selection";
 
@@ -29,7 +30,7 @@ export function decidedTitle(action: QueuedAction, approved: boolean): string {
 /** Serve la scheda per approvare: un piano va letto per intero, uno strumento con identità utente vuole il token. */
 export function needsDialogToApprove(action: QueuedAction): boolean {
   // «Porta in produzione» va letta per intero (versione di prova, compiti, script -post): si decide dalla scheda
-  return isPlanItem(action) || action.kind === "release" || (action.kind === "action" && action.tool?.identity === "user");
+  return isPlanItem(action) || action.kind === "release" || action.kind === "app_bootstrap" || (action.kind === "action" && action.tool?.identity === "user");
 }
 
 /**
@@ -115,6 +116,8 @@ export function PendingActionItem({
           <>Merge chiesto dalla squadra: dopo il deploy applica su Neon lo script -post.</>
         ) : action.kind === "release" ? (
           <>Lavoro finito e in prova: {consoleHref !== undefined ? "aprilo in Botcave" : "apri i dettagli"} per provarlo e portarlo in produzione.</>
+        ) : action.kind === "app_bootstrap" ? (
+          <>Nuova app da zero: {consoleHref !== undefined ? "aprila in Botcave" : "apri i dettagli"} per leggere i quattro passi prima di approvare.</>
         ) : plan ? (
           <>
             {ACTION_KIND_LABELS[action.kind]} proposto dal capo della squadra:{" "}
@@ -136,7 +139,7 @@ export function PendingActionItem({
       busy={busy}
       approveDisabled={nothingLeft || bugBlocker !== null}
       approveLabel={
-        plan || action.kind === "release"
+        plan || action.kind === "release" || action.kind === "app_bootstrap"
           ? "Leggi e approva"
           : action.kind === "bug"
             ? approve.isPending
@@ -173,6 +176,7 @@ export function PendingActionItem({
       {action.kind === "bug" && <BugDetail args={action.args} linkTeam={consoleHref === undefined} />}
       {action.kind === "merge" && <MergeDetail args={action.args} />}
       {action.kind === "release" && <ReleaseDetail args={action.args} status={action.status} />}
+      {action.kind === "app_bootstrap" && <AppBootstrapDetail args={action.args} status={action.status} number={action.number} />}
     </ConfirmItem>
   );
 }

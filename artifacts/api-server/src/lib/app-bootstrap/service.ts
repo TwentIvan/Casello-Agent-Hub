@@ -233,11 +233,19 @@ export async function rejectBootstrap(action: PendingActionRow, _note: string | 
 /** Errore di un passo con il messaggio fisso. */
 class StepError extends Error {}
 
+/**
+ * La richiesta non è più `running` (chiusa da un altro processo, es. dal riavvio durante un deploy, o ripresa con
+ * Riprova): questo esecutore smette di scrivere, senza segnarla fallita.
+ */
+class StaleRunError extends Error {}
+
 async function saveSteps(id: number, steps: BootstrapStep[], extra: Partial<typeof appBootstrapsTable.$inferInsert> = {}): Promise<void> {
-  await db
+  const saved = await db
     .update(appBootstrapsTable)
     .set({ ...extra, steps: steps.map((s) => ({ ...s })), updatedAt: new Date() })
-    .where(eq(appBootstrapsTable.id, id));
+    .where(and(eq(appBootstrapsTable.id, id), eq(appBootstrapsTable.status, "running")))
+    .returning({ id: appBootstrapsTable.id });
+  if (saved.length === 0) throw new StaleRunError();
 }
 
 async function loadRow(id: number): Promise<AppBootstrap | undefined> {
@@ -286,7 +294,13 @@ async function registerApp(row: AppBootstrap): Promise<number> {
         status: "draft",
         ...choice,
       });
-      await tx.update(appBootstrapsTable).set({ appId: app!.id, updatedAt: new Date() }).where(eq(appBootstrapsTable.id, row.id));
+      const linked = await tx
+        .update(appBootstrapsTable)
+        .set({ appId: app!.id, updatedAt: new Date() })
+        .where(and(eq(appBootstrapsTable.id, row.id), eq(appBootstrapsTable.status, "running")))
+        .returning({ id: appBootstrapsTable.id });
+      // Richiesta non più nostra: la transazione si annulla e l'App non nasce
+      if (linked.length === 0) throw new StaleRunError();
       return app!.id;
     });
   } catch (err) {
@@ -346,7 +360,7 @@ export async function runBootstrap(id: number, actionId: number): Promise<void> 
             extra.initCommitSha = r.headSha;
             break;
           }
-          const personalized = personalizeFiles(r.files, { slug: row.slug, name: row.name, domain: row.domain, brief: row.brief });
+          const personalized = personalizeFiles(r.files, { slug: row.slug, name: row.name, domain: row.domain, brief: row.brief }, r.entries);
           if ("error" in personalized) throw new StepError(personalized.error);
           const commit = await initializeRepo({
             repo: row.repo,
@@ -354,6 +368,8 @@ export async function runBootstrap(id: number, actionId: number): Promise<void> 
             parentSha: r.headSha,
             baseTreeSha: r.treeSha,
             changes: personalized.changes,
+            modes: personalized.modes,
+            reuse: personalized.reuse,
             message: `Inizializza ${row.name}\n\nBotcave · nuova app da zero · richiesta ${row.id}`,
           });
           if ("error" in commit) throw new StepError(commit.error);
@@ -385,6 +401,10 @@ export async function runBootstrap(id: number, actionId: number): Promise<void> 
       .where(and(eq(pendingActionsTable.id, actionId), eq(pendingActionsTable.status, "executing")));
     logger.info({ bootstrapId: id, slug: row.slug }, "Nuova app da zero: passi completati");
   } catch (err) {
+    if (err instanceof StaleRunError) {
+      logger.warn({ bootstrapId: id, step: current }, "Nuova app da zero: richiesta non più in esecuzione qui, passi interrotti");
+      return;
+    }
     const message = err instanceof StepError ? err.message : INTERNAL;
     if (!(err instanceof StepError)) {
       logger.error({ bootstrapId: id, step: current, errName: err instanceof Error ? err.name : "unknown" }, "Nuova app da zero: errore interno");

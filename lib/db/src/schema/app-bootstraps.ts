@@ -45,10 +45,10 @@ export const appBootstrapsTable = pgTable(
   (table) => [
     uniqueIndex("app_bootstraps_slug_open_uidx")
       .on(table.slug)
-      .where(sql`${table.status} in ('pending', 'running', 'done')`),
+      .where(sql`${table.status} in ('pending', 'running') or (${table.status} = 'done' and ${table.appId} is not null)`),
     uniqueIndex("app_bootstraps_repo_open_uidx")
       .on(table.repo)
-      .where(sql`${table.status} in ('pending', 'running', 'done')`),
+      .where(sql`${table.status} in ('pending', 'running') or (${table.status} = 'done' and ${table.appId} is not null)`),
     index("app_bootstraps_app_id_idx").on(table.appId),
   ],
 );

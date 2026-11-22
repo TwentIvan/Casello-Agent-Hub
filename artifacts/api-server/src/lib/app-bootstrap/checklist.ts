@@ -37,9 +37,9 @@ export function buildChecklist(row: AppBootstrap, names: ReturnType<typeof boots
     manual(
       "coolify_api",
       "Servizio API su Coolify",
-      `Crea il servizio ${names.apiService} dall'immagine ${names.apiImage}: porta 3000, rete interna, health check /api/healthz; variabili DATABASE_URL, PORT=3000, NODE_ENV=production, LOG_LEVEL=info, PUBLIC_APP_URL=${origin}.`,
+      `Crea il servizio ${names.apiService} dall'immagine ${names.apiImage}:latest: porta 3000, rete interna, health check /api/healthz; variabili DATABASE_URL, PORT=3000, NODE_ENV=production, LOG_LEVEL=info, PUBLIC_APP_URL=${origin}.`,
     ),
-    manual("coolify_web", "Servizio web su Coolify", `Crea il servizio ${names.webService} dall'immagine ${names.webImage} con il dominio ${row.domain}.`),
+    manual("coolify_web", "Servizio web su Coolify", `Crea il servizio ${names.webService} dall'immagine ${names.webImage}:latest con il dominio ${row.domain}.`),
     manual(
       "secrets",
       "Segreti del repository",

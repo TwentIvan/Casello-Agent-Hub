@@ -1846,6 +1846,6 @@ CREATE TABLE IF NOT EXISTS "app_bootstraps" (
 	CONSTRAINT "app_bootstraps_pending_action_id_pending_actions_id_fk" FOREIGN KEY ("pending_action_id") REFERENCES "public"."pending_actions"("id") ON DELETE set null ON UPDATE no action
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS "app_bootstraps_slug_open_uidx" ON "app_bootstraps" USING btree ("slug") WHERE "app_bootstraps"."status" in ('pending', 'running', 'done');
-CREATE UNIQUE INDEX IF NOT EXISTS "app_bootstraps_repo_open_uidx" ON "app_bootstraps" USING btree ("repo") WHERE "app_bootstraps"."status" in ('pending', 'running', 'done');
+CREATE UNIQUE INDEX IF NOT EXISTS "app_bootstraps_slug_open_uidx" ON "app_bootstraps" USING btree ("slug") WHERE ("app_bootstraps"."status" in ('pending', 'running') OR ("app_bootstraps"."status" = 'done' AND "app_bootstraps"."app_id" IS NOT NULL));
+CREATE UNIQUE INDEX IF NOT EXISTS "app_bootstraps_repo_open_uidx" ON "app_bootstraps" USING btree ("repo") WHERE ("app_bootstraps"."status" in ('pending', 'running') OR ("app_bootstraps"."status" = 'done' AND "app_bootstraps"."app_id" IS NOT NULL));
 CREATE INDEX IF NOT EXISTS "app_bootstraps_app_id_idx" ON "app_bootstraps" USING btree ("app_id");

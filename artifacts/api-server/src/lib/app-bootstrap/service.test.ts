@@ -17,6 +17,7 @@ import { startFakeGithub, type FakeGithub } from "../../../test/fake-github";
 import { clearInstallationTokenCache } from "../github/app";
 import { resetGithubConfigForTests } from "../github/config";
 import { encryptSecret } from "../secrets";
+import { logger } from "../logger";
 
 // Nascita di un'App da zero: richiesta, decisione, passi in background, ripresa e riavvio (PGlite + finto GitHub)
 
@@ -25,7 +26,7 @@ vi.mock("../architect/run-analysis", async (importOriginal) => {
   return { ...orig, startAnalysis: vi.fn(async () => {}) };
 });
 
-import { approveAction, rejectAction } from "../actions/decide";
+import { approveAction, failInterruptedActions, rejectAction } from "../actions/decide";
 import { APP_BOOTSTRAP_MESSAGES as M } from "./messages";
 import { createBootstrap, failInterruptedBootstraps, retryBootstrap, settleBootstrapRuns } from "./service";
 
@@ -119,6 +120,21 @@ async function created(): Promise<{ id: number; number: number }> {
 const bootstrapRow = async (id: number) => (await db.select().from(appBootstrapsTable).where(eq(appBootstrapsTable.id, id)))[0]!;
 const actionRow = async (number: number) => (await db.select().from(pendingActionsTable).where(eq(pendingActionsTable.number, number)))[0]!;
 const commitCount = () => gh.git.get(REPO)!.commits.size;
+
+describe("richiesta done e App eliminata", () => {
+  it("con l'App la richiesta done blocca slug e repository; eliminata l'App (app_id null) si riparte", async () => {
+    const { id } = await created();
+    const [other] = await db.insert(appsTable).values({ name: "Altra", slug: "altra", baseUrl: "https://altra.example.com" }).returning();
+    await db.update(appBootstrapsTable).set({ status: "done", appId: other!.id }).where(eq(appBootstrapsTable.id, id));
+    await db.update(pendingActionsTable).set({ status: "done" });
+    expect(await createBootstrap(userId, body())).toEqual({ ok: false, status: 409, message: M.requestOpen });
+    // `ON DELETE SET NULL`: eliminare l'App lascia la riga done senza App
+    await db.delete(appsTable).where(eq(appsTable.id, other!.id));
+    expect((await bootstrapRow(id)).appId).toBeNull();
+    const again = await createBootstrap(userId, body());
+    expect(again.ok).toBe(true);
+  });
+});
 
 describe("createBootstrap e passi", () => {
   it("voce app_bootstrap con i nomi, poi i quattro passi fino all'App con analisi", async () => {
@@ -276,5 +292,39 @@ describe("rifiuto e riavvio", () => {
     const failedItem = await actionRow(number);
     expect(failedItem.status).toBe("failed");
     expect(failedItem.errorMessage).toBe(`passo personalize: ${M.interrupted}`);
+  });
+
+  it("esecutore superato (richiesta chiusa da un altro processo): smette di scrivere, niente App", async () => {
+    const { id, number } = await created();
+    // Un altro container chiude la richiesta mentre questo sta ancora ispezionando il repository
+    let closing: Promise<unknown> | null = null;
+    gh.failWith = (req) => {
+      if (!closing && req.path.startsWith(`/repos/${REPO}`)) {
+        closing = db.update(appBootstrapsTable).set({ status: "failed" }).where(eq(appBootstrapsTable.id, id)).then(() => null);
+      }
+      return null;
+    };
+    const warn = vi.spyOn(logger, "warn");
+    const approved = await approveAction(userId, number);
+    expect(approved.ok).toBe(true);
+    await settleBootstrapRuns();
+    expect(closing).not.toBeNull();
+    await closing;
+    expect(warn.mock.calls.some((c) => String(c[1]).includes("non più in esecuzione"))).toBe(true);
+    warn.mockRestore();
+    const after = await bootstrapRow(id);
+    expect(after.status).toBe("failed");
+    expect(after.steps.every((s) => s.status === "pending")).toBe(true);
+    expect(after.appId).toBeNull();
+    expect(await db.select().from(appsTable)).toHaveLength(0);
+    expect(commitCount()).toBe(1);
+  });
+
+  it("failInterruptedActions lascia stare le voci app_bootstrap in esecuzione", async () => {
+    const { number } = await created();
+    const item = await actionRow(number);
+    await db.update(pendingActionsTable).set({ status: "executing" }).where(eq(pendingActionsTable.id, item.id));
+    expect(await failInterruptedActions()).toBe(0);
+    expect((await actionRow(number)).status).toBe("executing");
   });
 });

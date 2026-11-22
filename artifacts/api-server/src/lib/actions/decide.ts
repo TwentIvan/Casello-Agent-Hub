@@ -228,8 +228,16 @@ export async function failInterruptedActions(): Promise<number> {
   const rows = await db
     .update(pendingActionsTable)
     .set({ status: "failed", errorMessage: ACTION_MESSAGES.uncertain, finishedAt: sql`now()` })
-    // «Porta in produzione» resta `executing`: la PR di rilascio è su GitHub e la sorveglianza ne conclude l'esito
-    .where(and(eq(pendingActionsTable.status, "executing"), ne(pendingActionsTable.kind, "release")))
+    // «Porta in produzione» resta `executing`: la PR di rilascio è su GitHub e la sorveglianza ne conclude l'esito.
+    // Le voci `app_bootstrap` le chiude `failInterruptedBootstraps` insieme alla loro richiesta: qui una voce appena
+    // approvata (container nuovo o vecchio durante il deploy) diventerebbe «esito incerto» mentre i passi proseguono.
+    .where(
+      and(
+        eq(pendingActionsTable.status, "executing"),
+        ne(pendingActionsTable.kind, "release"),
+        ne(pendingActionsTable.kind, "app_bootstrap"),
+      ),
+    )
     .returning({ id: pendingActionsTable.id });
   if (rows.length > 0) {
     const ids = rows.map((r) => r.id);

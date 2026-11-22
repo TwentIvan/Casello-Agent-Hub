@@ -54,4 +54,16 @@ describe("migrazione 2026-11-22-nuova-app-da-zero", () => {
     const r = await db.query<any>("SELECT count(*)::int AS n FROM app_bootstraps WHERE slug = 'uno'");
     expect(r.rows[0].n).toBe(2);
   });
+
+  it("una richiesta done con l'App blocca slug e repository; senza App (eliminata) li libera", async () => {
+    await db.exec("INSERT INTO apps (name, slug, base_url) VALUES ('Tre', 'tre', 'https://tre.example.com')");
+    await db.exec(insert("tre", "o/tre", "done"));
+    await db.exec("UPDATE app_bootstraps SET app_id = (SELECT id FROM apps WHERE slug = 'tre') WHERE slug = 'tre'");
+    await expect(db.exec(insert("tre", "o/tre-bis"))).rejects.toThrow(/app_bootstraps_slug_open_uidx/);
+    await expect(db.exec(insert("quattro", "o/tre"))).rejects.toThrow(/app_bootstraps_repo_open_uidx/);
+    await db.exec("DELETE FROM apps WHERE slug = 'tre'");
+    await db.exec(insert("tre", "o/tre"));
+    const r = await db.query<any>("SELECT count(*)::int AS n FROM app_bootstraps WHERE slug = 'tre'");
+    expect(r.rows[0].n).toBe(2);
+  });
 });

@@ -1,4 +1,4 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { db, appBootstrapsTable } from "@workspace/db";
 import { logger } from "../logger";
 import { fetchPage, type WebFetcher } from "../web-reader/fetch-page";
@@ -27,7 +27,7 @@ export async function checkHealth(id: number, fetcher: WebFetcher = fetchPage): 
 
 let running = false;
 
-/** Un giro: le richieste `done` ancora senza esito positivo, al più 20, una alla volta. */
+/** Un giro: le richieste `done` con l'App ancora esistente e senza esito positivo, al più 20, una alla volta. */
 export async function runHealthPass(fetcher: WebFetcher = fetchPage): Promise<void> {
   if (running) return;
   running = true;
@@ -35,8 +35,9 @@ export async function runHealthPass(fetcher: WebFetcher = fetchPage): Promise<vo
     const rows = await db
       .select({ id: appBootstrapsTable.id })
       .from(appBootstrapsTable)
-      .where(and(eq(appBootstrapsTable.status, "done"), isNull(appBootstrapsTable.healthOkAt)))
-      .orderBy(appBootstrapsTable.healthCheckedAt)
+      .where(and(eq(appBootstrapsTable.status, "done"), isNotNull(appBootstrapsTable.appId), isNull(appBootstrapsTable.healthOkAt)))
+      // Le richieste mai controllate per prime: con più di 20 in attesa nessuna resta indietro per sempre
+      .orderBy(sql`${appBootstrapsTable.healthCheckedAt} asc nulls first`, appBootstrapsTable.id)
       .limit(PER_PASS);
     for (const r of rows) await checkHealth(r.id, fetcher);
   } catch (err) {

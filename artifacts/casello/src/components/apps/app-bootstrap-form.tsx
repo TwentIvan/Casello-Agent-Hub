@@ -6,10 +6,9 @@ import {
   getListGithubReposQueryKey,
   useCreateAppBootstrap,
   useGetAppBootstrapConfig,
-  useGetDefaultModel,
-  getGetDefaultModelQueryKey,
   useListGithubRepos,
 } from "@workspace/api-client-react";
+import { useDefaultAiModelId } from "@/components/ai/ai-queries";
 import { ModelPicker } from "@/components/ai/model-picker";
 import { Button } from "@/components/ui/button";
 import { DialogFooter } from "@/components/ui/dialog";
@@ -37,7 +36,8 @@ export function AppBootstrapForm({ onDone, onCancel }: { onDone: () => void; onC
   const config = useGetAppBootstrapConfig({ query: { queryKey: getGetAppBootstrapConfigQueryKey() } });
   const baseDomain = config.data?.baseDomain ?? DEFAULT_BASE_DOMAIN;
   const repos = useListGithubRepos({ query: { queryKey: getListGithubReposQueryKey() } });
-  const defaultModel = useGetDefaultModel({ query: { queryKey: getGetDefaultModelQueryKey() } });
+  // Solo modelli cloud: un Claude Code (nodo) preselezionato sarebbe rifiutato dal server
+  const defaultModelId = useDefaultAiModelId({ cloudOnly: true });
 
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
@@ -46,7 +46,7 @@ export function AppBootstrapForm({ onDone, onCancel }: { onDone: () => void; onC
   const [brief, setBrief] = useState("");
   const [repoKey, setRepoKey] = useState("");
   const [model, setModel] = useState<number | null | undefined>(undefined);
-  const aiModelId = model !== undefined ? model : (defaultModel.data?.aiModelId ?? null);
+  const aiModelId = model !== undefined ? model : defaultModelId;
 
   const changeSlug = (next: string) => {
     if (domainFollowsSlug(domain, slug, baseDomain)) setDomain(next ? suggestedDomain(next, baseDomain) : "");

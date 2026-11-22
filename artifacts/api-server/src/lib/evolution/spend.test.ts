@@ -1,10 +1,15 @@
-import { describe, expect, it } from "vitest";
-import { eq } from "drizzle-orm";
+import { afterAll, describe, expect, it } from "vitest";
+import { eq, like } from "drizzle-orm";
 import { db, analysesTable, appsTable, evolutionCyclesTable, evolutionRoundsTable } from "@workspace/db";
 import { cycleBudgetBlock, cycleSpend } from "./spend";
 import { EVOLUTION_MESSAGES } from "./messages";
 
 // Spesa mensile e tetto del ciclo di evoluzione
+
+// Le App create qui (con cicli, giri e analisi a cascata) non devono restare per i file dopo (es. db-smoke)
+afterAll(async () => {
+  await db.delete(appsTable).where(like(appsTable.slug, "evo-%"));
+});
 
 async function newCycle(budget = "10") {
   const rnd = Math.random().toString(36).slice(2, 8);

@@ -25,7 +25,7 @@ La tappa si chiude quando Portfolio nasce da questo flusso, cioè quando:
 |---|---|---|
 | Dove sta il modello e come si chiama | `TwentIvan/botcave-modello-app`, privato e segnato come «Template repository». Il nome si configura con `APP_TEMPLATE_REPO` (default quello). | Nome che dice cosa è, accanto alle altre app. Privato perché nasce dalla struttura di Mister e Botcave. |
 | Chi crea il modello | Ivan, su GitHub, vuoto. Il contenuto lo preparo io in una PR verso quel repository. Ivan poi lo segna come modello e lo aggiunge all'installazione dell'App GitHub «Casello». | Il token d'installazione non crea repository su un account personale. In alternativa, con un sì esplicito, lo creo io con `gh` a nome tuo. |
-| Dominio | Sempre `<slug>.fantamister.cloud`, calcolato dal codice e non modificabile nel modulo. La base si configura con `APP_BASE_DOMAIN` (default `fantamister.cloud`). | Vincolo «nomi calcolati dal codice». Un dominio diverso resta fuori perimetro (DNS gestiti altrove). |
+| Dominio | Lo sceglie l'utente nel modulo, per ogni app. Il modulo propone `<slug>.<APP_BASE_DOMAIN>`, con `APP_BASE_DOMAIN` di default `fantamister.cloud`, ma il campo è modificabile. Il valore entra nella voce da approvare e da lì non cambia più. | `fantamister.cloud` è il dominio di Mister: i suoi sottodomini sono una comodità di oggi, non una regola. Un'app può avere un dominio suo. Il record DNS resta un passo a mano della lista guidata. |
 | Neon: un progetto per app o uno condiviso | Un progetto per app, nella lista guidata. In tappa 2 vanno ricontrollati limiti e prezzi del piano corrente prima di automatizzare. | Isolamento dei dati e rimozione semplice. Un database in un progetto condiviso lega le app tra loro (backup, limiti, credenziali). |
 | Versione di prova | In tappa 2. | Richiede un terzo servizio su Coolify e un altro dominio: è infrastruttura. In tappa 1 la squadra lavora con la CI, e «Porta in produzione» con la versione di prova arriva dopo. |
 | `EMBED_ALLOWED_ORIGINS` nel database | No, resta una variabile. Nella lista guidata diventa un punto che Botcave controlla da solo leggendo la propria configurazione. Lo spostamento nel database è un'issue a parte. | La CSP `frame-ancestors` di `/embed` la calcola nginx all'avvio di `casello-web`: portarla nel database cambia come la pagina `/embed` viene servita. È un lavoro di sicurezza da solo. |
@@ -59,7 +59,7 @@ In «Nuova app» una scelta in alto: «App esistente» (il modulo di oggi) o «D
 
 - **Nome**, da 1 a 80 caratteri.
 - **Slug**: formato di oggi `^[a-z0-9][a-z0-9-]{0,63}$`, unico tra le App. Non può essere `casello`.
-- **Dominio**: mostrato, non modificabile.
+- **Dominio**: nome host (da 1 a 253 caratteri, etichette `[a-z0-9-]`, almeno un punto, minuscolo). È precompilato con `<slug>.<APP_BASE_DOMAIN>` e si aggiorna con lo slug finché l'utente non lo cambia. Sono rifiutati: indirizzi IP, `localhost`, il dominio di Botcave e un dominio già usato come `base_url` di un'altra App (400 o 409).
 - **Brief** in Markdown: da 1 a 20 000 caratteri, senza credenziali (`looksLikeCredential`).
 - **Repository**: scelto da `GET /api/github/repos`. Deve chiamarsi esattamente come lo slug. Se non compare c'è un aiuto con «Usa il modello su GitHub» (link a `https://github.com/<APP_TEMPLATE_REPO>/generate`) e «Ricollega GitHub», che aggiorna l'elenco dei repository visibili.
 - **Modello AI** per il Responsabile e per l'analisi: preselezionato con il predefinito, solo cloud.
@@ -107,12 +107,13 @@ Al riavvio un bootstrap in corso diventa `failed` «interrotto dal riavvio», co
 
 Carta «Primo deploy» nella scheda App, solo per le App nate da zero. Le voci si segnano a mano, tranne quelle verificate da Botcave:
 
-1. Progetto Neon `<slug>`, con la `DATABASE_URL` diretta.
-2. Servizio Coolify `<slug>-api`: immagine `ghcr.io/twentivan/<slug>-api:latest`, porta 3000, solo rete interna, health check `/api/healthz`, variabili (elenco esatto).
-3. Servizio Coolify `<slug>-web`: immagine `-web`, dominio `<dominio>`.
-4. Segreti GitHub Actions `COOLIFY_TOKEN`, `COOLIFY_WEBHOOK_API`, `COOLIFY_WEBHOOK_WEB`.
-5. `https://<dominio>` in `EMBED_ALLOWED_ORIGINS` di `casello-api` e `casello-web` e nuovo deploy di Botcave. **Verificata da Botcave**, che legge la propria variabile.
-6. Primo deploy raggiungibile: `GET https://<dominio>/api/healthz` → 200. **Verificata da Botcave** ogni 10 minuti finché non riesce, con lo scaricatore di pagine a DNS guardato (`fetchPage`), più «Controlla ora».
+1. Record DNS di `<dominio>` verso Coolify. Se il dominio è un sottodominio di `APP_BASE_DOMAIN` la voce lo ricorda (un record jolly può già bastare); altrimenti chiede il record presso chi gestisce il dominio.
+2. Progetto Neon `<slug>`, con la `DATABASE_URL` diretta.
+3. Servizio Coolify `<slug>-api`: immagine `ghcr.io/twentivan/<slug>-api:latest`, porta 3000, solo rete interna, health check `/api/healthz`, variabili (elenco esatto).
+4. Servizio Coolify `<slug>-web`: immagine `-web`, dominio `<dominio>`.
+5. Segreti GitHub Actions `COOLIFY_TOKEN`, `COOLIFY_WEBHOOK_API`, `COOLIFY_WEBHOOK_WEB`.
+6. `https://<dominio>` in `EMBED_ALLOWED_ORIGINS` di `casello-api` e `casello-web` e nuovo deploy di Botcave. **Verificata da Botcave**, che legge la propria variabile.
+7. Primo deploy raggiungibile: `GET https://<dominio>/api/healthz` → 200. **Verificata da Botcave** ogni 10 minuti finché non riesce, con lo scaricatore di pagine a DNS guardato (`fetchPage`), più «Controlla ora».
 
 Con l'ultima voce verde la carta si chiude e resta come riepilogo. Testi con i nomi esatti calcolati dallo slug e pulsante «Copia».
 
@@ -158,7 +159,7 @@ Il token d'ambito `agent` riceve 403 su tutte le scritture. Errori `{error}` con
 
 ## Sicurezza
 
-- Nessun nome lo sceglie un modello: repository, immagini, servizi e dominio derivano dallo slug.
+- Nessun nome lo sceglie un modello: repository, immagini e servizi derivano dallo slug; il dominio lo sceglie l'utente nel modulo e lo conferma con l'approvazione.
 - Il brief è dato dell'utente:
   - finisce in `AGENT_BRIEF.md` e nella descrizione funzionale, già trattata come «dati, non istruzioni» nei prompt;
   - prima del commit passa dal controllo dei segreti.
@@ -176,5 +177,5 @@ Il token d'ambito `agent` riceve 403 su tutte le scritture. Errori `{error}` con
 ## Fuori ambito
 
 - Tutta la tappa 2: creazione del repository, Neon, Coolify, segreti, versione di prova, primo deploy automatico.
-- Stack diversi, migrazione di app esistenti, domini diversi da `<slug>.<APP_BASE_DOMAIN>`.
+- Stack diversi, migrazione di app esistenti, gestione automatica del DNS.
 - Origini del plugin nel database: issue a parte.

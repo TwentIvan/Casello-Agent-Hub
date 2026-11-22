@@ -60,6 +60,10 @@ import type {
   App,
   AppArchitecture,
   AppArchitectureVersion,
+  AppBootstrap,
+  AppBootstrapChecklistUpdate,
+  AppBootstrapCreate,
+  AppBootstrapCreated,
   AppInput,
   AppPlan,
   AppTool,
@@ -131,6 +135,7 @@ import type {
   ExportAnalysisIssuesParams,
   ForbiddenResponse,
   GetAlfredNotificationsParams,
+  GetAppBootstrapConfig200,
   GetAppEvolutionConsentTextParams,
   GetEmbedBugParams,
   GetEmbedConfigParams,
@@ -6060,6 +6065,520 @@ export const useCloseAppBug = <TError = ErrorType<BadRequestResponse | NotFoundR
       > => {
       return useMutation(getCloseAppBugMutationOptions(options));
     }
+
+export const getGetAppBootstrapConfigUrl = () => {
+
+
+
+
+  return `/api/app-bootstraps/config`
+}
+
+/**
+ * @summary Configurazione della nascita di un'App da zero
+ */
+export const getAppBootstrapConfig = async ( options?: RequestInit): Promise<GetAppBootstrapConfig200> => {
+
+  return customFetch<GetAppBootstrapConfig200>(getGetAppBootstrapConfigUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAppBootstrapConfigQueryKey = () => {
+    return [
+    `/api/app-bootstraps/config`
+    ] as const;
+    }
+
+
+export const getGetAppBootstrapConfigQueryOptions = <TData = Awaited<ReturnType<typeof getAppBootstrapConfig>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAppBootstrapConfig>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAppBootstrapConfigQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAppBootstrapConfig>>> = ({ signal }) => getAppBootstrapConfig({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAppBootstrapConfig>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAppBootstrapConfigQueryResult = NonNullable<Awaited<ReturnType<typeof getAppBootstrapConfig>>>
+export type GetAppBootstrapConfigQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Configurazione della nascita di un'App da zero
+ */
+
+export function useGetAppBootstrapConfig<TData = Awaited<ReturnType<typeof getAppBootstrapConfig>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAppBootstrapConfig>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAppBootstrapConfigQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateAppBootstrapUrl = () => {
+
+
+
+
+  return `/api/app-bootstraps`
+}
+
+/**
+ * @summary Chiede la nascita di un'App da zero (voce in «Da confermare»)
+ */
+export const createAppBootstrap = async (appBootstrapCreate: AppBootstrapCreate, options?: RequestInit): Promise<AppBootstrapCreated> => {
+
+  return customFetch<AppBootstrapCreated>(getCreateAppBootstrapUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(appBootstrapCreate)
+  }
+);}
+
+
+
+
+export const getCreateAppBootstrapMutationOptions = <TError = ErrorType<BadRequestResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAppBootstrap>>, TError,{data: BodyType<AppBootstrapCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createAppBootstrap>>, TError,{data: BodyType<AppBootstrapCreate>}, TContext> => {
+
+const mutationKey = ['createAppBootstrap'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createAppBootstrap>>, {data: BodyType<AppBootstrapCreate>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  createAppBootstrap(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateAppBootstrapMutationResult = NonNullable<Awaited<ReturnType<typeof createAppBootstrap>>>
+    export type CreateAppBootstrapMutationBody = BodyType<AppBootstrapCreate>
+    export type CreateAppBootstrapMutationError = ErrorType<BadRequestResponse | ConflictResponse>
+
+    /**
+ * @summary Chiede la nascita di un'App da zero (voce in «Da confermare»)
+ */
+export const useCreateAppBootstrap = <TError = ErrorType<BadRequestResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createAppBootstrap>>, TError,{data: BodyType<AppBootstrapCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createAppBootstrap>>,
+        TError,
+        {data: BodyType<AppBootstrapCreate>},
+        TContext
+      > => {
+      return useMutation(getCreateAppBootstrapMutationOptions(options));
+    }
+
+export const getGetAppBootstrapUrl = (id: number,) => {
+
+
+
+
+  return `/api/app-bootstraps/${id}`
+}
+
+/**
+ * @summary Stato di una nascita di App da zero
+ */
+export const getAppBootstrap = async (id: number, options?: RequestInit): Promise<AppBootstrap> => {
+
+  return customFetch<AppBootstrap>(getGetAppBootstrapUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAppBootstrapQueryKey = (id: number,) => {
+    return [
+    `/api/app-bootstraps/${id}`
+    ] as const;
+    }
+
+
+export const getGetAppBootstrapQueryOptions = <TData = Awaited<ReturnType<typeof getAppBootstrap>>, TError = ErrorType<NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAppBootstrap>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAppBootstrapQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAppBootstrap>>> = ({ signal }) => getAppBootstrap(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAppBootstrap>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAppBootstrapQueryResult = NonNullable<Awaited<ReturnType<typeof getAppBootstrap>>>
+export type GetAppBootstrapQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Stato di una nascita di App da zero
+ */
+
+export function useGetAppBootstrap<TData = Awaited<ReturnType<typeof getAppBootstrap>>, TError = ErrorType<NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAppBootstrap>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAppBootstrapQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getRetryAppBootstrapUrl = (id: number,) => {
+
+
+
+
+  return `/api/app-bootstraps/${id}/retry`
+}
+
+/**
+ * @summary Riprova i passi non riusciti
+ */
+export const retryAppBootstrap = async (id: number, options?: RequestInit): Promise<AppBootstrap> => {
+
+  return customFetch<AppBootstrap>(getRetryAppBootstrapUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getRetryAppBootstrapMutationOptions = <TError = ErrorType<NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof retryAppBootstrap>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof retryAppBootstrap>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['retryAppBootstrap'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof retryAppBootstrap>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  retryAppBootstrap(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RetryAppBootstrapMutationResult = NonNullable<Awaited<ReturnType<typeof retryAppBootstrap>>>
+
+    export type RetryAppBootstrapMutationError = ErrorType<NotFoundResponse | ConflictResponse>
+
+    /**
+ * @summary Riprova i passi non riusciti
+ */
+export const useRetryAppBootstrap = <TError = ErrorType<NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof retryAppBootstrap>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof retryAppBootstrap>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getRetryAppBootstrapMutationOptions(options));
+    }
+
+export const getSetAppBootstrapChecklistItemUrl = (id: number,
+    item: string,) => {
+
+
+
+
+  return `/api/app-bootstraps/${id}/checklist/${item}`
+}
+
+/**
+ * @summary Segna o toglie una voce della checklist
+ */
+export const setAppBootstrapChecklistItem = async (id: number,
+    item: string,
+    appBootstrapChecklistUpdate: AppBootstrapChecklistUpdate, options?: RequestInit): Promise<AppBootstrap> => {
+
+  return customFetch<AppBootstrap>(getSetAppBootstrapChecklistItemUrl(id,item),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(appBootstrapChecklistUpdate)
+  }
+);}
+
+
+
+
+export const getSetAppBootstrapChecklistItemMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setAppBootstrapChecklistItem>>, TError,{id: number;item: string;data: BodyType<AppBootstrapChecklistUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setAppBootstrapChecklistItem>>, TError,{id: number;item: string;data: BodyType<AppBootstrapChecklistUpdate>}, TContext> => {
+
+const mutationKey = ['setAppBootstrapChecklistItem'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setAppBootstrapChecklistItem>>, {id: number;item: string;data: BodyType<AppBootstrapChecklistUpdate>}> = (props) => {
+          const {id,item,data} = props ?? {};
+
+          return  setAppBootstrapChecklistItem(id,item,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetAppBootstrapChecklistItemMutationResult = NonNullable<Awaited<ReturnType<typeof setAppBootstrapChecklistItem>>>
+    export type SetAppBootstrapChecklistItemMutationBody = BodyType<AppBootstrapChecklistUpdate>
+    export type SetAppBootstrapChecklistItemMutationError = ErrorType<BadRequestResponse | NotFoundResponse>
+
+    /**
+ * @summary Segna o toglie una voce della checklist
+ */
+export const useSetAppBootstrapChecklistItem = <TError = ErrorType<BadRequestResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setAppBootstrapChecklistItem>>, TError,{id: number;item: string;data: BodyType<AppBootstrapChecklistUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setAppBootstrapChecklistItem>>,
+        TError,
+        {id: number;item: string;data: BodyType<AppBootstrapChecklistUpdate>},
+        TContext
+      > => {
+      return useMutation(getSetAppBootstrapChecklistItemMutationOptions(options));
+    }
+
+export const getCheckAppBootstrapHealthUrl = (id: number,) => {
+
+
+
+
+  return `/api/app-bootstraps/${id}/health-check`
+}
+
+/**
+ * @summary Controlla che l'app nata da zero risponda sul suo dominio
+ */
+export const checkAppBootstrapHealth = async (id: number, options?: RequestInit): Promise<AppBootstrap> => {
+
+  return customFetch<AppBootstrap>(getCheckAppBootstrapHealthUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getCheckAppBootstrapHealthMutationOptions = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof checkAppBootstrapHealth>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof checkAppBootstrapHealth>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['checkAppBootstrapHealth'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof checkAppBootstrapHealth>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  checkAppBootstrapHealth(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CheckAppBootstrapHealthMutationResult = NonNullable<Awaited<ReturnType<typeof checkAppBootstrapHealth>>>
+
+    export type CheckAppBootstrapHealthMutationError = ErrorType<NotFoundResponse>
+
+    /**
+ * @summary Controlla che l'app nata da zero risponda sul suo dominio
+ */
+export const useCheckAppBootstrapHealth = <TError = ErrorType<NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof checkAppBootstrapHealth>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof checkAppBootstrapHealth>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getCheckAppBootstrapHealthMutationOptions(options));
+    }
+
+export const getGetAppBootstrapForAppUrl = (id: number,) => {
+
+
+
+
+  return `/api/apps/${id}/bootstrap`
+}
+
+/**
+ * @summary Nascita da zero dell'App (404 se non è nata da zero)
+ */
+export const getAppBootstrapForApp = async (id: number, options?: RequestInit): Promise<AppBootstrap> => {
+
+  return customFetch<AppBootstrap>(getGetAppBootstrapForAppUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAppBootstrapForAppQueryKey = (id: number,) => {
+    return [
+    `/api/apps/${id}/bootstrap`
+    ] as const;
+    }
+
+
+export const getGetAppBootstrapForAppQueryOptions = <TData = Awaited<ReturnType<typeof getAppBootstrapForApp>>, TError = ErrorType<NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAppBootstrapForApp>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAppBootstrapForAppQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAppBootstrapForApp>>> = ({ signal }) => getAppBootstrapForApp(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAppBootstrapForApp>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAppBootstrapForAppQueryResult = NonNullable<Awaited<ReturnType<typeof getAppBootstrapForApp>>>
+export type GetAppBootstrapForAppQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Nascita da zero dell'App (404 se non è nata da zero)
+ */
+
+export function useGetAppBootstrapForApp<TData = Awaited<ReturnType<typeof getAppBootstrapForApp>>, TError = ErrorType<NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAppBootstrapForApp>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAppBootstrapForAppQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getGetAppEvolutionUrl = (id: number,) => {
 

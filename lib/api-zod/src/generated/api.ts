@@ -2421,6 +2421,229 @@ export const CloseAppBugResponse = zod.object({
 
 
 /**
+ * @summary Configurazione della nascita di un'App da zero
+ */
+export const GetAppBootstrapConfigResponse = zod.object({
+  "templateRepo": zod.string(),
+  "baseDomain": zod.string()
+})
+
+
+/**
+ * @summary Chiede la nascita di un'App da zero (voce in «Da confermare»)
+ */
+export const CreateAppBootstrapBody = zod.object({
+  "name": zod.string(),
+  "slug": zod.string(),
+  "domain": zod.string(),
+  "brief": zod.string(),
+  "repo": zod.string().describe('Repository di destinazione, `proprietario\/nome`'),
+  "installationId": zod.number(),
+  "aiModelId": zod.number()
+})
+
+export const CreateAppBootstrapResponse = zod.object({
+  "id": zod.number(),
+  "pendingActionNumber": zod.number()
+})
+
+
+/**
+ * @summary Stato di una nascita di App da zero
+ */
+export const GetAppBootstrapParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetAppBootstrapResponse = zod.object({
+  "id": zod.number(),
+  "slug": zod.string(),
+  "name": zod.string(),
+  "domain": zod.string(),
+  "repo": zod.string(),
+  "status": zod.enum(['pending', 'running', 'done', 'failed', 'rejected']),
+  "steps": zod.array(zod.object({
+  "key": zod.enum(['verify', 'personalize', 'register', 'analyze']),
+  "status": zod.enum(['pending', 'done', 'failed']),
+  "message": zod.string().nullable(),
+  "at": zod.coerce.date().nullable()
+})),
+  "initCommitSha": zod.string().nullable(),
+  "appId": zod.number().nullable(),
+  "analysisId": zod.number().nullable(),
+  "pendingActionNumber": zod.number().nullable().describe('Numero della voce in «Da confermare»'),
+  "checklist": zod.array(zod.object({
+  "key": zod.string(),
+  "label": zod.string(),
+  "detail": zod.string(),
+  "auto": zod.boolean().describe('Voce verificata da Botcave e non segnata a mano'),
+  "done": zod.boolean(),
+  "doneAt": zod.coerce.date().nullable()
+})),
+  "healthOkAt": zod.coerce.date().nullable(),
+  "healthCheckedAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+}).describe('Nascita di un\'App da zero da un repository modello')
+
+
+/**
+ * @summary Riprova i passi non riusciti
+ */
+export const RetryAppBootstrapParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const RetryAppBootstrapResponse = zod.object({
+  "id": zod.number(),
+  "slug": zod.string(),
+  "name": zod.string(),
+  "domain": zod.string(),
+  "repo": zod.string(),
+  "status": zod.enum(['pending', 'running', 'done', 'failed', 'rejected']),
+  "steps": zod.array(zod.object({
+  "key": zod.enum(['verify', 'personalize', 'register', 'analyze']),
+  "status": zod.enum(['pending', 'done', 'failed']),
+  "message": zod.string().nullable(),
+  "at": zod.coerce.date().nullable()
+})),
+  "initCommitSha": zod.string().nullable(),
+  "appId": zod.number().nullable(),
+  "analysisId": zod.number().nullable(),
+  "pendingActionNumber": zod.number().nullable().describe('Numero della voce in «Da confermare»'),
+  "checklist": zod.array(zod.object({
+  "key": zod.string(),
+  "label": zod.string(),
+  "detail": zod.string(),
+  "auto": zod.boolean().describe('Voce verificata da Botcave e non segnata a mano'),
+  "done": zod.boolean(),
+  "doneAt": zod.coerce.date().nullable()
+})),
+  "healthOkAt": zod.coerce.date().nullable(),
+  "healthCheckedAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+}).describe('Nascita di un\'App da zero da un repository modello')
+
+
+/**
+ * @summary Segna o toglie una voce della checklist
+ */
+export const SetAppBootstrapChecklistItemParams = zod.object({
+  "id": zod.coerce.number(),
+  "item": zod.coerce.string()
+})
+
+export const SetAppBootstrapChecklistItemBody = zod.object({
+  "done": zod.boolean()
+})
+
+export const SetAppBootstrapChecklistItemResponse = zod.object({
+  "id": zod.number(),
+  "slug": zod.string(),
+  "name": zod.string(),
+  "domain": zod.string(),
+  "repo": zod.string(),
+  "status": zod.enum(['pending', 'running', 'done', 'failed', 'rejected']),
+  "steps": zod.array(zod.object({
+  "key": zod.enum(['verify', 'personalize', 'register', 'analyze']),
+  "status": zod.enum(['pending', 'done', 'failed']),
+  "message": zod.string().nullable(),
+  "at": zod.coerce.date().nullable()
+})),
+  "initCommitSha": zod.string().nullable(),
+  "appId": zod.number().nullable(),
+  "analysisId": zod.number().nullable(),
+  "pendingActionNumber": zod.number().nullable().describe('Numero della voce in «Da confermare»'),
+  "checklist": zod.array(zod.object({
+  "key": zod.string(),
+  "label": zod.string(),
+  "detail": zod.string(),
+  "auto": zod.boolean().describe('Voce verificata da Botcave e non segnata a mano'),
+  "done": zod.boolean(),
+  "doneAt": zod.coerce.date().nullable()
+})),
+  "healthOkAt": zod.coerce.date().nullable(),
+  "healthCheckedAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+}).describe('Nascita di un\'App da zero da un repository modello')
+
+
+/**
+ * @summary Controlla che l'app nata da zero risponda sul suo dominio
+ */
+export const CheckAppBootstrapHealthParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const CheckAppBootstrapHealthResponse = zod.object({
+  "id": zod.number(),
+  "slug": zod.string(),
+  "name": zod.string(),
+  "domain": zod.string(),
+  "repo": zod.string(),
+  "status": zod.enum(['pending', 'running', 'done', 'failed', 'rejected']),
+  "steps": zod.array(zod.object({
+  "key": zod.enum(['verify', 'personalize', 'register', 'analyze']),
+  "status": zod.enum(['pending', 'done', 'failed']),
+  "message": zod.string().nullable(),
+  "at": zod.coerce.date().nullable()
+})),
+  "initCommitSha": zod.string().nullable(),
+  "appId": zod.number().nullable(),
+  "analysisId": zod.number().nullable(),
+  "pendingActionNumber": zod.number().nullable().describe('Numero della voce in «Da confermare»'),
+  "checklist": zod.array(zod.object({
+  "key": zod.string(),
+  "label": zod.string(),
+  "detail": zod.string(),
+  "auto": zod.boolean().describe('Voce verificata da Botcave e non segnata a mano'),
+  "done": zod.boolean(),
+  "doneAt": zod.coerce.date().nullable()
+})),
+  "healthOkAt": zod.coerce.date().nullable(),
+  "healthCheckedAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+}).describe('Nascita di un\'App da zero da un repository modello')
+
+
+/**
+ * @summary Nascita da zero dell'App (404 se non è nata da zero)
+ */
+export const GetAppBootstrapForAppParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetAppBootstrapForAppResponse = zod.object({
+  "id": zod.number(),
+  "slug": zod.string(),
+  "name": zod.string(),
+  "domain": zod.string(),
+  "repo": zod.string(),
+  "status": zod.enum(['pending', 'running', 'done', 'failed', 'rejected']),
+  "steps": zod.array(zod.object({
+  "key": zod.enum(['verify', 'personalize', 'register', 'analyze']),
+  "status": zod.enum(['pending', 'done', 'failed']),
+  "message": zod.string().nullable(),
+  "at": zod.coerce.date().nullable()
+})),
+  "initCommitSha": zod.string().nullable(),
+  "appId": zod.number().nullable(),
+  "analysisId": zod.number().nullable(),
+  "pendingActionNumber": zod.number().nullable().describe('Numero della voce in «Da confermare»'),
+  "checklist": zod.array(zod.object({
+  "key": zod.string(),
+  "label": zod.string(),
+  "detail": zod.string(),
+  "auto": zod.boolean().describe('Voce verificata da Botcave e non segnata a mano'),
+  "done": zod.boolean(),
+  "doneAt": zod.coerce.date().nullable()
+})),
+  "healthOkAt": zod.coerce.date().nullable(),
+  "healthCheckedAt": zod.coerce.date().nullable(),
+  "createdAt": zod.coerce.date()
+}).describe('Nascita di un\'App da zero da un repository modello')
+
+
+/**
  * @summary Ciclo di evoluzione dell'app (null se non c'è)
  */
 export const GetAppEvolutionParams = zod.object({
@@ -8560,7 +8783,7 @@ export const ListPendingActionsResponse = zod.object({
   "actions": zod.array(zod.object({
   "number": zod.number(),
   "status": zod.enum(['pending', 'executing', 'done', 'failed', 'rejected']),
-  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal', 'merge', 'bug', 'release']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima), oppure segnalazione di un bug da affidare alla squadra per i bug dell\'App'),
+  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal', 'merge', 'bug', 'release', 'app_bootstrap']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima), oppure segnalazione di un bug da affidare alla squadra per i bug dell\'App'),
   "proposal": zod.union([zod.object({
   "title": zod.string(),
   "reason": zod.string().nullable(),
@@ -8619,7 +8842,7 @@ export const GetPendingActionParams = zod.object({
 export const GetPendingActionResponse = zod.object({
   "number": zod.number(),
   "status": zod.enum(['pending', 'executing', 'done', 'failed', 'rejected']),
-  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal', 'merge', 'bug', 'release']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima), oppure segnalazione di un bug da affidare alla squadra per i bug dell\'App'),
+  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal', 'merge', 'bug', 'release', 'app_bootstrap']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima), oppure segnalazione di un bug da affidare alla squadra per i bug dell\'App'),
   "proposal": zod.union([zod.object({
   "title": zod.string(),
   "reason": zod.string().nullable(),
@@ -8691,7 +8914,7 @@ export const ApprovePendingActionBody = zod.object({
 export const ApprovePendingActionResponse = zod.object({
   "number": zod.number(),
   "status": zod.enum(['pending', 'executing', 'done', 'failed', 'rejected']),
-  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal', 'merge', 'bug', 'release']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima), oppure segnalazione di un bug da affidare alla squadra per i bug dell\'App'),
+  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal', 'merge', 'bug', 'release', 'app_bootstrap']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima), oppure segnalazione di un bug da affidare alla squadra per i bug dell\'App'),
   "proposal": zod.union([zod.object({
   "title": zod.string(),
   "reason": zod.string().nullable(),
@@ -8757,7 +8980,7 @@ export const RejectPendingActionBody = zod.object({
 export const RejectPendingActionResponse = zod.object({
   "number": zod.number(),
   "status": zod.enum(['pending', 'executing', 'done', 'failed', 'rejected']),
-  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal', 'merge', 'bug', 'release']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima), oppure segnalazione di un bug da affidare alla squadra per i bug dell\'App'),
+  "kind": zod.enum(['action', 'plan', 'plan_change', 'proposal', 'merge', 'bug', 'release', 'app_bootstrap']).describe('Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima), oppure segnalazione di un bug da affidare alla squadra per i bug dell\'App'),
   "proposal": zod.union([zod.object({
   "title": zod.string(),
   "reason": zod.string().nullable(),

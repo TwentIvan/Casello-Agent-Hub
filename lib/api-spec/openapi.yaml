@@ -2003,6 +2003,148 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
+  /app-bootstraps/config:
+    get:
+      operationId: getAppBootstrapConfig
+      tags: [apps]
+      summary: Configurazione della nascita di un'App da zero
+      responses:
+        "200":
+          description: Repository modello e dominio di base
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [templateRepo, baseDomain]
+                properties:
+                  templateRepo:
+                    type: string
+                  baseDomain:
+                    type: string
+
+  /app-bootstraps:
+    post:
+      operationId: createAppBootstrap
+      tags: [apps]
+      summary: Chiede la nascita di un'App da zero (voce in «Da confermare»)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppBootstrapCreate"
+      responses:
+        "201":
+          description: Richiesta creata, in attesa di approvazione
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppBootstrapCreated"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /app-bootstraps/{id}:
+    get:
+      operationId: getAppBootstrap
+      tags: [apps]
+      summary: Stato di una nascita di App da zero
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: La richiesta con passi e checklist
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppBootstrap"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /app-bootstraps/{id}/retry:
+    post:
+      operationId: retryAppBootstrap
+      tags: [apps]
+      summary: Riprova i passi non riusciti
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Richiesta aggiornata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppBootstrap"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /app-bootstraps/{id}/checklist/{item}:
+    put:
+      operationId: setAppBootstrapChecklistItem
+      tags: [apps]
+      summary: Segna o toglie una voce della checklist
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - name: item
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AppBootstrapChecklistUpdate"
+      responses:
+        "200":
+          description: Richiesta aggiornata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppBootstrap"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /app-bootstraps/{id}/health-check:
+    post:
+      operationId: checkAppBootstrapHealth
+      tags: [apps]
+      summary: Controlla che l'app nata da zero risponda sul suo dominio
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Richiesta con l'esito del controllo
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppBootstrap"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /apps/{id}/bootstrap:
+    get:
+      operationId: getAppBootstrapForApp
+      tags: [apps]
+      summary: Nascita da zero dell'App (404 se non è nata da zero)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: La richiesta con passi e checklist
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppBootstrap"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /apps/{id}/evolution:
     get:
       operationId: getAppEvolution
@@ -8465,7 +8607,7 @@ components:
           enum: [pending, executing, done, failed, rejected]
         kind:
           type: string
-          enum: [action, plan, plan_change, proposal, merge, bug, release]
+          enum: [action, plan, plan_change, proposal, merge, bug, release, app_bootstrap]
           description: >-
             Azione di uno strumento, piano o modifica del piano proposti dal capo di una squadra, oppure
             proposta con più passi di un agente, oppure merge di una PR di una squadra (migrazioni da applicare prima),
@@ -11949,6 +12091,131 @@ components:
           type: string
           format: date-time
           nullable: true
+
+    BootstrapStep:
+      type: object
+      required: [key, status, message, at]
+      properties:
+        key:
+          type: string
+          enum: [verify, personalize, register, analyze]
+        status:
+          type: string
+          enum: [pending, done, failed]
+        message:
+          type: string
+          nullable: true
+        at:
+          type: string
+          format: date-time
+          nullable: true
+
+    BootstrapChecklistItem:
+      type: object
+      required: [key, label, detail, auto, done, doneAt]
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        detail:
+          type: string
+        auto:
+          type: boolean
+          description: Voce verificata da Botcave e non segnata a mano
+        done:
+          type: boolean
+        doneAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    AppBootstrap:
+      type: object
+      description: Nascita di un'App da zero da un repository modello
+      required: [id, slug, name, domain, repo, status, steps, initCommitSha, appId, analysisId, pendingActionNumber, checklist, healthOkAt, healthCheckedAt, createdAt]
+      properties:
+        id:
+          type: integer
+        slug:
+          type: string
+        name:
+          type: string
+        domain:
+          type: string
+        repo:
+          type: string
+        status:
+          type: string
+          enum: [pending, running, done, failed, rejected]
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/BootstrapStep"
+        initCommitSha:
+          type: string
+          nullable: true
+        appId:
+          type: integer
+          nullable: true
+        analysisId:
+          type: integer
+          nullable: true
+        pendingActionNumber:
+          type: integer
+          nullable: true
+          description: Numero della voce in «Da confermare»
+        checklist:
+          type: array
+          items:
+            $ref: "#/components/schemas/BootstrapChecklistItem"
+        healthOkAt:
+          type: string
+          format: date-time
+          nullable: true
+        healthCheckedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+
+    AppBootstrapCreate:
+      type: object
+      required: [name, slug, domain, brief, repo, installationId, aiModelId]
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+        domain:
+          type: string
+        brief:
+          type: string
+        repo:
+          type: string
+          description: Repository di destinazione, `proprietario/nome`
+        installationId:
+          type: integer
+        aiModelId:
+          type: integer
+
+    AppBootstrapChecklistUpdate:
+      type: object
+      required: [done]
+      properties:
+        done:
+          type: boolean
+
+    AppBootstrapCreated:
+      type: object
+      required: [id, pendingActionNumber]
+      properties:
+        id:
+          type: integer
+        pendingActionNumber:
+          type: integer
 
     TeamWork:
       type: object

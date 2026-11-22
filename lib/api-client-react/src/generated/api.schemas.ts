@@ -1766,6 +1766,7 @@ export const QueuedActionKind = {
   merge: 'merge',
   bug: 'bug',
   release: 'release',
+  app_bootstrap: 'app_bootstrap',
 } as const;
 
 /**
@@ -4858,6 +4859,95 @@ export interface TeamCodeTask {
   ciCheckedAt: string | null;
 }
 
+export type BootstrapStepKey = typeof BootstrapStepKey[keyof typeof BootstrapStepKey];
+
+
+export const BootstrapStepKey = {
+  verify: 'verify',
+  personalize: 'personalize',
+  register: 'register',
+  analyze: 'analyze',
+} as const;
+
+export type BootstrapStepStatus = typeof BootstrapStepStatus[keyof typeof BootstrapStepStatus];
+
+
+export const BootstrapStepStatus = {
+  pending: 'pending',
+  done: 'done',
+  failed: 'failed',
+} as const;
+
+export interface BootstrapStep {
+  key: BootstrapStepKey;
+  status: BootstrapStepStatus;
+  message: string | null;
+  at: string | null;
+}
+
+export interface BootstrapChecklistItem {
+  key: string;
+  label: string;
+  detail: string;
+  /** Voce verificata da Botcave e non segnata a mano */
+  auto: boolean;
+  done: boolean;
+  doneAt: string | null;
+}
+
+export type AppBootstrapStatus = typeof AppBootstrapStatus[keyof typeof AppBootstrapStatus];
+
+
+export const AppBootstrapStatus = {
+  pending: 'pending',
+  running: 'running',
+  done: 'done',
+  failed: 'failed',
+  rejected: 'rejected',
+} as const;
+
+/**
+ * Nascita di un'App da zero da un repository modello
+ */
+export interface AppBootstrap {
+  id: number;
+  slug: string;
+  name: string;
+  domain: string;
+  repo: string;
+  status: AppBootstrapStatus;
+  steps: BootstrapStep[];
+  initCommitSha: string | null;
+  appId: number | null;
+  analysisId: number | null;
+  /** Numero della voce in «Da confermare» */
+  pendingActionNumber: number | null;
+  checklist: BootstrapChecklistItem[];
+  healthOkAt: string | null;
+  healthCheckedAt: string | null;
+  createdAt: string;
+}
+
+export interface AppBootstrapCreate {
+  name: string;
+  slug: string;
+  domain: string;
+  brief: string;
+  /** Repository di destinazione, `proprietario/nome` */
+  repo: string;
+  installationId: number;
+  aiModelId: number;
+}
+
+export interface AppBootstrapChecklistUpdate {
+  done: boolean;
+}
+
+export interface AppBootstrapCreated {
+  id: number;
+  pendingActionNumber: number;
+}
+
 export type TeamWorkStatus = typeof TeamWorkStatus[keyof typeof TeamWorkStatus];
 
 
@@ -5334,6 +5424,11 @@ export type RefreshAppArchitecture202 = {
 
 export type ListAppBugsParams = {
 status?: EmbedBugStatus;
+};
+
+export type GetAppBootstrapConfig200 = {
+  templateRepo: string;
+  baseDomain: string;
 };
 
 export type GetAppEvolutionConsentTextParams = {

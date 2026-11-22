@@ -13,6 +13,7 @@ import { approveRelease, rejectRelease } from "../teams/release";
 import { notifyTurnQueued } from "../teams/turn-queue";
 import { PROPOSAL_MESSAGES } from "./proposal";
 import { approveProposal } from "./proposal-exec";
+import { approveBootstrap, rejectBootstrap } from "../app-bootstrap/service";
 
 // Decisione sulle azioni in coda: approvare esegue UNA volta la chiamata memorizzata (argomenti
 // originali, senza il modello), rifiutare la chiude. Ogni transizione è un UPDATE condizionato sullo
@@ -92,6 +93,8 @@ export async function approveAction(
   if (action.kind === "bug") return approveBug(userId, action);
   // «Porta in produzione» di un lavoro: PR del lavoro verso il base, unita dalla sorveglianza con la CI verde
   if (action.kind === "release") return approveRelease(userId, action);
+  // Nascita di un'App da zero: passi in background sul repository creato dal modello (nessun token utente)
+  if (action.kind === "app_bootstrap") return approveBootstrap(userId, action);
   const { toolId, appId } = action;
   if (toolId === null || appId === null) return fail(409, ACTION_MESSAGES.notExecutable);
 
@@ -184,6 +187,8 @@ export async function rejectAction(userId: number, number: number, note: string 
     if (rejected?.kind === "bug") await rejectBug(rejected, note, tx);
     // Lavoro rifiutato: di nuovo aperto con la nota e turno del capo, nella stessa transazione
     if (rejected?.kind === "release") releaseInstance = await rejectRelease(rejected, note, tx);
+    // Nuova app da zero rifiutata: la richiesta si chiude e libera slug e repository
+    if (rejected?.kind === "app_bootstrap") await rejectBootstrap(rejected, note, tx);
     // Proposta rifiutata: nessun passo verrà eseguito (console e `leggi_proposta` non mostrano «da eseguire»)
     if (rejected?.kind === "proposal") {
       await tx

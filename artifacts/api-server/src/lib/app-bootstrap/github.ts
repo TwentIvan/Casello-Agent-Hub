@@ -2,7 +2,7 @@ import { SourceError, fetchGithubTree } from "../architect/sources";
 import { GITHUB_MESSAGES, GithubError, githubCall, installationToken } from "../github/app";
 import { githubConfig } from "../github/config";
 import { CODE_WRITE_MESSAGES, CodeWriteError } from "../code-writer/messages";
-import { checkCommit } from "../code-writer/secrets-check";
+import { findCredential } from "../code-writer/secrets-check";
 import { commitInitOnBase } from "../code-writer/github-git";
 import { appTemplateRepo } from "./config";
 import { APP_BOOTSTRAP_MESSAGES as M } from "./messages";
@@ -88,6 +88,34 @@ export async function inspectRepo(input: { repo: string; installationId: number;
   }
 }
 
+/** Limiti del commit di inizializzazione: un modello vero rinomina molti file (due voci per file). */
+export const INIT_LIMITS = { maxEntries: 400, maxFileBytes: 1_048_576, maxTotalBytes: 5_242_880 } as const;
+
+/** Percorsi che Botcave non scrive mai: `.git/`, `.github/`, `.env` e `.env.*` (anche in sottocartelle). */
+function pathRefused(path: string): boolean {
+  if (path.startsWith(".git/") || path.startsWith(".github/")) return true;
+  const base = path.slice(path.lastIndexOf("/") + 1);
+  return base === ".env" || base.startsWith(".env.");
+}
+
+/** null = commit di inizializzazione ammissibile, altrimenti il messaggio fisso. */
+export function checkInitChanges(changes: Map<string, string | null>): string | null {
+  if (changes.size === 0) return CODE_WRITE_MESSAGES.nothingToCommit;
+  if (changes.size > INIT_LIMITS.maxEntries) return M.tooManyFiles;
+  let total = 0;
+  for (const [path, content] of changes) {
+    if (pathRefused(path)) return M.pathRefused;
+    if (content === null) continue;
+    if (content.includes("\0")) return M.tooManyFiles;
+    const bytes = Buffer.byteLength(content, "utf8");
+    if (bytes > INIT_LIMITS.maxFileBytes) return M.tooManyFiles;
+    total += bytes;
+    if (total > INIT_LIMITS.maxTotalBytes) return M.tooManyFiles;
+    if (findCredential(content)) return CODE_WRITE_MESSAGES.credential(path);
+  }
+  return null;
+}
+
 export async function initializeRepo(input: {
   repo: string;
   installationId: number;
@@ -98,7 +126,7 @@ export async function initializeRepo(input: {
 }): Promise<{ sha: string } | { error: string }> {
   const cfg = githubConfig();
   if (!cfg) return { error: M.githubUnavailable };
-  const problem = checkCommit(input.changes);
+  const problem = checkInitChanges(input.changes);
   if (problem) return { error: problem };
   try {
     return await commitInitOnBase(

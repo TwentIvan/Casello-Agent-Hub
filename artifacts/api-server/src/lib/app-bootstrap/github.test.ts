@@ -5,7 +5,7 @@ import { resetGithubConfigForTests } from "../github/config";
 import { commitFiles } from "../code-writer/github-git";
 import { loadGithubConfig } from "../github/config";
 import { APP_BOOTSTRAP_MESSAGES as M } from "./messages";
-import { inspectRepo, initializeRepo } from "./github";
+import { checkInitChanges, inspectRepo, initializeRepo } from "./github";
 
 const REPO = "ivan/portfolio";
 const INST = 7;
@@ -148,8 +148,41 @@ describe("initializeRepo", () => {
   it("rifiuta credenziali nei file prima di scrivere", async () => {
     const head = gh.seedRepo(REPO, "main", { ".botcave/modello.json": MARKER });
     const treeSha = gh.git.get(REPO)!.commits.get(head)!.tree;
-    const res = await initializeRepo({ repo: REPO, installationId: INST, parentSha: head, baseTreeSha: treeSha, changes: new Map([[".env.txt", "k=ghp_" + "a".repeat(30)]]), message: "m" });
+    const res = await initializeRepo({ repo: REPO, installationId: INST, parentSha: head, baseTreeSha: treeSha, changes: new Map([["config.txt", "k=ghp_" + "a".repeat(30)]]), message: "m" });
     expect(res).toHaveProperty("error");
+  });
+});
+
+describe("checkInitChanges", () => {
+  it("ammette 400 voci (oltre il limite dei compiti), rifiuta la 401esima", () => {
+    const ok = new Map<string, string | null>();
+    for (let i = 0; i < 200; i++) {
+      ok.set(`artifacts/portfolio-web/f${i}.ts`, "x");
+      ok.set(`artifacts/__SLUG__-web/f${i}.ts`, null);
+    }
+    expect(checkInitChanges(ok)).toBeNull();
+    ok.set("extra.txt", "x");
+    expect(checkInitChanges(ok)).toBe(M.tooManyFiles);
+  });
+
+  it("file oltre 1 MiB, totale oltre 5 MiB o con NUL: tooManyFiles", () => {
+    expect(checkInitChanges(new Map([["a", "x".repeat(1_048_577)]]))).toBe(M.tooManyFiles);
+    const big = new Map<string, string | null>();
+    for (let i = 0; i < 6; i++) big.set(`f${i}`, "x".repeat(1_000_000));
+    expect(checkInitChanges(big)).toBe(M.tooManyFiles);
+    expect(checkInitChanges(new Map([["a", "x\0y"]]))).toBe(M.tooManyFiles);
+  });
+
+  it("percorsi .git/, .github/, .env e .env.*: pathRefused, anche per le eliminazioni", () => {
+    for (const p of [".git/config", ".github/workflows/x.yml", ".env", "app/.env", ".env.local", "a/.env.production"]) {
+      expect(checkInitChanges(new Map([[p, "x"]]))).toBe(M.pathRefused);
+    }
+    expect(checkInitChanges(new Map([[".github/x", null]]))).toBe(M.pathRefused);
+    expect(checkInitChanges(new Map([[".environment.md", "x"], ["docs/env.md", "x"]]))).toBeNull();
+  });
+
+  it("credenziale in un file: rifiutata", () => {
+    expect(checkInitChanges(new Map([["a.txt", "sk-" + "a".repeat(20)]]))).not.toBeNull();
   });
 });
 

@@ -44,7 +44,7 @@ import {
   VerifyAiAccountResponse,
 } from "@workspace/api-zod";
 import { currentUserId, sessionOnly } from "../lib/auth";
-import { ANALYSIS_DEFAULT_MAX_TOKENS } from "../lib/architect/run-analysis";
+import { estimateAnalysisCost } from "../lib/ai/estimate";
 import { discoverModels, ProviderError, type DiscoveredModel } from "../lib/ai/discovery";
 import { upsertDiscovered, verifyAccount, type Tx } from "../lib/ai/accounts";
 import { ModelAccessError } from "../lib/ai/executor";
@@ -346,15 +346,6 @@ function isForeignKeyViolation(err: unknown): boolean {
     current = e.cause;
   }
   return false;
-}
-
-/**
- * Arrotondamento a 6 decimali (USD, come `cost_usd`): un valore positivo non diventa mai 0 (al minimo
- * 0,000001), così la console può mostrare "< 0,0001 $" invece di "0 $".
- */
-function roundUsd(n: number): number {
-  const rounded = Math.round(n * 1e6) / 1e6;
-  return n > 0 && rounded === 0 ? 1e-6 : rounded;
 }
 
 type CreateBody = ReturnType<typeof CreateAiAccountBody.parse>;
@@ -964,14 +955,7 @@ export function createAiRouter(opts: { providerRateLimit?: RequestHandler; probe
       res.status(404).json({ error: MODEL_NOT_FOUND });
       return;
     }
-    const priceIn = toNumber(row.model.priceInputPerMtok);
-    const priceOut = toNumber(row.model.priceOutputPerMtok);
-    let estimate: { maxUsd: number | null; typicalUsd: number | null } = { maxUsd: null, typicalUsd: null };
-    if (priceIn !== null && priceOut !== null) {
-      // Si ipotizza il 95% di token di input; il tipico è il 60% del tetto
-      const max = ((maxTokens ?? ANALYSIS_DEFAULT_MAX_TOKENS) * (0.95 * priceIn + 0.05 * priceOut)) / 1e6;
-      estimate = { maxUsd: roundUsd(max), typicalUsd: roundUsd(0.6 * max) };
-    }
+    const estimate = estimateAnalysisCost(row.model, maxTokens);
     res.json(EstimateAnalysisCostResponse.parse(estimate));
   });
 

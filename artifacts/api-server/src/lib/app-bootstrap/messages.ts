@@ -14,6 +14,7 @@ export const APP_BOOTSTRAP_MESSAGES = {
   notFromTemplate: "il repository non è nato dal modello",
   notFresh: "il repository non è più quello appena creato: ricrealo dal modello",
   tooManyFiles: "il modello ha troppi file da personalizzare",
+  pathRefused: "il modello contiene un percorso che Botcave non scrive",
   githubUnavailable: "GitHub non raggiungibile: riprova",
   interrupted: "interrotto dal riavvio: usa Riprova",
   notRetryable: "la richiesta non è da riprendere",

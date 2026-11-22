@@ -21,6 +21,7 @@ import { failInterruptedTeamWork } from "./lib/teams/task-runner";
 import { pumpTurnInBackground, resumeQueuedTurns } from "./lib/teams/turn-runner";
 import { setOnTurnQueued } from "./lib/teams/turn-queue";
 import { failInterruptedActions } from "./lib/actions/decide";
+import { failInterruptedBootstraps } from "./lib/app-bootstrap/service";
 import { failInterruptedPlanTurns } from "./lib/plan-chat/run-turn";
 import { failInterruptedTeamChatTurns } from "./lib/team-chat/run-turn";
 import { failInterruptedCharacterTurns } from "./lib/characters/run-turn";
@@ -113,8 +114,15 @@ failInterruptedTeamWork()
     logger.error({ errName: err instanceof Error ? err.name : "unknown" }, "Ripartenza dei turni delle squadre in coda non riuscita"),
   );
 
-// Azioni in coda rimaste in esecuzione: l'esito è incerto (il servizio può averle eseguite).
-failInterruptedActions()
+// Nascite di App da zero rimaste in corso: falliscono «interrotto dal riavvio» con la loro voce, PRIMA della chiusura
+// generica delle azioni in esecuzione (che darebbe «esito incerto» senza il passo).
+failInterruptedBootstraps()
+  .then((count) => {
+    if (count > 0) logger.warn({ count }, "Nuove app da zero interrotte dal riavvio segnate come fallite");
+  })
+  .catch((err: unknown) => logger.error({ errName: err instanceof Error ? err.name : "unknown" }, "Chiusura delle nuove app da zero interrotte non riuscita"))
+  // Azioni in coda rimaste in esecuzione: l'esito è incerto (il servizio può averle eseguite).
+  .then(() => failInterruptedActions())
   .then((count) => {
     if (count > 0) logger.warn({ count }, "Azioni in coda interrotte dal riavvio segnate come fallite (esito incerto)");
   })

@@ -1,6 +1,6 @@
 /** Repository modello e dominio di base, letti a ogni chiamata (i test impostano le variabili). */
 export function appTemplateRepo(): string {
-  return process.env["APP_TEMPLATE_REPO"]?.trim() || "twentivan/botcave-modello-app";
+  return process.env["APP_TEMPLATE_REPO"]?.trim() || "TwentIvan/botcave-modello-app";
 }
 
 export function appBaseDomain(): string {

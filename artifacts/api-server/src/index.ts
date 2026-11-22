@@ -13,6 +13,7 @@ import { failInterruptedRuns } from "./lib/run-executor";
 import { setOnRunSettled, startRunQueue } from "./lib/run-queue";
 import { finalizeTriage } from "./lib/bugs/triage";
 import { startBugSweeper } from "./lib/bugs/sweeper";
+import { startBootstrapHealthChecker } from "./lib/app-bootstrap/health";
 import { startTriggerPoller } from "./lib/triggers/poller";
 import { failInterruptedArchitecture, startArchitectureScheduler } from "./lib/architecture/scheduler";
 import { startCodeWatcher } from "./lib/code-writer/watcher";
@@ -95,6 +96,8 @@ failInterruptedRuns()
     startEvolutionScheduler();
     // Sorveglianza della CI delle PR dei compiti con codice.
     startCodeWatcher();
+    // App nate da zero: controllo di healthz sul loro dominio, primo giro dopo 60 s.
+    startBootstrapHealthChecker();
   });
 
 // Ogni motivo accodato fa partire il turno del capo della squadra (se nessun turno è in corso).

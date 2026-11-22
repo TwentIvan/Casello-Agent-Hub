@@ -2070,7 +2070,7 @@ paths:
       parameters:
         - $ref: "#/components/parameters/IdParam"
       responses:
-        "200":
+        "202":
           description: Richiesta aggiornata
           content:
             application/json:

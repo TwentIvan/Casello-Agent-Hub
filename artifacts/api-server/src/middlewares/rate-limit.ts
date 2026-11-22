@@ -127,6 +127,19 @@ export function consumeArchitectureRefresh(userId: number): boolean {
   return architectureRefreshCounter.consume(`user:${userId}`).ok;
 }
 
+// «Controlla ora» di una nuova app da zero: 6 al minuto per utente.
+const bootstrapHealthCheckCounter = fixedWindowCounter({ limit: 6, windowMs: 60_000 });
+
+/** Conta un controllo di healthz richiesto dall'utente: false se il limite è raggiunto. */
+export function consumeBootstrapHealthCheck(userId: number): boolean {
+  return bootstrapHealthCheckCounter.consume(`user:${userId}`).ok;
+}
+
+/** Solo per i test: azzera il contatore del controllo di healthz. */
+export function resetBootstrapHealthCheckLimit(): void {
+  bootstrapHealthCheckCounter.reset();
+}
+
 // «Avvia ora» di un giro del ciclo di evoluzione (ogni giro è un'analisi a pagamento): 2 all'ora per App.
 const evolutionRunNowCounter = fixedWindowCounter({ limit: 2, windowMs: 3600_000 });
 

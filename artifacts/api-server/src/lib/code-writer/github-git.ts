@@ -259,6 +259,32 @@ export async function commitFiles(
   },
 ): Promise<{ sha: string }> {
   assertTaskBranch(input.branch);
+  return writeCommit(r, input);
+}
+
+/**
+ * Commit di inizializzazione di una nuova App sul branch `main` del repository appena creato dal modello
+ * (`PATCH` della ref con `force: false`: se `main` è avanzato, `CodeWriteError` con `branchMoved`). Solo per
+ * `app-bootstrap`: i compiti delle squadre passano da `commitFiles`, che resta limitato ai branch `botcave/…`.
+ */
+export async function commitInitOnBase(
+  r: RepoRef,
+  input: { parentSha: string; baseTreeSha: string; changes: Map<string, string | null>; message: string },
+): Promise<{ sha: string }> {
+  return writeCommit(r, { ...input, branch: "main", createBranch: false });
+}
+
+async function writeCommit(
+  r: RepoRef,
+  input: {
+    branch: string;
+    parentSha: string;
+    baseTreeSha: string;
+    changes: Map<string, string | null>;
+    message: string;
+    createBranch: boolean;
+  },
+): Promise<{ sha: string }> {
   const perm = "contents: write";
   const token = await tokenFor(r, { contents: "write" });
   const modes = await existingModes(r, token, input.baseTreeSha, input.changes.keys());

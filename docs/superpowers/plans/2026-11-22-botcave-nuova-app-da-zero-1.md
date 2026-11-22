@@ -90,6 +90,7 @@
     | `PUT /app-bootstraps/{id}/checklist/{item}` | `setAppBootstrapChecklistItem`, body `{done: boolean}` |
     | `POST /app-bootstraps/{id}/health-check` | `checkAppBootstrapHealth` |
     | `GET /apps/{id}/bootstrap` | `getAppBootstrapForApp` (200 `AppBootstrap`, o 404 se l'App non è nata da zero) |
+    | `GET /app-bootstraps/config` | `getAppBootstrapConfig` → `{templateRepo, baseDomain}` |
 
   - Tag `apps`.
 
@@ -321,6 +322,7 @@
     - ogni 10 minuti, per le righe `done` senza `healthOkAt`, al più 20 per giro, una alla volta;
     - primo giro dopo 60 s.
   - Route:
+    - `GET /app-bootstraps/config` → `{templateRepo: appTemplateRepo(), baseDomain: appBaseDomain()}`, con `api:read`;
     - `POST /app-bootstraps` è `sessionOnly`: 201, o 400/403/409 con `{error}`;
     - `GET /app-bootstraps/:id` e `GET /apps/:id/bootstrap`: solo il proprietario, altrimenti 404 `notFound`;
     - `POST /app-bootstraps/:id/retry` è `sessionOnly`: 202;
@@ -398,7 +400,7 @@
     - «Controlla ora» per `health`;
     - polling ogni 10 s finché `status` è `running`;
     - con tutte le voci fatte la carta si riduce a «Primo deploy completato il <data>».
-- `templateRepo` e `baseDomain` arrivano da `GET /app-bootstraps/config`, aggiunta in OpenAPI e nel Task 5 se non c'è già: `{templateRepo, baseDomain}`, anche senza login per la sola lettura.
+- `templateRepo` e `baseDomain` arrivano da `GET /app-bootstraps/config` (Task 1 e 5).
 
 - [ ] **Step 1: Write the failing test** `app-bootstrap.test.ts`:
   - `suggestedDomain("portfolio")` = `"portfolio.fantamister.cloud"`;

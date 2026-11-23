@@ -13,6 +13,7 @@ describe("messaggio Implementa del ciclo", () => {
     expect(text).toContain("- #12 Esporta i report (issue #40)");
     expect(text).toContain("- #13 Filtri\n");
     expect(text).toContain("leggi_piano_app");
+    expect(text).toContain("non chiamare `chiudi_lavoro`");
   });
 
   it("resta entro il limite del messaggio al capo", () => {

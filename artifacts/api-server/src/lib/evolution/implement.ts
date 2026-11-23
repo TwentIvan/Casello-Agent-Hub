@@ -19,7 +19,7 @@ const oneLine = (s: string) => s.replace(/\s+/g, " ").trim();
 export function implementMessage(appName: string, items: ImplementItem[], roundNumber?: number): string {
   const head = `Implementa il piano di sviluppo dell'App «${oneLine(appName)}».`;
   const how =
-    "Leggi le voci approvate con `leggi_piano_app`, proponi un PLAN con un compito per voce (con il campo `issue` quando la voce ne ha una) e, quando è approvato, assegna i compiti nell'ordine delle dipendenze.";
+    "Questo è un lavoro nuovo, anche se il lavoro precedente della squadra è finito o chiuso: non chiamare `chiudi_lavoro`. Leggi le voci approvate con `leggi_piano_app` e proponi subito con `proponi_piano` un PLAN nuovo (obiettivo nuovo, un compito per voce con il campo `issue` quando la voce ne ha una; i compiti già finiti del PLAN precedente puoi toglierli); quando è approvato, assegna i compiti nell'ordine delle dipendenze.";
   const cycle = roundNumber === undefined ? "" : ` Sono le voci del giro ${roundNumber} del ciclo di evoluzione automatica: il ciclo approva da solo il PLAN.`;
   if (items.length === 0) return `${head}${cycle} Lavora su tutte le voci approvate del piano.\n${how}`;
   const intro = `${head}${cycle} Lavora solo su ${items.length === 1 ? "questa voce" : `queste ${items.length} voci`} (id di \`leggi_piano_app\`):`;

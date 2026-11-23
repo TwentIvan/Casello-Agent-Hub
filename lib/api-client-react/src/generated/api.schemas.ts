@@ -5192,6 +5192,10 @@ export const TeamTurnReasonType = {
   decision: 'decision',
   activation: 'activation',
   restart: 'restart',
+  ci_finished: 'ci_finished',
+  pr_closed: 'pr_closed',
+  merge_failed: 'merge_failed',
+  release_failed: 'release_failed',
 } as const;
 
 export type TeamTurnReasonOutcome = typeof TeamTurnReasonOutcome[keyof typeof TeamTurnReasonOutcome];
@@ -5200,8 +5204,14 @@ export type TeamTurnReasonOutcome = typeof TeamTurnReasonOutcome[keyof typeof Te
 export const TeamTurnReasonOutcome = {
   approved: 'approved',
   rejected: 'rejected',
+  success: 'success',
+  failure: 'failure',
+  none: 'none',
 } as const;
 
+/**
+ * Motivo di un turno del capo. `outcome` vale approved|rejected per `decision` e success|failure|none per `ci_finished`; `taskCodeId` è la riga del compito con codice (CI, PR, merge), `workId` il lavoro (rilascio).
+ */
 export interface TeamTurnReason {
   type: TeamTurnReasonType;
   text?: string;
@@ -5210,6 +5220,10 @@ export interface TeamTurnReason {
   outcome?: TeamTurnReasonOutcome;
   /** @nullable */
   note?: string | null;
+  taskCodeId?: number;
+  merged?: boolean;
+  message?: string;
+  workId?: number;
 }
 
 export type TeamTurnStatus = typeof TeamTurnStatus[keyof typeof TeamTurnStatus];

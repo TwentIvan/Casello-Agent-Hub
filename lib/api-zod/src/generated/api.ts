@@ -6302,13 +6302,17 @@ export const ListTeamTurnsResponseItem = zod.object({
   "id": zod.number(),
   "instanceId": zod.number(),
   "reasons": zod.array(zod.object({
-  "type": zod.enum(['request', 'task_finished', 'decision', 'activation', 'restart']),
+  "type": zod.enum(['request', 'task_finished', 'decision', 'activation', 'restart', 'ci_finished', 'pr_closed', 'merge_failed', 'release_failed']),
   "text": zod.string().optional(),
   "taskId": zod.number().optional(),
   "number": zod.number().optional(),
-  "outcome": zod.enum(['approved', 'rejected']).optional(),
-  "note": zod.string().nullish()
-})),
+  "outcome": zod.enum(['approved', 'rejected', 'success', 'failure', 'none']).optional(),
+  "note": zod.string().nullish(),
+  "taskCodeId": zod.number().optional(),
+  "merged": zod.boolean().optional(),
+  "message": zod.string().optional(),
+  "workId": zod.number().optional()
+}).describe('Motivo di un turno del capo. `outcome` vale approved|rejected per `decision` e success|failure|none per `ci_finished`; `taskCodeId` è la riga del compito con codice (CI, PR, merge), `workId` il lavoro (rilascio).')),
   "status": zod.enum(['queued', 'running', 'done', 'failed']),
   "error": zod.string().nullable(),
   "aiModelId": zod.number().nullable(),

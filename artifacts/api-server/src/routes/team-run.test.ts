@@ -120,6 +120,20 @@ describe("route dell'esecuzione delle squadre", () => {
     expect((await api("PUT", `/team-instances/${instanceId}/budget`, { monthlyBudgetUsd: 1 })).status).toBe(409);
   });
 
+  it("turni con i motivi della CI, delle PR e del lavoro: la risposta li descrive (niente 500)", async () => {
+    await api("POST", `/team-instances/${instanceId}/activate`);
+    const reasons = [
+      { type: "ci_finished", taskCodeId: 3, outcome: "failure" },
+      { type: "pr_closed", taskCodeId: 3, merged: true },
+      { type: "merge_failed", taskCodeId: 3, message: "CI non superata" },
+      { type: "release_failed", workId: 2, message: "conflitto con main" },
+    ] as const;
+    await db.insert(teamTurnsTable).values({ instanceId, status: "done", reasons: [...reasons] });
+    const turns = await api("GET", `/team-instances/${instanceId}/turns`);
+    expect(turns.status, turns.text).toBe(200);
+    expect(turns.json.find((t: { status: string }) => t.status === "done").reasons).toEqual(reasons);
+  });
+
   it("compiti con i passi, turni con i passi, eventi e bollettino dell'utente", async () => {
     await api("POST", `/team-instances/${instanceId}/activate`);
     const [task] = await db

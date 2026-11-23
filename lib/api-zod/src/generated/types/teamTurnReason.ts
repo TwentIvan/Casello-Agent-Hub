@@ -8,6 +8,9 @@
 import type { TeamTurnReasonOutcome } from './teamTurnReasonOutcome';
 import type { TeamTurnReasonType } from './teamTurnReasonType';
 
+/**
+ * Motivo di un turno del capo. `outcome` vale approved|rejected per `decision` e success|failure|none per `ci_finished`; `taskCodeId` è la riga del compito con codice (CI, PR, merge), `workId` il lavoro (rilascio).
+ */
 export interface TeamTurnReason {
   type: TeamTurnReasonType;
   text?: string;
@@ -16,4 +19,8 @@ export interface TeamTurnReason {
   outcome?: TeamTurnReasonOutcome;
   /** @nullable */
   note?: string | null;
+  taskCodeId?: number;
+  merged?: boolean;
+  message?: string;
+  workId?: number;
 }

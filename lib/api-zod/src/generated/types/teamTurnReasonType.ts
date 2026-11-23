@@ -15,4 +15,8 @@ export const TeamTurnReasonType = {
   decision: 'decision',
   activation: 'activation',
   restart: 'restart',
+  ci_finished: 'ci_finished',
+  pr_closed: 'pr_closed',
+  merge_failed: 'merge_failed',
+  release_failed: 'release_failed',
 } as const;

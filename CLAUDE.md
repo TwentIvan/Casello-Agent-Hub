@@ -881,7 +881,7 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   `pr_closed`; esito finale della CI su uno sha nuovo → verde o senza CI: evento «CI verde» (`compito_finito`), rossa: compito del PLAN `blocked` «CI non superata: <check>» e evento `bloccato`, sempre turno `ci_finished`; `pending` da oltre
   2 ore: evento una volta. **Con un'esecuzione del compito ancora attiva (`queued|running|waiting_node`) la notifica si rimanda al giro dopo la sua fine** (niente turni spuri né PLAN sovrascritto). Errori di GitHub: riga saltata, si riprova.
   Una CI rilanciata sullo stesso sha non si riferisce di nuovo (una volta per sha). Nessuna chiamata a modelli.
-- **Capo**: strumento `leggi_piano_app` (e `unisci_pr` con `code: merge`) (voci `approved` di endpoint, completion ed evolution del piano dell'App, con `key` per risolvere le dipendenze, issue e stato; ≤ 100 voci), motivi di turno `ci_finished` e `pr_closed`, prompt: un
+- **Capo**: strumento `leggi_piano_app` (e `unisci_pr` con `code: merge`) (voci `approved` di endpoint, completion ed evolution del piano dell'App senza issue chiusa, con `key` per risolvere le dipendenze (le chiavi delle voci con l'issue chiusa escono da `dependsOn`), issue e stato; ≤ 100 voci), motivi di turno `ci_finished` e `pr_closed`, prompt: un
   compito con codice è finito con la CI verde, con la CI rossa si riassegna (riparte dallo stesso branch), ogni compito parte dal base. Freno ai giri: `assegna_compito` rifiuta con «compito fallito 3 volte: segnala
   all'utente» (`MAX_TASK_FAILURES` = 3) sia dopo 3 esecuzioni di fila `failed|blocked` sia quando la PR del compito ha 3 CI rosse di fila (`team_code_tasks.ci_failures`: la sorveglianza lo incrementa nella stessa
   transazione della notifica di una CI rossa e lo azzera con una verde o senza CI; l'esecuzione di un compito con la CI rossa resta `done`, quindi il primo freno da solo non basta).
@@ -1141,7 +1141,7 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
 - **Implementa** (`components/plan/implement-plan-dialog.tsx`, logica pura in `src/lib/implement-plan.ts`; solo route esistenti, nessuna migrazione): il pulsante «Implementa» della pagina
   del piano (attivo con almeno una voce approvata dei capitoli endpoint, completion ed evolution) apre un dialogo che sceglie la squadra, una delle squadre dell'App non chiuse
   (`GET /api/team-instances?appId=…`, prima le attive) o una nuova da un modello (`POST /api/team-instances` con `ref` `{type: "piano", id: <id dell'App>, title: "Piano di <app>"}`), e
-  facoltativamente le voci approvate (nessuna = tutto il piano). Alla conferma: squadra in bozza → `POST …/activate` (con i ruoli `node` il dialogo mostra i problemi di «Pronta a
+  le voci approvate senza issue chiusa, tutte già spuntate (si toglie la spunta a quelle da lasciare; tutte spuntate = tutto il piano, nessuna = pulsante disattivato; `implementableItems`, `messageItems`). Alla conferma: squadra in bozza → `POST …/activate` (con i ruoli `node` il dialogo mostra i problemi di «Pronta a
   lavorare» e il pulsante diventa «Attiva comunque e implementa»; una squadra nuova con problemi resta in bozza, selezionata nel dialogo), poi sempre `POST …/messages` con il testo
   di `implementMessage` (implementare il piano con `leggi_piano_app`, un compito per voce con `issue`, ordine delle dipendenze; le voci scelte con id e issue, entro i 4 000 caratteri) e
   infine si apre la scheda della squadra. Il messaggio dopo l'attivazione si accoda al turno `activation` se è ancora in coda.

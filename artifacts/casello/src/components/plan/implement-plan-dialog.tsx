@@ -40,6 +40,7 @@ import { blockingProblems } from "@/lib/team-readiness";
 import {
   IMPLEMENT_CHAPTERS,
   implementableItems,
+  messageItems,
   implementMessage,
   implementTeams,
   planTeamRef,
@@ -57,7 +58,7 @@ interface ImplementPlanDialogProps {
 
 /**
  * «Implementa»: sceglie una squadra dell'App (o ne crea una da un modello) e le affida il piano. Una squadra in bozza
- * si attiva, poi il capo riceve il messaggio con le voci scelte (nessuna = tutto il piano approvato) e si apre la sua scheda.
+ * si attiva, poi il capo riceve il messaggio con le voci scelte (tutte già spuntate: si tolgono quelle da lasciare) e si apre la sua scheda.
  */
 export function ImplementPlanDialog({ appId, appName, items, open, onOpenChange }: ImplementPlanDialogProps) {
   const [, navigate] = useLocation();
@@ -73,7 +74,8 @@ export function ImplementPlanDialog({ appId, appName, items, open, onOpenChange 
   const [choice, setChoice] = useState<string>("");
   const [templateId, setTemplateId] = useState("");
   const [name, setName] = useState(`Piano · ${appName}`.slice(0, 120));
-  const [picked, setPicked] = useState<ReadonlySet<number>>(new Set());
+  // Voci tolte dall'utente: tutte le voci approvate partono spuntate
+  const [excluded, setExcluded] = useState<ReadonlySet<number>>(new Set());
   const [busy, setBusy] = useState(false);
 
   // Squadra preselezionata: la prima attiva o in bozza, altrimenti una nuova
@@ -94,17 +96,17 @@ export function ImplementPlanDialog({ appId, appName, items, open, onOpenChange 
       return chapter === "completion" ? dependencyOrder(list) : list;
     });
   }, [items]);
-  const chosen = ordered.filter((i) => picked.has(i.id));
+  const chosen = ordered.filter((i) => !excluded.has(i.id));
 
   const create = useCreateTeamInstance();
   const activate = useActivateTeamInstance();
   const send = useSendTeamMessage();
 
   const toggle = (id: number, on: boolean) =>
-    setPicked((prev) => {
+    setExcluded((prev) => {
       const next = new Set(prev);
-      if (on) next.add(id);
-      else next.delete(id);
+      if (on) next.delete(id);
+      else next.add(id);
       return next;
     });
 
@@ -116,7 +118,7 @@ export function ImplementPlanDialog({ appId, appName, items, open, onOpenChange 
     }
     const text = implementMessage(
       appName,
-      chosen.map((i) => ({ id: i.id, title: itemTitle(i), issueNumber: i.issue?.number ?? null })),
+      messageItems(chosen, ordered.length).map((i) => ({ id: i.id, title: itemTitle(i), issueNumber: i.issue?.number ?? null })),
     );
     await send.mutateAsync({ id: team.id, data: { text } });
     void queryClient.invalidateQueries({ queryKey: getGetTeamInstanceQueryKey(team.id) });
@@ -169,7 +171,7 @@ export function ImplementPlanDialog({ appId, appName, items, open, onOpenChange 
     }
   };
 
-  const ready = isNew ? templateId !== "" && name.trim() !== "" : selectedTeam !== null;
+  const ready = chosen.length > 0 && (isNew ? templateId !== "" && name.trim() !== "" : selectedTeam !== null);
   const confirmLabel = busy
     ? "Invio…"
     : isNew
@@ -265,9 +267,13 @@ export function ImplementPlanDialog({ appId, appName, items, open, onOpenChange 
           <fieldset className="space-y-2">
             <legend className="text-sm font-medium">Voci da implementare</legend>
             <p className="text-xs text-muted-foreground">
-              {chosen.length === 0
-                ? `Nessuna voce scelta: tutto il piano approvato (${ordered.length} voci).`
-                : `${chosen.length} voci scelte su ${ordered.length}.`}
+              {ordered.length === 0
+                ? "Nessuna voce approvata da implementare: le voci con l'issue chiusa sono già fatte."
+                : chosen.length === 0
+                  ? "Nessuna voce scelta: spunta almeno una voce."
+                  : chosen.length === ordered.length
+                    ? `Tutte le ${ordered.length} voci approvate: togli la spunta a quelle da lasciare.`
+                    : `${chosen.length} voci scelte su ${ordered.length}.`}
             </p>
             {ordered.length > 0 && (
               <div className="max-h-64 space-y-1 overflow-y-auto rounded-md border p-2">
@@ -275,7 +281,7 @@ export function ImplementPlanDialog({ appId, appName, items, open, onOpenChange 
                   <label key={item.id} className="flex cursor-pointer items-start gap-3 rounded px-1 py-1 text-sm">
                     <Checkbox
                       className="mt-0.5"
-                      checked={picked.has(item.id)}
+                      checked={!excluded.has(item.id)}
                       onCheckedChange={(checked) => toggle(item.id, checked === true)}
                     />
                     <span className="min-w-0 flex-1 break-words">{itemTitle(item)}</span>

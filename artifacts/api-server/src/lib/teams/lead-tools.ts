@@ -661,13 +661,20 @@ async function assignTask(ctx: LeadContext, args: Record<string, unknown>): Prom
 const MAX_APP_PLAN_ITEMS = 100;
 const MAX_APP_PLAN_CHARS = 20_000;
 
-/** `leggi_piano_app`: voci approvate del piano dell'App di riferimento (sola lettura). */
+/**
+ * `leggi_piano_app`: voci approvate del piano dell'App di riferimento (sola lettura). Le voci con l'issue chiusa sono
+ * già fatte (o scartate su GitHub): non si offrono al capo e le loro chiavi escono dalle dipendenze delle altre.
+ */
 async function readAppPlan(ctx: LeadContext): Promise<ToolResult> {
   const [instance] = await db.select({ refAppId: teamInstancesTable.refAppId }).from(teamInstancesTable).where(eq(teamInstancesTable.id, ctx.instanceId)).limit(1);
   if (!instance) return fail(LEAD_MESSAGES.noAppPlan);
   const analysisId = await latestCompletedAnalysisId(instance.refAppId);
   if (analysisId === null) return fail(LEAD_MESSAGES.noAppPlan);
-  const items = (await loadPlanItems(analysisId, instance.refAppId)).filter((i) => i.status === "approved").slice(0, MAX_APP_PLAN_ITEMS);
+  const approved = (await loadPlanItems(analysisId, instance.refAppId)).filter((i) => i.status === "approved");
+  const closedKeys = new Set(
+    approved.filter((i) => i.issueState === "closed" && i.chapter === "completion").map((i) => completionData(i).key),
+  );
+  const items = approved.filter((i) => i.issueState !== "closed").slice(0, MAX_APP_PLAN_ITEMS);
   const view = items.map((item) => {
     const p = (item.payload ?? {}) as Record<string, unknown>;
     const completion = item.chapter === "completion" ? completionData(item) : null;
@@ -679,7 +686,7 @@ async function readAppPlan(ctx: LeadContext): Promise<ToolResult> {
       title,
       phase: completion ? completion.phase : null,
       priority: typeof p["priority"] === "number" ? p["priority"] : null,
-      dependsOn: completion?.dependsOn ?? [],
+      dependsOn: (completion?.dependsOn ?? []).filter((k) => !closedKeys.has(k)),
       issue: item.issueNumber !== null && item.issueNumber !== undefined ? { number: item.issueNumber, state: item.issueState ?? "open" } : null,
     };
   });

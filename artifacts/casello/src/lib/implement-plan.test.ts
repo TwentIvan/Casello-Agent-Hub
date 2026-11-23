@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AnalysisItem, TeamInstance } from "@workspace/api-client-react";
-import { implementableItems, implementMessage, implementTeams, MAX_LEAD_MESSAGE, planTeamRef } from "./implement-plan";
+import { implementableItems, implementMessage, messageItems, implementTeams, MAX_LEAD_MESSAGE, planTeamRef } from "./implement-plan";
 
 const item = (id: number, chapter: AnalysisItem["chapter"], status: AnalysisItem["status"]) =>
   ({ id, chapter, status }) as AnalysisItem;
@@ -16,6 +16,21 @@ describe("implementableItems", () => {
       item(5, "completion", "pending"),
     ];
     expect(implementableItems(items).map((i) => i.id)).toEqual([1, 2, 3]);
+  });
+
+  it("esclude le voci con l'issue già chiusa", () => {
+    const closed = { ...item(6, "completion", "approved"), issue: { number: 9, state: "closed" } } as AnalysisItem;
+    const open = { ...item(7, "evolution", "approved"), issue: { number: 10, state: "open" } } as AnalysisItem;
+    expect(implementableItems([closed, open]).map((i) => i.id)).toEqual([7]);
+  });
+});
+
+describe("messageItems", () => {
+  it("tutte scelte: nessun elenco, il capo lavora su tutto il piano", () => {
+    expect(messageItems([1, 2, 3], 3)).toEqual([]);
+  });
+  it("alcune tolte: solo quelle scelte", () => {
+    expect(messageItems([1, 3], 3)).toEqual([1, 3]);
   });
 });
 

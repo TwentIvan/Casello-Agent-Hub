@@ -16,9 +16,20 @@ export interface ImplementItem {
   issueNumber: number | null;
 }
 
-/** Voci del piano che si possono implementare: approvate, nei capitoli endpoint, completamento ed evoluzione. */
+/**
+ * Voci del piano che si possono implementare: approvate, nei capitoli endpoint, completamento ed evoluzione, senza
+ * quelle con l'issue già chiusa (lavoro fatto o scartato su GitHub).
+ */
 export function implementableItems(items: AnalysisItem[]): AnalysisItem[] {
-  return items.filter((i) => i.status === "approved" && IMPLEMENT_CHAPTERS.includes(i.chapter));
+  return items.filter((i) => i.status === "approved" && IMPLEMENT_CHAPTERS.includes(i.chapter) && i.issue?.state !== "closed");
+}
+
+/**
+ * Voci da elencare nel messaggio al capo: con tutte le voci scelte nessun elenco (il capo lavora su tutto il piano
+ * approvato con `leggi_piano_app`), altrimenti quelle scelte.
+ */
+export function messageItems<T>(chosen: T[], total: number): T[] {
+  return chosen.length === total ? [] : chosen;
 }
 
 /** Squadre che possono ricevere il piano: quelle dell'App non chiuse, prima le attive. */

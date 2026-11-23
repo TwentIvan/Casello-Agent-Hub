@@ -626,7 +626,7 @@ describe("turni del capo", () => {
     expect(await turns(id)).toHaveLength(0);
   });
 
-  it("leggi_piano_app: solo le voci approvate dell'analisi più recente, con issue", async () => {
+  it("leggi_piano_app: solo le voci approvate dell'analisi più recente, con issue, senza quelle con l'issue chiusa", async () => {
     const id = await seedActiveApproved();
     const [analysis] = await db
       .insert(analysesTable)
@@ -637,14 +637,18 @@ describe("turni del capo", () => {
       { analysisId: analysis!.id, chapter: "completion", ref: "completion:1", position: 0, diff: "new", payload: completion("a", 1), status: "approved" },
       { analysisId: analysis!.id, chapter: "completion", ref: "completion:2", position: 1, diff: "new", payload: completion("b", 2, ["a"]), status: "approved", issueRepo: "ivan/hub", issueNumber: 7, issueState: "open" },
       { analysisId: analysis!.id, chapter: "completion", ref: "completion:3", position: 2, diff: "new", payload: completion("c", 2), status: "pending" },
+      { analysisId: analysis!.id, chapter: "completion", ref: "completion:4", position: 3, diff: "new", payload: completion("d", 1), status: "approved", issueRepo: "ivan/hub", issueNumber: 5, issueState: "closed" },
+      { analysisId: analysis!.id, chapter: "completion", ref: "completion:5", position: 4, diff: "new", payload: completion("e", 2, ["d", "a"]), status: "approved" },
     ]);
     leadScript.push(call("leggi_piano_app", {}), text("Letto."));
     await sendToLead(userId, id, "leggi il piano dell'app");
     await settleAll();
     const result = JSON.parse(toolMessages(leadRequests()[1]!)[0]!) as { id: number; chapter: string; title: string; phase: number | null; dependsOn: string[]; issue: { number: number; state: string } | null }[];
-    expect(result).toHaveLength(2);
+    // La voce con l'issue chiusa è già fatta: non si offre e non conta più come dipendenza
+    expect(result.map((r) => r.title)).toEqual(["Titolo a", "Titolo b", "Titolo e"]);
     expect(result[0]).toMatchObject({ chapter: "completion", title: "Titolo a", phase: 1, dependsOn: [], issue: null });
     expect(result[1]).toMatchObject({ title: "Titolo b", phase: 2, dependsOn: ["a"], issue: { number: 7, state: "open" } });
+    expect(result[2]).toMatchObject({ title: "Titolo e", dependsOn: ["a"] });
   });
 
   it("leggi_piano_app senza analisi: messaggio fisso", async () => {

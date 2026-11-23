@@ -651,6 +651,16 @@ describe("turni del capo", () => {
     expect(result[2]).toMatchObject({ title: "Titolo e", dependsOn: ["a"] });
   });
 
+  it("il prompt del capo: un lavoro finito non impedisce un PLAN nuovo chiesto dall'utente", async () => {
+    const id = await seedActiveApproved();
+    leadScript.push(text("ok"));
+    await sendToLead(userId, id, "implementa le voci nuove");
+    await settleAll();
+    const system = String(leadRequests().at(-1)!.messages[0]!.content);
+    expect(system).toContain("un lavoro finito non chiude la squadra");
+    expect(system).toContain("`chiudi_lavoro` dichiara finito il lavoro, una volta sola");
+  });
+
   it("leggi_piano_app senza analisi: messaggio fisso", async () => {
     const id = await seedActiveApproved();
     leadScript.push(call("leggi_piano_app", {}), text("Niente."));

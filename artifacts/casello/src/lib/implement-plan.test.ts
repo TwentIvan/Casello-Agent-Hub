@@ -53,6 +53,10 @@ describe("implementMessage", () => {
     expect(msg).toContain("«TradeFlow»");
     expect(msg).toContain("tutte le voci approvate");
     expect(msg).toContain("leggi_piano_app");
+    // Un lavoro precedente chiuso non deve fermare il capo
+    expect(msg).toContain("lavoro nuovo");
+    expect(msg).toContain("non chiamare `chiudi_lavoro`");
+    expect(msg).toContain("proponi_piano");
   });
 
   it("con le voci: id, titolo su una riga e issue", () => {

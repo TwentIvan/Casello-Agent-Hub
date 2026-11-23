@@ -365,6 +365,11 @@ export class SourceTree {
     return p ? this.files.get(p) : undefined;
   }
 
+  /** Tutti i file di testo letti (rumorosi compresi), percorso → contenuto, in ordine di percorso. */
+  allFiles(): Map<string, string> {
+    return new Map(this.sortedPaths.map((p) => [p, this.files.get(p)!]));
+  }
+
   has(path: string): boolean {
     const p = normalizeQueryPath(path);
     return p !== null && p !== "" && this.files.has(p);

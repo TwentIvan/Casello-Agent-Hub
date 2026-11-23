@@ -240,3 +240,31 @@ export async function enqueueBugItem(input: EnqueueBugInput, executor: QueueExec
     executor,
   );
 }
+
+export interface EnqueueAppBootstrapInput {
+  userId: number;
+  /** Repository di destinazione. */
+  recipient: string;
+  summary: string;
+  detail: Record<string, unknown>;
+}
+
+/**
+ * Accoda la nascita di un'App da zero (voce `app_bootstrap`, senza app né tool): stessa coda, limite e numerazione delle
+ * azioni. Con `executor` l'inserimento avviene nella transazione del chiamante (insieme alla riga di `app_bootstraps`).
+ */
+export async function enqueueAppBootstrapItem(input: EnqueueAppBootstrapInput, executor: QueueExecutor = db): Promise<EnqueueResult> {
+  return insertQueued(
+    input.userId,
+    {
+      kind: "app_bootstrap",
+      appId: null,
+      toolId: null,
+      argsEnc: encryptSecret(JSON.stringify(input.detail)),
+      argsPublic: input.detail,
+      recipient: input.recipient,
+      summary: input.summary,
+    },
+    executor,
+  );
+}

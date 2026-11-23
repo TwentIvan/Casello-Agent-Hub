@@ -13,6 +13,7 @@ import { failInterruptedRuns } from "./lib/run-executor";
 import { setOnRunSettled, startRunQueue } from "./lib/run-queue";
 import { finalizeTriage } from "./lib/bugs/triage";
 import { startBugSweeper } from "./lib/bugs/sweeper";
+import { startBootstrapHealthChecker } from "./lib/app-bootstrap/health";
 import { startTriggerPoller } from "./lib/triggers/poller";
 import { failInterruptedArchitecture, startArchitectureScheduler } from "./lib/architecture/scheduler";
 import { startCodeWatcher } from "./lib/code-writer/watcher";
@@ -21,6 +22,7 @@ import { failInterruptedTeamWork } from "./lib/teams/task-runner";
 import { pumpTurnInBackground, resumeQueuedTurns } from "./lib/teams/turn-runner";
 import { setOnTurnQueued } from "./lib/teams/turn-queue";
 import { failInterruptedActions } from "./lib/actions/decide";
+import { failInterruptedBootstraps } from "./lib/app-bootstrap/service";
 import { failInterruptedPlanTurns } from "./lib/plan-chat/run-turn";
 import { failInterruptedTeamChatTurns } from "./lib/team-chat/run-turn";
 import { failInterruptedCharacterTurns } from "./lib/characters/run-turn";
@@ -94,6 +96,8 @@ failInterruptedRuns()
     startEvolutionScheduler();
     // Sorveglianza della CI delle PR dei compiti con codice.
     startCodeWatcher();
+    // App nate da zero: controllo di healthz sul loro dominio, primo giro dopo 60 s.
+    startBootstrapHealthChecker();
   });
 
 // Ogni motivo accodato fa partire il turno del capo della squadra (se nessun turno è in corso).
@@ -113,8 +117,15 @@ failInterruptedTeamWork()
     logger.error({ errName: err instanceof Error ? err.name : "unknown" }, "Ripartenza dei turni delle squadre in coda non riuscita"),
   );
 
-// Azioni in coda rimaste in esecuzione: l'esito è incerto (il servizio può averle eseguite).
-failInterruptedActions()
+// Nascite di App da zero rimaste in corso: falliscono «interrotto dal riavvio» con la loro voce, PRIMA della chiusura
+// generica delle azioni in esecuzione (che darebbe «esito incerto» senza il passo).
+failInterruptedBootstraps()
+  .then((count) => {
+    if (count > 0) logger.warn({ count }, "Nuove app da zero interrotte dal riavvio segnate come fallite");
+  })
+  .catch((err: unknown) => logger.error({ errName: err instanceof Error ? err.name : "unknown" }, "Chiusura delle nuove app da zero interrotte non riuscita"))
+  // Azioni in coda rimaste in esecuzione: l'esito è incerto (il servizio può averle eseguite).
+  .then(() => failInterruptedActions())
   .then((count) => {
     if (count > 0) logger.warn({ count }, "Azioni in coda interrotte dal riavvio segnate come fallite (esito incerto)");
   })

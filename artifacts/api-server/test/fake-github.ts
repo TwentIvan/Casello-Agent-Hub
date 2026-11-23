@@ -168,10 +168,14 @@ export interface FakeGithub {
   zipballs: Map<string, Uint8Array>;
   /** proprietario/nome → sha dell'ultimo commit di ogni branch (`GET /repos/{repo}/commits/{ref}`; senza voce: 404). */
   commits: Map<string, string>;
+  /** proprietario/nome → `proprietario/nome` del repository modello (`template_repository` di `GET /repos/{o}/{r}`). */
+  templates: Map<string, string>;
   /** proprietario/nome → stato Git (Data API, zipball e commit dallo stato quando presente). */
   git: Map<string, FakeGitRepo>;
   /** proprietario/nome → pull request. */
   pulls: Map<string, FakePull[]>;
+  /** Repository (`proprietario/nome`) i cui alberi ricorsivi rispondono con `truncated: true`. */
+  truncatedTrees: Set<string>;
   /** `proprietario/nome:base...head` → confronto (`GET /repos/{repo}/compare/{base}...{head}`; commit dal più vecchio, senza voce: 404). */
   comparisons: Map<string, { commits: string[]; files: { filename: string; status: string }[] }>;
   /** sha → check run. */
@@ -369,9 +373,11 @@ export async function startFakeGithub(opts: { appId?: string; slug?: string } = 
     revoked: new Set(),
     issuedTokens: new Map(),
     zipballs: new Map(),
+    templates: new Map(),
     commits: new Map(),
     git: new Map(),
     pulls: new Map(),
+    truncatedTrees: new Set(),
     comparisons: new Map(),
     mergeConflicts: new Set(),
     checkRuns: new Map(),
@@ -567,7 +573,12 @@ export async function startFakeGithub(opts: { appId?: string; slug?: string } = 
       const fullName = access("contents", "read");
       if (!fullName) return;
       const r = (fake.repos.get(liveToken(req)!.installationId) ?? []).find((x) => x.fullName === fullName)!;
-      return send(res, 200, { ...repoJson(r, 0), default_branch: gitOf(fullName)?.defaultBranch ?? r.defaultBranch });
+      const template = fake.templates.get(fullName);
+      return send(res, 200, {
+        ...repoJson(r, 0),
+        default_branch: gitOf(fullName)?.defaultBranch ?? r.defaultBranch,
+        ...(template ? { template_repository: { full_name: template } } : {}),
+      });
     }
 
     // Merge di un branch in un altro (`POST /repos/{repo}/merges`): 204 se il base contiene già la testa, 409 con un conflitto
@@ -615,7 +626,7 @@ export async function startFakeGithub(opts: { appId?: string; slug?: string } = 
       if (method === "GET" && (g = /^\/git\/trees\/([0-9a-f]{40})$/.exec(rest))) {
         const entries = repo.trees.get(g[1]!);
         if (!entries) return send(res, 404, NOT_FOUND);
-        return send(res, 200, { sha: g[1], truncated: false, tree: entries.map((e) => ({ path: e.path, mode: e.mode, type: e.type, sha: e.sha })) });
+        return send(res, 200, { sha: g[1], truncated: fake.truncatedTrees.has(fullName), tree: entries.map((e) => ({ path: e.path, mode: e.mode, type: e.type, sha: e.sha })) });
       }
       if (method === "GET" && rest === "/git/refs") return send(res, 200, [...repo.refs.keys()].map(refJson));
       if (method === "GET" && (g = /^\/git\/refs?\/(heads\/.+)$/.exec(rest))) {
@@ -883,6 +894,24 @@ export async function startFakeGithub(opts: { appId?: string; slug?: string } = 
           html_url: `https://github.com/${fullName}/issues/${i.number}`,
         });
       }
+    }
+
+    // Elenco dei commit (`GET /repos/{r}/commits?sha=&per_page=`): dal più recente, seguendo il primo genitore
+    if (repoMatch && method === "GET" && rest === "/commits") {
+      const fullName = access("contents", "read");
+      if (!fullName) return;
+      const repo = gitOf(fullName);
+      const start = repo ? resolveRef(repo, url.searchParams.get("sha") ?? "HEAD") : null;
+      if (!repo || !start) return send(res, 404, NOT_FOUND);
+      const perPage = Math.max(1, Math.min(100, Number(url.searchParams.get("per_page") ?? "30") || 30));
+      const out: { sha: string; commit: { message: string; tree: { sha: string } } }[] = [];
+      for (let cur: string | undefined = start; cur && out.length < perPage; ) {
+        const c = repo.commits.get(cur);
+        if (!c) break;
+        out.push({ sha: cur, commit: { message: c.message, tree: { sha: c.tree } } });
+        cur = c.parents[0];
+      }
+      return send(res, 200, out);
     }
 
     // Zipball e commit dallo stato Git, quando il repo è stato creato con `seedRepo`

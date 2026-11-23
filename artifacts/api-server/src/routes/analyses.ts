@@ -34,10 +34,10 @@ import {
 import { currentUserId } from "../lib/auth";
 import { ModelChoiceError, chooseCloudModel, type ModelChoice } from "../lib/ai/choice";
 import { resolveAgentModel } from "../lib/ai/default-model";
-import { isUniqueViolation } from "../lib/pg-errors";
 import { userBudgetBlock } from "../lib/budget";
 import { luciusBestPracticeDefault } from "../lib/characters/settings";
-import { ANALYSIS_DEFAULT_MAX_TOKENS, CHOOSE_MODEL, startAnalysis } from "../lib/architect/run-analysis";
+import { ANALYSIS_DEFAULT_MAX_TOKENS, CHOOSE_MODEL } from "../lib/architect/run-analysis";
+import { AnalysisBusyError, createAndStartAnalysis, insertAnalysis } from "../lib/architect/start";
 import { ApplyError, applyItem } from "../lib/architect/apply";
 import { exportAll, exportChapter } from "../lib/architect/issues";
 import { LOCAL_MODEL, cancelLocalAnalysis, releaseLocalAnalysis } from "../lib/architect/local-executor";
@@ -83,43 +83,11 @@ async function analysisModel(aiModelId: number | undefined, userId: number): Pro
   return chooseCloudModel(aiModelId, userId);
 }
 
-/** L'app ha già un'analisi `queued`/`running` (indice unico parziale `analyses_one_active_per_app`). */
-class AnalysisBusyError extends Error {}
-
-/** Inserisce l'analisi `queued`; un'altra analisi aperta per l'app → AnalysisBusyError. */
-async function insertAnalysis(values: typeof analysesTable.$inferInsert) {
-  try {
-    const [row] = await db.insert(analysesTable).values(values).returning();
-    return row!;
-  } catch (err) {
-    if (isUniqueViolation(err, "analyses_one_active_per_app")) throw new AnalysisBusyError();
-    throw err;
-  }
-}
-
 /** 409 se chi paga il modello scelto ha raggiunto il tetto di spesa mensile; true se la risposta è partita. */
 async function rejectOverBudget(res: Response, choice: ModelChoice): Promise<boolean> {
   const blocked = await userBudgetBlock(choice.aiModelId);
   if (blocked) res.status(409).json({ error: blocked });
   return blocked !== null;
-}
-
-/**
- * Crea l'analisi `queued` e la avvia in background. `startAnalysis` non lancia mai: registra da sé
- * ogni errore sulla riga dell'analisi. Lo zip resta solo in memoria (mai su disco né nei log).
- */
-async function createAndStart(app: App, choice: ModelChoice, maxTokens: number | undefined, bestPractice: boolean, zip?: Uint8Array) {
-  const row = await insertAnalysis({
-    appId: app.id,
-    model: choice.model,
-    aiModelId: choice.aiModelId,
-    maxTokens: maxTokens ?? ANALYSIS_DEFAULT_MAX_TOKENS,
-    bestPractice,
-    // Valore iniziale: l'orchestratore lo sovrascrive con le sorgenti usate davvero
-    sources: { code: zip ? "zip" : app.sourceType, openapi: false, mcp: false, description: !!app.functionalDescription?.trim() },
-  });
-  void startAnalysis(row.id, zip ? { zip } : undefined);
-  return row;
 }
 
 /**
@@ -247,7 +215,7 @@ export function createAnalysesRouter(opts: { zipLimitBytes?: number } = {}): IRo
     }
     if (await rejectOverBudget(res, choice)) return;
     try {
-      const analysis = await createAndStart(app, choice, maxTokens, await bestPracticeFor(bestPractice, currentUserId(req)));
+      const analysis = await createAndStartAnalysis(app, choice, maxTokens, await bestPracticeFor(bestPractice, currentUserId(req)));
       res.status(202).json(StartAnalysisResponse.parse(toPublicAnalysis(analysis)));
     } catch (err) {
       if (!(err instanceof AnalysisBusyError)) throw err;
@@ -289,7 +257,7 @@ export function createAnalysesRouter(opts: { zipLimitBytes?: number } = {}): IRo
       try {
         const zip = new Uint8Array(body.buffer, body.byteOffset, body.length);
         const requested = bestPractice === undefined ? undefined : bestPractice === "true";
-        const analysis = await createAndStart(app, choice, maxTokens, await bestPracticeFor(requested, currentUserId(req)), zip);
+        const analysis = await createAndStartAnalysis(app, choice, maxTokens, await bestPracticeFor(requested, currentUserId(req)), zip);
         res.status(202).json(StartZipAnalysisResponse.parse(toPublicAnalysis(analysis)));
       } catch (err) {
         if (!(err instanceof AnalysisBusyError)) throw err;

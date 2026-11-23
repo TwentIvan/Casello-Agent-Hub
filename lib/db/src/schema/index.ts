@@ -48,3 +48,4 @@ export * from "./evolution";
 export * from "./best-practice";
 export * from "./character-instructions";
 export * from "./bug-reports";
+export * from "./app-bootstraps";

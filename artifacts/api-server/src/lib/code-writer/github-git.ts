@@ -259,6 +259,43 @@ export async function commitFiles(
   },
 ): Promise<{ sha: string }> {
   assertTaskBranch(input.branch);
+  return writeCommit(r, input);
+}
+
+/**
+ * Commit di inizializzazione di una nuova App sul branch `main` del repository appena creato dal modello
+ * (`PATCH` della ref con `force: false`: se `main` è avanzato, `CodeWriteError` con `branchMoved`). Solo per
+ * `app-bootstrap`: i compiti delle squadre passano da `commitFiles`, che resta limitato ai branch `botcave/…`.
+ */
+export async function commitInitOnBase(
+  r: RepoRef,
+  input: {
+    parentSha: string;
+    baseTreeSha: string;
+    changes: Map<string, string | null>;
+    message: string;
+    /** Modo dei percorsi nuovi (es. 100755 del file rinominato), al posto di quello letto dall'albero. */
+    modes?: Map<string, string>;
+    /** Voci spostate riusando il blob esistente (nessun contenuto scaricato né riscritto). */
+    reuse?: { path: string; mode: string; sha: string }[];
+  },
+): Promise<{ sha: string }> {
+  return writeCommit(r, { ...input, branch: "main", createBranch: false });
+}
+
+async function writeCommit(
+  r: RepoRef,
+  input: {
+    branch: string;
+    parentSha: string;
+    baseTreeSha: string;
+    changes: Map<string, string | null>;
+    message: string;
+    createBranch: boolean;
+    modes?: Map<string, string>;
+    reuse?: { path: string; mode: string; sha: string }[];
+  },
+): Promise<{ sha: string }> {
   const perm = "contents: write";
   const token = await tokenFor(r, { contents: "write" });
   const modes = await existingModes(r, token, input.baseTreeSha, input.changes.keys());
@@ -274,8 +311,9 @@ export async function commitFiles(
       body: { content: Buffer.from(content, "utf8").toString("base64"), encoding: "base64" },
     });
     if (!isObj(json)) throw badShape(status);
-    tree.push({ path, mode: modes.get(path) ?? "100644", type: "blob", sha: str(json["sha"], status) });
+    tree.push({ path, mode: input.modes?.get(path) ?? modes.get(path) ?? "100644", type: "blob", sha: str(json["sha"], status) });
   }
+  for (const e of input.reuse ?? []) tree.push({ path: e.path, mode: e.mode, type: "blob", sha: e.sha });
   const t = await call(r, token, perm, {
     method: "POST",
     path: repoPath(r, "/git/trees"),

@@ -20,4 +20,5 @@ export const QueuedActionKind = {
   merge: 'merge',
   bug: 'bug',
   release: 'release',
+  app_bootstrap: 'app_bootstrap',
 } as const;

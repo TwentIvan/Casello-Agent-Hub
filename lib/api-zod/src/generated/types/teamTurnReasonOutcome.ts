@@ -12,4 +12,7 @@ export type TeamTurnReasonOutcome = typeof TeamTurnReasonOutcome[keyof typeof Te
 export const TeamTurnReasonOutcome = {
   approved: 'approved',
   rejected: 'rejected',
+  success: 'success',
+  failure: 'failure',
+  none: 'none',
 } as const;

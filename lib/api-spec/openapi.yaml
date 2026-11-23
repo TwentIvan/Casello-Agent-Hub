@@ -12544,11 +12544,14 @@ components:
 
     TeamTurnReason:
       type: object
+      description: >-
+        Motivo di un turno del capo. `outcome` vale approved|rejected per `decision` e success|failure|none per
+        `ci_finished`; `taskCodeId` è la riga del compito con codice (CI, PR, merge), `workId` il lavoro (rilascio).
       required: [type]
       properties:
         type:
           type: string
-          enum: [request, task_finished, decision, activation, restart]
+          enum: [request, task_finished, decision, activation, restart, ci_finished, pr_closed, merge_failed, release_failed]
         text:
           type: string
         taskId:
@@ -12557,9 +12560,17 @@ components:
           type: integer
         outcome:
           type: string
-          enum: [approved, rejected]
+          enum: [approved, rejected, success, failure, none]
         note:
           type: ["string", "null"]
+        taskCodeId:
+          type: integer
+        merged:
+          type: boolean
+        message:
+          type: string
+        workId:
+          type: integer
 
     TeamTurn:
       type: object

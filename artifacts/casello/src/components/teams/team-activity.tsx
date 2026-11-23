@@ -85,6 +85,14 @@ function reasonText(r: TeamTurnReason): string {
       return "Attivazione della squadra";
     case "restart":
       return "Ripresa dopo un riavvio";
+    case "ci_finished":
+      return r.outcome === "success" ? "CI verde" : r.outcome === "failure" ? "CI non superata" : "Nessuna CI sul branch";
+    case "pr_closed":
+      return r.merged ? "PR unita" : "PR chiusa senza merge";
+    case "merge_failed":
+      return r.message ? `Merge non riuscito: ${r.message}` : "Merge non riuscito";
+    case "release_failed":
+      return r.message ? `Porta in produzione non riuscita: ${r.message}` : "Porta in produzione non riuscita";
   }
 }
 

@@ -12,7 +12,9 @@ describe("migrazione 2026-11-17-istruzioni-personaggi", () => {
     // Schema precedente alla migrazione: si tolgono tabelle ed enum aggiunti (già riportati in docs/schema-casello.sql) e si ripristinano con lo script, due volte
     db = new PGlite();
     await db.exec(read("../../../docs/schema-casello.sql"));
+    // chat_attachments (allegati delle chat, migrazione successiva) usa l'enum instruction_conversation_kind
     await db.exec(`
+      DROP TABLE chat_attachments;
       DROP TABLE character_instructions;
       DROP TABLE character_instruction_proposals;
       DROP TYPE character_instruction_source;

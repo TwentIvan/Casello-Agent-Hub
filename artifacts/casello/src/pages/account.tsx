@@ -19,6 +19,7 @@ import { ApiTokensSection } from "@/components/account/api-tokens-section";
 import { MemoriesSection } from "@/components/account/memories-section";
 import { NodesSection } from "@/components/account/nodes-section";
 import { OAuthGrantsSection } from "@/components/account/oauth-grants-section";
+import { AuditEventsSection } from "@/components/account/audit-events-section";
 import { UserBudgetCard } from "@/components/budget/budget";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Badge } from "@/components/ui/badge";
@@ -229,6 +230,7 @@ export default function AccountPage() {
           <ApiTokensSection />
           <OAuthGrantsSection />
           <NodesSection />
+          <AuditEventsSection />
           {githubLinked && <InstallationsCard githubEnabled={me.data.githubEnabled} />}
         </>
       )}

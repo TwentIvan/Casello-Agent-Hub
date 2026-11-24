@@ -491,6 +491,45 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /account/audit-events:
+    get:
+      operationId: listAuditEvents
+      tags: [auth]
+      summary: Registro delle azioni dell'utente
+      description: >-
+        Eventi delle operazioni sensibili dell'utente (approvazioni, conferme, token, segreti, account AI, nodi,
+        accessi), dal più recente, con azione, oggetto, canale e IP; mai segreti, token né testi. Paginazione con
+        `before` (id dell'ultimo evento della pagina precedente). Conservati 365 giorni. Solo con il login: con un
+        token risponde 403.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - name: before
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Pagina di eventi
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditEventPage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
   /account/oauth-grants:
     get:
       operationId: listOAuthGrants
@@ -10507,6 +10546,47 @@ components:
         fallbackAiModelId:
           type: ["integer", "null"]
           description: Solo per claude_code_node, modello di ripiego, di un account non nodo dell'utente
+
+    AuditEvent:
+      type: object
+      required: [id, action, objectType, objectId, detail, via, tokenId, ip, createdAt]
+      properties:
+        id:
+          type: integer
+        action:
+          type: string
+          description: Codice dell'azione, es. api_token.create, pending_action.approve, auth.login
+        objectType:
+          type: ["string", "null"]
+        objectId:
+          type: ["string", "null"]
+        detail:
+          type: ["object", "null"]
+          additionalProperties: true
+          description: Pochi campi non sensibili scelti dal server (esito, ambiti, segreto cambiato sì/no)
+        via:
+          type: string
+          description: Canale (session, token, embed, mcp, alfred)
+        tokenId:
+          type: ["integer", "null"]
+          description: Token personale usato, se la richiesta è arrivata con un token
+        ip:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+
+    AuditEventPage:
+      type: object
+      required: [events, nextBefore]
+      properties:
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditEvent"
+        nextBefore:
+          type: ["integer", "null"]
+          description: Valore di `before` per la pagina successiva; null se non ce ne sono altre
 
     OAuthGrant:
       type: object

@@ -7,6 +7,7 @@ import { loadProposalSteps } from "../actions/proposal-exec";
 import { centralinoModelFor } from "../ai/default-model";
 import { modelChat, resolveModel } from "../ai/executor";
 import { logger } from "../logger";
+import { recordAudit } from "../audit/record";
 import { consumeActionDecision, consumeTeamMessage } from "../../middlewares/rate-limit";
 import { markRead, unreadBulletin } from "./events";
 import { INSTANCE_MESSAGES, InstanceError, getInstance, listInstances } from "./instances";
@@ -228,7 +229,27 @@ function decided(out: Awaited<ReturnType<typeof approveAction>>) {
   return { number: a.number, status: a.status, result: a.result, error: a.errorMessage };
 }
 
-export async function approvePending(userId: number, number: number, userToken?: string, exclude?: string[]) {
+/** Canale della decisione per il registro delle azioni: strumenti MCP del centralino o conferma a voce di Alfred. */
+export type DecisionVia = "mcp" | "alfred";
+
+async function auditDecision(userId: number, via: DecisionVia, approve: boolean, out: ReturnType<typeof decided>) {
+  await recordAudit({
+    userId,
+    action: approve ? "pending_action.approve" : "pending_action.reject",
+    objectType: "pending_action",
+    objectId: out.number,
+    detail: { status: out.status },
+    via,
+  });
+}
+
+export async function approvePending(
+  userId: number,
+  number: number,
+  userToken?: string,
+  exclude?: string[],
+  via: DecisionVia = "mcp",
+) {
   // Lo stesso budget di `POST /pending-actions/:number/approve|reject` (20/min per utente)
   if (!consumeActionDecision(userId)) throw new CentralinoError(CENTRALINO_MESSAGES.tooManyMessages);
   // Il token dell'utente serve (e viene passato) solo alle azioni il cui strumento ha identità `user`
@@ -240,17 +261,21 @@ export async function approvePending(userId: number, number: number, userToken?:
     .limit(1);
   if (!row) throw new CentralinoError(ACTION_MESSAGES.notFound);
   const pass = needsUserToken(row.kind, row.identity) && userToken !== undefined;
-  return decided(
+  const out = decided(
     await approveAction(userId, number, {
       ...(pass ? { userToken } : {}),
       ...(exclude && exclude.length > 0 ? { exclude } : {}),
     }),
   );
+  await auditDecision(userId, via, true, out);
+  return out;
 }
 
-export async function rejectPending(userId: number, number: number, note?: string) {
+export async function rejectPending(userId: number, number: number, note?: string, via: DecisionVia = "mcp") {
   if (!consumeActionDecision(userId)) throw new CentralinoError(CENTRALINO_MESSAGES.tooManyMessages);
-  return decided(await rejectAction(userId, number, note ?? null));
+  const out = decided(await rejectAction(userId, number, note ?? null));
+  await auditDecision(userId, via, false, out);
+  return out;
 }
 
 // --- Proposte multiple -------------------------------------------------------------------------------

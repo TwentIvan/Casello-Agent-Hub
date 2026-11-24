@@ -40,8 +40,11 @@ export function eligibleTriggerTools(agent: Agent, tools: AppTool[]): AppTool[] 
     .sort((a, b) => a.name.localeCompare(b.name, "it"));
 }
 
+type TriggerKindValue = Trigger["kind"];
+const DEFAULT_CRON = "0 8 * * 1-5";
+
 interface FormState {
-  kind: "poll" | "webhook";
+  kind: TriggerKindValue;
   name: string;
   instructions: string;
   toolId: string;
@@ -55,9 +58,10 @@ interface FormState {
   filterEquals: string;
   minutes: string;
   dedupHeader: string;
+  cron: string;
 }
 
-function emptyForm(kind: "poll" | "webhook"): FormState {
+function emptyForm(kind: TriggerKindValue): FormState {
   return {
     kind,
     name: "",
@@ -73,6 +77,7 @@ function emptyForm(kind: "poll" | "webhook"): FormState {
     filterEquals: "",
     minutes: String(DEFAULT_INTERVAL_MINUTES),
     dedupHeader: "",
+    cron: DEFAULT_CRON,
   };
 }
 
@@ -92,6 +97,7 @@ function formFromTrigger(trigger: Trigger): FormState {
     filterEquals: trigger.filter ? JSON.stringify(trigger.filter.equals) : "",
     minutes: trigger.intervalSeconds !== null ? String(Math.round(trigger.intervalSeconds / 60)) : String(DEFAULT_INTERVAL_MINUTES),
     dedupHeader: trigger.dedupHeader ?? "",
+    cron: trigger.cron ?? DEFAULT_CRON,
   };
 }
 
@@ -121,6 +127,12 @@ function buildInput(form: FormState): Built {
   const name = form.name.trim();
   if (name === "" || name.length > 80) return { ok: false, error: "Il nome va da 1 a 80 caratteri." };
   if (form.instructions.length > 2000) return { ok: false, error: "Le istruzioni sono al massimo 2000 caratteri." };
+  if (form.kind === "schedule") {
+    if (form.instructions.trim() === "") return { ok: false, error: "Scrivi le istruzioni: sono tutto ciò che l'agente riceve." };
+    const cron = form.cron.trim().split(/\s+/).join(" ");
+    if (cron.split(" ").length !== 5) return { ok: false, error: "L'orario cron ha 5 campi: minuto ora giorno mese giorno-della-settimana." };
+    return { ok: true, value: { kind: "schedule", name, instructions: form.instructions.trim(), cron } };
+  }
   const base = { kind: form.kind, name, instructions: blankToNull(form.instructions), idField: blankToNull(form.idField) };
   if (form.kind === "webhook") {
     return { ok: true, value: { ...base, dedupHeader: blankToNull(form.dedupHeader) } };
@@ -288,6 +300,7 @@ export function TriggerDialog({
 
   const pending = create.isPending || update.isPending;
   const isPoll = form.kind === "poll";
+  const isSchedule = form.kind === "schedule";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -297,7 +310,9 @@ export function TriggerDialog({
           <DialogDescription>
             {isPoll
               ? "Botcave interroga il tool a intervalli e avvia una run per ogni elemento nuovo. Al primo giro registra ciò che c'è già, senza avviare run."
-              : "Un indirizzo segreto: ogni chiamata ricevuta avvia una run dell'agente."}
+              : isSchedule
+                ? "Botcave avvia una run dell'agente a ogni scadenza dell'orario, con le istruzioni come input. Le run girano senza token utente: le azioni da confermare vanno in «Da confermare»."
+                : "Un indirizzo segreto: ogni chiamata ricevuta avvia una run dell'agente."}
           </DialogDescription>
         </DialogHeader>
 
@@ -312,6 +327,7 @@ export function TriggerDialog({
                 <SelectContent>
                   <SelectItem value="poll">Sorveglianza</SelectItem>
                   <SelectItem value="webhook">Webhook</SelectItem>
+                  <SelectItem value="schedule">Run programmata</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -324,12 +340,24 @@ export function TriggerDialog({
               rows={3}
               value={form.instructions}
               onChange={(event) => set("instructions")(event.target.value)}
-              placeholder="Cosa deve fare l'agente quando arriva un elemento"
+              placeholder={isSchedule ? "Cosa deve fare l'agente a ogni scadenza, ad esempio un report o un controllo" : "Cosa deve fare l'agente quando arriva un elemento"}
             />
-            <p className="text-xs text-ink-muted">Aprono l'input di ogni run; seguono i dati dell'elemento.</p>
+            <p className="text-xs text-ink-muted">
+              {isSchedule ? "Sono l'input di ogni run, con il nome e l'orario della scadenza." : "Aprono l'input di ogni run; seguono i dati dell'elemento."}
+            </p>
           </div>
 
-          {isPoll ? (
+          {isSchedule ? (
+            <TextField
+              id="trigger-cron"
+              label="Orario (cron, ora italiana)"
+              mono
+              value={form.cron}
+              onChange={set("cron")}
+              placeholder={DEFAULT_CRON}
+              hint="Minuto ora giorno mese giorno-della-settimana. Esempi: «0 8 * * 1-5» nei giorni feriali alle 8, «30 2 * * *» ogni notte alle 2:30, «0 */6 * * *» ogni 6 ore. Almeno 5 minuti tra due run."
+            />
+          ) : isPoll ? (
             <>
               <div className="space-y-1.5">
                 <Label htmlFor="trigger-tool">Tool</Label>

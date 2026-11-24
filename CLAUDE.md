@@ -66,6 +66,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
 - Inneschi: un agente parte da solo su un evento dell'app, senza modificare il server dell'app: sorveglianza (Botcave interroga a intervalli un
   tool L0, dedup, una run per elemento nuovo) e webhook in entrata con segreto nell'URL; carta «Inneschi» nella scheda agente, Lucius propone
   inneschi di sorveglianza (vedi "Inneschi").
+- Run programmate (issue #107): un innesco di tipo `schedule` avvia le run di un agente a orario (espressione cron nell'ora italiana), per report periodici e controlli notturni (vedi "Inneschi", «Run programmate»).
 - Alfred e i Responsabili: Alfred (voce, scritto e centralino `/mcp`) interpella il Responsabile di prodotto di ogni App con `chiedi_al_responsabile`, legge le App con `elenca_app` e l'esito con `leggi_run`; le scritture restano voci in «Da confermare» (vedi "Alfred (maggiordomo vocale)").
 - Proposte multiple (4a): un agente propone più creazioni o modifiche collegate con lo strumento interno `proponi`; in «Da confermare» compare una sola voce «Proposta» con i passi,
   approvabile in parte (caselle per passo), con riferimenti agli id creati dai passi precedenti; Alfred la legge passo per passo e la decide (vedi "Proposte multiple").
@@ -2100,6 +2101,17 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
 - Migrazione: `docs/migrations/2026-11-inneschi.sql` (additiva e idempotente, niente `-post`): enum `trigger_kind` e `trigger_status`, tabelle `agent_triggers` e `trigger_seen_items`,
   `runs.trigger_id` con indice, `character_proposals_kind_check` ricreato con `agent_trigger_create`. Da applicare su Neon PRIMA del merge (SQL completo in chat) e da segnalare nella
   PR; riportata in `docs/schema-casello.sql`. Nessuna variabile nuova.
+- **Run programmate** (issue #107, `lib/triggers/cron.ts`, `schedule.ts`): terzo tipo di innesco `schedule` con `cron` (5 campi: minuto, ora, giorno, mese, giorno della settimana; `*`, numeri,
+  intervalli, elenchi e passi; giorno del mese e della settimana entrambi ristretti = basta uno dei due) valutato nell'ora italiana (`Europe/Rome`; un orario nel salto di primavera scatta all'ora spostata, uno ripetuto
+  d'autunno una volta); `next_poll_at` è la prossima run. Validazione (`validateTriggerConfig`): istruzioni obbligatorie (sono tutto l'input), nessun campo di `poll`/`webhook` («campi non ammessi…»), `cron` solo per
+  `schedule`, espressione valida («espressione cron non valida…»), che scatta («l'espressione cron non scatta mai») e con almeno 5 minuti tra due run sulle prossime 50 occorrenze («run programmate troppo frequenti…»).
+  Nasce in pausa; «Attiva»/`resume` e un cambio di `cron` fissano la prossima occorrenza da adesso. Lo stesso controllo ogni 15 s della sorveglianza (`pollDueTriggers`) chiama `fireSchedule`: presa in carico con UPDATE
+  condizionato a scadenza e `cron` letti (una run per scadenza anche con più container) che sposta subito `next_poll_at` alla successiva, poi come `POST /agents/:id/runs` (`queueTriggerRun` senza chiave, `createQueuedRun`
+  con `trigger_id`); input «<istruzioni>\n\nRun programmata «<nome>» del <gg/mm/aaaa hh:mm> (ora italiana).». Nessun utente né token utente: i tool `user` rispondono «token utente mancante», le L2 (e le L1 con la conferma
+  delle scritture) vanno in «Da confermare» con le loro notifiche. Agente non attivo o senza modello → scadenza saltata; tetto → saltata con «in attesa: tetto di spesa raggiunto»; coda piena → saltata con «in attesa:
+  troppe run in coda per l'agente»; errore inatteso → «giro non riuscito…», dopo 10 di fila `error`. Le scadenze perse (server fermo, pausa) non si recuperano: dopo un fermo ne vale una sola. «Prova» resta solo per la
+  sorveglianza. Console: tipo «Run programmata» nel dialogo con il campo «Orario (cron, ora italiana)» ed esempi, riga con l'espressione e «prossima run». Migrazione `docs/migrations/2026-11-24-run-programmate.sql`
+  (additiva, la applica il deploy): valore `schedule` di `trigger_kind`, colonna `agent_triggers.cron`, CHECK `agent_triggers_schedule_check`. Nessuna variabile nuova.
 - The Hub Up: i passi della §10 della spec (innesco per email e per brief, un agente alla volta, tolte le variabili `BOTCAVE_AGENT_*` da Coolify) si fanno dopo il deploy, ognuno con la
   conferma di Ivan.
 

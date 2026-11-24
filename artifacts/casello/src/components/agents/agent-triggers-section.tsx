@@ -38,6 +38,25 @@ const LED: Record<Trigger["status"], { state: LedState; label: string }> = {
   error: { state: "ko", label: "In errore" },
 };
 
+const KIND_LABEL: Record<Trigger["kind"], string> = {
+  poll: "Sorveglianza",
+  webhook: "Webhook",
+  schedule: "Run programmata",
+};
+
+const SCHEDULED_FORMAT = new Intl.DateTimeFormat("it-IT", {
+  timeZone: "Europe/Rome",
+  day: "2-digit",
+  month: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
+/** Data e ora italiane della prossima run programmata. */
+function formatScheduled(iso: string): string {
+  return SCHEDULED_FORMAT.format(new Date(iso));
+}
+
 function intervalLabel(seconds: number): string {
   const minutes = Math.round(seconds / 60);
   return minutes >= 60 && minutes % 60 === 0 ? `ogni ${minutes / 60} h` : `ogni ${minutes} min`;
@@ -86,6 +105,8 @@ function TriggerRow({
   const [showRuns, setShowRuns] = useState(false);
   const led = LED[trigger.status];
   const isPoll = trigger.kind === "poll";
+  const isWebhook = trigger.kind === "webhook";
+  const isSchedule = trigger.kind === "schedule";
   const toggleLabel = trigger.status === "active" ? "Pausa" : trigger.status === "error" ? "Riprendi" : "Attiva";
   return (
     <li className="space-y-2 py-3">
@@ -96,14 +117,21 @@ function TriggerRow({
             <Led state={led.state} label={led.label} />
           </div>
           <p className="text-xs text-ink-muted">
-            {isPoll ? "Sorveglianza" : "Webhook"}
+            {KIND_LABEL[trigger.kind]}
             {isPoll && trigger.intervalSeconds !== null && ` · ${intervalLabel(trigger.intervalSeconds)}`}
+            {isSchedule && trigger.cron && (
+              <>
+                {" · "}
+                <span className="font-mono">{trigger.cron}</span>
+                {trigger.status === "active" && trigger.nextPollAt && ` · prossima run ${formatScheduled(trigger.nextPollAt)}`}
+              </>
+            )}
             {" · "}
-            {isPoll ? "ultimo giro" : "ultimo evento"}{" "}
+            {isWebhook ? "ultimo evento" : isSchedule ? "ultima run" : "ultimo giro"}{" "}
             {trigger.lastPolledAt ? formatRelative(trigger.lastPolledAt) : "mai"}
             {" · "}
             <span className="font-mono tabular-nums">{trigger.runsCreated}</span> run create
-            {!isPoll && trigger.signingSecretSet && " · firma attiva"}
+            {isWebhook && trigger.signingSecretSet && " · firma attiva"}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -129,7 +157,7 @@ function TriggerRow({
           )}
         </p>
       )}
-      {!isPoll && (
+      {isWebhook && (
         <div className="flex flex-wrap gap-2">
           <Button size="sm" variant="outline" disabled={busy} onClick={onRegenerate}>
             Rigenera indirizzo

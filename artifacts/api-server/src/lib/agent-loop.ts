@@ -44,7 +44,8 @@ export interface LoopState {
 }
 
 export interface StepRecord {
-  type: "model" | "tool" | "queued";
+  /** `message`: istruzione dell'utente consegnata durante la run (issue #119) */
+  type: "model" | "tool" | "queued" | "message";
   toolName?: string;
   args?: unknown;
   ok: boolean;
@@ -70,6 +71,22 @@ export type LoopActivity =
   | { type: "tool_start"; callId: string; toolName: string }
   | { type: "tool_end"; callId: string };
 
+/** Istruzione mandata dall'utente a una run in corso (issue #119). */
+export interface UserInstruction {
+  id: number;
+  content: string;
+}
+
+/** Testo con cui un'istruzione dell'utente arriva al modello: non concede permessi, i livelli dei tool restano. */
+export function instructionMessage(content: string): string {
+  return `Istruzione dell'utente arrivata mentre lavori (tienine conto dal prossimo passo):\n${content}`;
+}
+
+/** Nota del passo `message` nella timeline. */
+export function instructionNote(id: number): string {
+  return `istruzione dell'utente #${id} consegnata`;
+}
+
 export type QueueActionResult = { ok: true; number: number } | { ok: false; message: string };
 
 export interface LoopDeps {
@@ -91,6 +108,12 @@ export interface LoopDeps {
   signal?: AbortSignal;
   /** Avvisi sull'attività in corso; sincrono e senza effetti sul ciclo (un errore si ignora) */
   onActivity?: (activity: LoopActivity) => void;
+  /**
+   * Istruzioni dell'utente arrivate durante la run (issue #119), lette tra un passo e l'altro e prima della risposta
+   * finale; chi le restituisce le segna consegnate. Diventano messaggi `user` prima della chiamata successiva al modello.
+   * Un errore si ignora (si riprova al passo dopo).
+   */
+  takeInstructions?: () => Promise<UserInstruction[]>;
 }
 
 export type LoopOutcome =
@@ -186,6 +209,22 @@ export async function runAgentLoop(initial: LoopState, deps: LoopDeps): Promise<
     }
   };
 
+  // Inserisce le istruzioni dell'utente arrivate nel frattempo; restituisce quante sono
+  const deliverInstructions = async (): Promise<number> => {
+    if (!deps.takeInstructions) return 0;
+    let items: UserInstruction[];
+    try {
+      items = await deps.takeInstructions();
+    } catch {
+      return 0;
+    }
+    for (const item of items) {
+      state.messages.push({ role: "user", content: instructionMessage(item.content) });
+      await deps.onStep({ type: "message", ok: true, durationMs: 0, note: instructionNote(item.id) });
+    }
+    return items.length;
+  };
+
   const cancelled = (): LoopOutcome | null =>
     deps.signal?.aborted ? finish({ type: "cancelled", state }) : null;
 
@@ -272,6 +311,8 @@ export async function runAgentLoop(initial: LoopState, deps: LoopDeps): Promise<
     // 2. Limiti, controllati prima di ogni chiamata al modello
     const stopped = cancelled();
     if (stopped) return stopped;
+    // Istruzioni dell'utente arrivate durante i passi: entrano prima della prossima chiamata
+    await deliverInstructions();
     syncActive();
     if (state.rounds >= limits.maxRounds) {
       return finish({ type: "failed", error: `limite di ${limits.maxRounds} giri di strumenti raggiunto`, state });
@@ -309,6 +350,8 @@ export async function runAgentLoop(initial: LoopState, deps: LoopDeps): Promise<
       }
       const content = reply.content ?? "";
       state.messages.push({ role: "assistant", content });
+      // Un'istruzione arrivata durante l'ultima chiamata: il modello la riceve e continua invece di chiudere
+      if (!deps.signal?.aborted && (await deliverInstructions()) > 0) continue;
       return finish({ type: "finished", content, state });
     }
 

@@ -165,6 +165,9 @@ const byUser = (req: Request) => (req.userId !== undefined ? `user:${req.userId}
 export const issueCreateRateLimit = rateLimit({ limit: 5, windowMs: 60_000, key: byUser });
 export const issueRefreshRateLimit = rateLimit({ limit: 6, windowMs: 60_000, key: byUser });
 
+// Istruzioni a una run in corso (issue #119): 10 al minuto per utente.
+export const runMessageRateLimit = rateLimit({ limit: 10, windowMs: 60_000, key: byUser });
+
 // Aggiornamento del catalogo dal server MCP di un'app: 6 al minuto per utente.
 export const mcpRefreshRateLimit = rateLimit({ limit: 6, windowMs: 60_000, key: byUser });
 // «Prova» degli inneschi: chiama il tool dell'app, 6 al minuto per utente (configurazione e innesco salvato insieme).

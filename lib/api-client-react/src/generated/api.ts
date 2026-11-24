@@ -236,6 +236,8 @@ import type {
   RejectActionRequest,
   Run,
   RunClientResult,
+  RunMessage,
+  RunMessageCreate,
   RunStep,
   RunTrigger,
   SendLeadMessageParams,
@@ -9052,6 +9054,156 @@ export const useCancelRun = <TError = ErrorType<NotFoundResponse | ConflictRespo
         TContext
       > => {
       return useMutation(getCancelRunMutationOptions(options));
+    }
+
+export const getListRunMessagesUrl = (id: number,) => {
+
+
+
+
+  return `/api/runs/${id}/messages`
+}
+
+/**
+ * Istruzioni mandate dall'utente alla run durante l'esecuzione, dalla prima, con lo stato: pending (in attesa del prossimo passo), delivered (consegnata al modello), dropped (la run è finita prima di consegnarla).
+ * @summary Istruzioni mandate a una run
+ */
+export const listRunMessages = async (id: number, options?: RequestInit): Promise<RunMessage[]> => {
+
+  return customFetch<RunMessage[]>(getListRunMessagesUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListRunMessagesQueryKey = (id: number,) => {
+    return [
+    `/api/runs/${id}/messages`
+    ] as const;
+    }
+
+
+export const getListRunMessagesQueryOptions = <TData = Awaited<ReturnType<typeof listRunMessages>>, TError = ErrorType<NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listRunMessages>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListRunMessagesQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listRunMessages>>> = ({ signal }) => listRunMessages(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listRunMessages>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListRunMessagesQueryResult = NonNullable<Awaited<ReturnType<typeof listRunMessages>>>
+export type ListRunMessagesQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Istruzioni mandate a una run
+ */
+
+export function useListRunMessages<TData = Awaited<ReturnType<typeof listRunMessages>>, TError = ErrorType<NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listRunMessages>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListRunMessagesQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateRunMessageUrl = (id: number,) => {
+
+
+
+
+  return `/api/runs/${id}/messages`
+}
+
+/**
+ * Solo con la run running ed eseguita dal ciclo cloud (non da Claude Code sul nodo). Il ciclo dell'agente legge le istruzioni tra un passo e l'altro (e prima di chiudere con la risposta finale) e le inserisce come messaggio dell'utente prima della chiamata successiva al modello, senza perdere i passi già eseguiti. L'istruzione non concede permessi: i tool L2 restano in «Da confermare», gli L3 non si offrono. Testo 1..2000 caratteri, al più 5 istruzioni in attesa e 20 in tutto per run (409), 10 al minuto per utente (429).
+ * @summary Manda un'istruzione a una run in corso
+ */
+export const createRunMessage = async (id: number,
+    runMessageCreate: RunMessageCreate, options?: RequestInit): Promise<RunMessage> => {
+
+  return customFetch<RunMessage>(getCreateRunMessageUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(runMessageCreate)
+  }
+);}
+
+
+
+
+export const getCreateRunMessageMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createRunMessage>>, TError,{id: number;data: BodyType<RunMessageCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createRunMessage>>, TError,{id: number;data: BodyType<RunMessageCreate>}, TContext> => {
+
+const mutationKey = ['createRunMessage'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createRunMessage>>, {id: number;data: BodyType<RunMessageCreate>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  createRunMessage(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateRunMessageMutationResult = NonNullable<Awaited<ReturnType<typeof createRunMessage>>>
+    export type CreateRunMessageMutationBody = BodyType<RunMessageCreate>
+    export type CreateRunMessageMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Manda un'istruzione a una run in corso
+ */
+export const useCreateRunMessage = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createRunMessage>>, TError,{id: number;data: BodyType<RunMessageCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createRunMessage>>,
+        TError,
+        {id: number;data: BodyType<RunMessageCreate>},
+        TContext
+      > => {
+      return useMutation(getCreateRunMessageMutationOptions(options));
     }
 
 export const getSubmitRunClientResultUrl = (id: number,) => {

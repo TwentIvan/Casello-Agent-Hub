@@ -13,8 +13,13 @@ import {
   CancelRunResponse,
   SubmitRunClientResultParams,
   SubmitRunClientResultBody,
+  ListRunMessagesParams,
+  ListRunMessagesResponse,
+  CreateRunMessageParams,
+  CreateRunMessageResponse,
 } from "@workspace/api-zod";
-import { cancelRateLimit } from "../middlewares/rate-limit";
+import { cancelRateLimit, runMessageRateLimit } from "../middlewares/rate-limit";
+import { RUN_MESSAGE_MESSAGES, createRunMessage, listRunMessages } from "../lib/run-messages";
 import { cancelRun } from "../lib/run-executor";
 import { CLIENT_ACTION_MESSAGES, CLIENT_RESULT_MAX_CHARS, submitClientResult } from "../lib/client-actions";
 import { readRunActivity } from "../lib/live/run-activity";
@@ -96,6 +101,39 @@ router.post("/runs/:id/cancel", cancelRateLimit, async (req, res) => {
   }
   const [publicRun] = await toPublicRuns([result.run]);
   res.json(CancelRunResponse.parse(publicRun));
+});
+
+// Istruzioni a una run in corso (issue #119): il ciclo dell'agente le legge tra un passo e l'altro.
+router.get("/runs/:id/messages", async (req, res) => {
+  const { id } = parseRequest(ListRunMessagesParams, req.params);
+  const [run] = await db.select({ id: runsTable.id }).from(runsTable).where(eq(runsTable.id, id)).limit(1);
+  if (!run) {
+    res.status(404).json({ error: RUN_MESSAGE_MESSAGES.runNotFound });
+    return;
+  }
+  res.json(ListRunMessagesResponse.parse(await listRunMessages(id)));
+});
+
+// La lunghezza la controlla il servizio dopo la pulizia del testo, con il suo messaggio
+const RunMessageBody = z.object({ content: z.string().max(10_000) });
+
+router.post("/runs/:id/messages", runMessageRateLimit, async (req, res) => {
+  const { id } = parseRequest(CreateRunMessageParams, req.params);
+  const { content } = parseRequest(RunMessageBody, req.body);
+  const result = await createRunMessage(id, req.userId ?? null, content);
+  if (result.kind === "not_found") {
+    res.status(404).json({ error: RUN_MESSAGE_MESSAGES.runNotFound });
+    return;
+  }
+  if (result.kind === "invalid") {
+    res.status(400).json({ error: result.message });
+    return;
+  }
+  if (result.kind === "conflict") {
+    res.status(409).json({ error: result.message });
+    return;
+  }
+  res.status(201).json(CreateRunMessageResponse.parse(result.message));
 });
 
 // Esito di un'azione ui eseguita dal client (protocollo in lib/client-actions.ts): una volta sola, solo per

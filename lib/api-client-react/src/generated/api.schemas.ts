@@ -1598,7 +1598,7 @@ export interface RunStep {
   id: number;
   runId: number;
   position: number;
-  /** model (chiamata al modello), tool (chiamata a un tool) o queued (azione accodata per la conferma dell'utente: args = { numero, destinatario, sintesi, argomenti } con gli argomenti sensibili oscurati) */
+  /** model (chiamata al modello), tool (chiamata a un tool), queued (azione accodata per la conferma dell'utente: args = { numero, destinatario, sintesi, argomenti } con gli argomenti sensibili oscurati) o message (istruzione dell'utente consegnata durante la run, con la nota) */
   type: string;
   /** @nullable */
   toolName?: string | null;
@@ -1618,6 +1618,33 @@ export interface RunStep {
      */
   note?: string | null;
   createdAt: string;
+}
+
+export type RunMessageStatus = typeof RunMessageStatus[keyof typeof RunMessageStatus];
+
+
+export const RunMessageStatus = {
+  pending: 'pending',
+  delivered: 'delivered',
+  dropped: 'dropped',
+} as const;
+
+export interface RunMessage {
+  id: number;
+  runId: number;
+  content: string;
+  status: RunMessageStatus;
+  createdAt: string;
+  /** @nullable */
+  deliveredAt: string | null;
+}
+
+export interface RunMessageCreate {
+  /**
+     * @minLength 1
+     * @maxLength 2000
+     */
+  content: string;
 }
 
 export interface RunTrigger {

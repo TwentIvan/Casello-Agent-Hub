@@ -3508,7 +3508,7 @@ export const ListRunStepsResponseItem = zod.object({
   "id": zod.number(),
   "runId": zod.number(),
   "position": zod.number(),
-  "type": zod.string().describe('model (chiamata al modello), tool (chiamata a un tool) o queued (azione accodata per la conferma dell\'utente: args = { numero, destinatario, sintesi, argomenti } con gli argomenti sensibili oscurati)'),
+  "type": zod.string().describe('model (chiamata al modello), tool (chiamata a un tool), queued (azione accodata per la conferma dell\'utente: args = { numero, destinatario, sintesi, argomenti } con gli argomenti sensibili oscurati) o message (istruzione dell\'utente consegnata durante la run, con la nota)'),
   "toolName": zod.string().nullish(),
   "args": zod.record(zod.string(), zod.unknown()).nullish(),
   "ok": zod.boolean().nullish(),
@@ -3773,6 +3773,51 @@ export const CancelRunResponse = zod.object({
   "since": zod.coerce.date()
 })).describe('Attività in corso insieme (al più 20); vuoto tra un passo e l\'altro')
 }),zod.null()]).optional().describe('Cosa sta facendo ora la run (chiamata al modello, tool in esecuzione): solo nel dettaglio (GET \/runs\/{id}), solo mentre la run è running o awaiting_client e la esegue il processo che risponde; altrimenti null')
+})
+
+
+/**
+ * Istruzioni mandate dall'utente alla run durante l'esecuzione, dalla prima, con lo stato: pending (in attesa del prossimo passo), delivered (consegnata al modello), dropped (la run è finita prima di consegnarla).
+ * @summary Istruzioni mandate a una run
+ */
+export const ListRunMessagesParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListRunMessagesResponseItem = zod.object({
+  "id": zod.number(),
+  "runId": zod.number(),
+  "content": zod.string(),
+  "status": zod.enum(['pending', 'delivered', 'dropped']),
+  "createdAt": zod.coerce.date(),
+  "deliveredAt": zod.coerce.date().nullable()
+})
+export const ListRunMessagesResponse = zod.array(ListRunMessagesResponseItem)
+
+
+/**
+ * Solo con la run running ed eseguita dal ciclo cloud (non da Claude Code sul nodo). Il ciclo dell'agente legge le istruzioni tra un passo e l'altro (e prima di chiudere con la risposta finale) e le inserisce come messaggio dell'utente prima della chiamata successiva al modello, senza perdere i passi già eseguiti. L'istruzione non concede permessi: i tool L2 restano in «Da confermare», gli L3 non si offrono. Testo 1..2000 caratteri, al più 5 istruzioni in attesa e 20 in tutto per run (409), 10 al minuto per utente (429).
+ * @summary Manda un'istruzione a una run in corso
+ */
+export const CreateRunMessageParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const createRunMessageBodyContentMax = 2000;
+
+
+
+export const CreateRunMessageBody = zod.object({
+  "content": zod.string().min(1).max(createRunMessageBodyContentMax)
+})
+
+export const CreateRunMessageResponse = zod.object({
+  "id": zod.number(),
+  "runId": zod.number(),
+  "content": zod.string(),
+  "status": zod.enum(['pending', 'delivered', 'dropped']),
+  "createdAt": zod.coerce.date(),
+  "deliveredAt": zod.coerce.date().nullable()
 })
 
 

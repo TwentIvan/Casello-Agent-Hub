@@ -31,6 +31,8 @@ import {
   type RunOptions,
 } from "./run-executor";
 import { readRunActivity } from "./live/run-activity";
+import { RUN_MESSAGE_MAX_PENDING, RUN_MESSAGE_MESSAGES, createRunMessage, listRunMessages } from "./run-messages";
+import { instructionMessage } from "./agent-loop";
 import { clearUserToken, getUserToken, setUserToken } from "./user-tokens";
 import { CLIENT_ACTION_MESSAGES, CLIENT_RESULT_HEADER, requestClientAction, submitClientResult } from "./client-actions";
 import { toCatalogTool } from "./tools/catalog";
@@ -965,6 +967,68 @@ describe("attività in corso delle run (issue #118)", () => {
     await running;
     expect((await getRun(id)).status).toBe("succeeded");
     expect(readRunActivity(id)).toBeNull();
+  });
+});
+
+describe("istruzioni a una run in corso (issue #119)", () => {
+  async function waitFor(cond: () => boolean, ms = 3_000) {
+    const t0 = Date.now();
+    while (!cond()) {
+      if (Date.now() - t0 > ms) throw new Error("timeout nell'attesa");
+      await new Promise((r) => setTimeout(r, 10));
+    }
+  }
+
+  it("un'istruzione mandata mentre lavora arriva al modello dopo il passo in corso, senza perdere i passi", async () => {
+    const id = await seedRun(GET_ITEM);
+    llmReplies = [toolCallReply("get_item", { id: "1" }), textReply("Fatto con la correzione.")];
+    appDelayMs = 300;
+    const running = startWithToken(id, "t");
+    await waitFor(() => appRequests.length === 1);
+
+    const created = await createRunMessage(id, null, "  Leggi anche l'elemento 2  ");
+    expect(created).toMatchObject({ kind: "created", message: { status: "pending", content: "Leggi anche l'elemento 2" } });
+    await running;
+
+    const run = await getRun(id);
+    expect(run.status).toBe("succeeded");
+    const second = llmRequests[1].messages;
+    expect(second.at(-2)).toMatchObject({ role: "tool", tool_call_id: "call_1" });
+    expect(second.at(-1)).toEqual({ role: "user", content: instructionMessage("Leggi anche l'elemento 2") });
+    const steps = await getSteps(id);
+    expect(steps.map((s) => s.type)).toEqual(["model", "tool", "message", "model"]);
+    const [message] = await listRunMessages(id);
+    expect(message).toMatchObject({ status: "delivered" });
+    expect(message!.deliveredAt).not.toBeNull();
+  });
+
+  it("solo con la run in corso: pending, conclusa e inesistente rifiutate; testo vuoto o troppo lungo", async () => {
+    const id = await seedRun(GET_ITEM);
+    expect(await createRunMessage(id, null, "ciao")).toEqual({ kind: "conflict", message: RUN_MESSAGE_MESSAGES.notRunning });
+    expect(await createRunMessage(9999, null, "ciao")).toEqual({ kind: "not_found" });
+    await db.update(runsTable).set({ status: "running" }).where(eq(runsTable.id, id));
+    expect(await createRunMessage(id, null, " \u0001 ")).toEqual({ kind: "invalid", message: RUN_MESSAGE_MESSAGES.empty });
+    expect(await createRunMessage(id, null, "x".repeat(2_001))).toEqual({ kind: "invalid", message: RUN_MESSAGE_MESSAGES.tooLong });
+    for (let i = 0; i < RUN_MESSAGE_MAX_PENDING; i++) {
+      expect((await createRunMessage(id, null, `istruzione ${i}`)).kind).toBe("created");
+    }
+    expect(await createRunMessage(id, null, "una di troppo")).toEqual({
+      kind: "conflict",
+      message: RUN_MESSAGE_MESSAGES.tooManyPending,
+    });
+  });
+
+  it("istruzioni non consegnate: dropped all'annullamento e al riavvio", async () => {
+    const id = await seedRun(GET_ITEM);
+    await db.update(runsTable).set({ status: "running" }).where(eq(runsTable.id, id));
+    await createRunMessage(id, null, "prima");
+    await cancelRun(id);
+    expect((await listRunMessages(id)).map((m) => m.status)).toEqual(["dropped"]);
+
+    const [run2] = await db.insert(runsTable).values({ agentId: (await getRun(id)).agentId, input: "x", status: "running" }).returning();
+    await createRunMessage(run2!.id, null, "seconda");
+    await failInterruptedRuns();
+    expect((await listRunMessages(run2!.id)).map((m) => m.status)).toEqual(["dropped"]);
   });
 });
 

@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Link } from "wouter";
-import { Bot, Check, Wrench, X } from "lucide-react";
+import { Bot, Check, MessageSquare, Wrench, X } from "lucide-react";
 import {
   type Run,
   type RunStep,
@@ -61,9 +61,17 @@ function StepRow({ step }: { step: StepView }) {
     <li className="space-y-1 py-3">
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <span className="w-6 text-right text-xs font-mono tabular-nums text-muted-foreground">{step.position + 1}</span>
-        {isTool ? <Wrench className="size-4 text-muted-foreground" /> : <Bot className="size-4 text-muted-foreground" />}
+        {step.type === "message" ? (
+          <MessageSquare className="size-4 text-muted-foreground" />
+        ) : isTool ? (
+          <Wrench className="size-4 text-muted-foreground" />
+        ) : (
+          <Bot className="size-4 text-muted-foreground" />
+        )}
         {queued?.numero != null ? (
           <QueuedLink numero={queued.numero} />
+        ) : step.type === "message" ? (
+          <span className="font-medium">Istruzione</span>
         ) : (
           <span className="font-medium">{step.type === "queued" ? "Accodata" : isTool ? "Tool" : "Modello"}</span>
         )}

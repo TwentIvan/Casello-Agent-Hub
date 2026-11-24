@@ -38,6 +38,7 @@ import { runBudgetBlock } from "./budget";
 import { delegateTurn } from "./node-turns/delegate";
 import { logger } from "./logger";
 import { publishRunChange } from "./live/events";
+import { dropPendingRunMessages, takeRunInstructions } from "./run-messages";
 import { applyRunActivity, beginRunActivity, endRunActivity } from "./live/run-activity";
 import { loopModelCallError, modelChatDeps, newUsage, stepWriter, type LoopUsage } from "./loop-wiring";
 import { ARCHITECTURE_TOOL_NAME, architecturePromptBlock, architectureTool, handleReadArchitecture } from "./architecture/tool";
@@ -142,6 +143,7 @@ export async function cancelRun(runId: number): Promise<CancelRunResult> {
   }
   activeRuns.get(runId)?.abort();
   clearUserToken(runId);
+  await dropPendingRunMessages([runId]).catch(() => undefined);
   publishRunChange(run.id, run.agentId);
   return { kind: "cancelled", run };
 }
@@ -580,6 +582,8 @@ async function driveCloudLoop(
     limits: loopLimits,
     signal: abort,
     onActivity: runActivitySink(ctx.run),
+    // Istruzioni dell'utente mandate durante la run (issue #119), lette tra un passo e l'altro
+    takeInstructions: () => takeRunInstructions(runId, ctx.run.agentId),
   });
 
   switch (outcome.type) {
@@ -839,6 +843,10 @@ export async function startRun(runId: number, opts: RunOptions = {}): Promise<vo
   } finally {
     endRunActivity(runId);
     untrackRun(runId, abort);
+    // Istruzioni arrivate dopo l'ultimo passo: la run è finita, non si consegnano più
+    await dropPendingRunMessages([runId]).catch((err: unknown) =>
+      logger.error({ runId, error: errorMessage(err) }, "Istruzioni non consegnate non chiuse"),
+    );
   }
 }
 
@@ -874,5 +882,10 @@ export async function failInterruptedRuns(): Promise<{ failed: number; cancelled
        set status = 'cancelled', error_message = ${PAUSE_REPLACED_MESSAGE}, finished_at = now()
      where status = 'awaiting_client'
     returning id`);
+  // Istruzioni ancora in attesa per le run chiuse qui: non arriveranno più
+  const closedIds = [...failed.rows, ...clientWait.rows, ...userTokenLost.rows, ...cancelled.rows].map((r) =>
+    Number((r as { id: unknown }).id),
+  );
+  await dropPendingRunMessages(closedIds);
   return { failed: failed.rows.length + clientWait.rows.length, cancelled: cancelled.rows.length, userTokenLost: userTokenLost.rows.length };
 }

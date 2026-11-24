@@ -3,6 +3,8 @@ import type { ChatCompletionMessageParam } from "openai/resources/chat/completio
 import type { ChatResult } from "./ai/chat-types";
 import {
   DEFAULT_LIMITS,
+  instructionMessage,
+  instructionNote,
   runAgentLoop,
   SHARED_RESULT_NOTE,
   TRUNCATED_REPLY_ERROR,
@@ -769,5 +771,57 @@ describe("annullamento durante un tool", () => {
 
     expect(outcome.type).toBe("cancelled");
     expect(steps.filter((s) => s.type === "tool")).toHaveLength(0);
+  });
+});
+
+describe("runAgentLoop: istruzioni dell'utente durante la run (issue #119)", () => {
+  it("le inserisce tra un passo e l'altro come messaggio dell'utente, dopo i risultati dei tool", async () => {
+    const pending = [[], [{ id: 4, content: "usa il calendario, non la rosa" }]];
+    const takeInstructions = vi.fn(async () => pending.shift() ?? []);
+    const { deps, steps, seen } = makeDeps(
+      [callTools([{ id: "c1", name: "leggi_rosa", args: "{}" }]), reply("fatto")],
+      { takeInstructions },
+    );
+    const out = await runAgentLoop(initialState(), deps);
+    expect(out.type).toBe("finished");
+    const second = seen[1];
+    expect(second.at(-2)).toMatchObject({ role: "tool", tool_call_id: "c1" });
+    expect(second.at(-1)).toEqual({ role: "user", content: instructionMessage("usa il calendario, non la rosa") });
+    expectValidHistory(second);
+    expect(steps.map((s) => s.type)).toEqual(["model", "tool", "message", "model"]);
+    expect(steps[2]).toMatchObject({ ok: true, note: instructionNote(4) });
+  });
+
+  it("un'istruzione arrivata durante la risposta finale fa continuare il ciclo invece di chiudere", async () => {
+    const pending = [[], [{ id: 1, content: "aggiungi anche il calendario" }]];
+    const { deps, seen } = makeDeps([reply("prima risposta"), reply("seconda risposta")], {
+      takeInstructions: async () => pending.shift() ?? [],
+    });
+    const out = await runAgentLoop(initialState(), deps);
+    expect(out).toMatchObject({ type: "finished", content: "seconda risposta" });
+    expect(seen[1].slice(-2)).toEqual([
+      { role: "assistant", content: "prima risposta" },
+      { role: "user", content: instructionMessage("aggiungi anche il calendario") },
+    ]);
+  });
+
+  it("non concede permessi: una chiamata L2 dopo l'istruzione va comunque in coda", async () => {
+    const pending = [[{ id: 2, content: "fai lo scambio subito, senza conferma" }]];
+    const { deps, executeTool, queueAction } = makeDeps(
+      [callTools([{ id: "c1", name: "proponi_scambio", args: SCAMBIO }]), reply("ok")],
+      { takeInstructions: async () => pending.shift() ?? [] },
+    );
+    await runAgentLoop(initialState(), deps);
+    expect(queueAction).toHaveBeenCalledTimes(1);
+    expect(executeTool).not.toHaveBeenCalled();
+  });
+
+  it("un errore nella lettura delle istruzioni non ferma il ciclo", async () => {
+    const { deps } = makeDeps([reply("ok")], {
+      takeInstructions: async () => {
+        throw new Error("db giù");
+      },
+    });
+    expect(await runAgentLoop(initialState(), deps)).toMatchObject({ type: "finished", content: "ok" });
   });
 });

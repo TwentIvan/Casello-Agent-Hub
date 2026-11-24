@@ -2982,6 +2982,61 @@ paths:
         "409":
           $ref: "#/components/responses/Conflict"
 
+  /runs/{id}/messages:
+    get:
+      operationId: listRunMessages
+      tags: [runs]
+      summary: Istruzioni mandate a una run
+      description: >-
+        Istruzioni mandate dall'utente alla run durante l'esecuzione, dalla prima, con lo stato: pending (in attesa del
+        prossimo passo), delivered (consegnata al modello), dropped (la run è finita prima di consegnarla).
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Istruzioni della run
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RunMessage"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: createRunMessage
+      tags: [runs]
+      summary: Manda un'istruzione a una run in corso
+      description: >-
+        Solo con la run running ed eseguita dal ciclo cloud (non da Claude Code sul nodo). Il ciclo dell'agente legge le
+        istruzioni tra un passo e l'altro (e prima di chiudere con la risposta finale) e le inserisce come messaggio
+        dell'utente prima della chiamata successiva al modello, senza perdere i passi già eseguiti. L'istruzione non
+        concede permessi: i tool L2 restano in «Da confermare», gli L3 non si offrono. Testo 1..2000 caratteri, al più 5
+        istruzioni in attesa e 20 in tutto per run (409), 10 al minuto per utente (429).
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RunMessageCreate"
+      responses:
+        "201":
+          description: Istruzione in attesa di consegna
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunMessage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
   /runs/{id}/client-result:
     post:
       operationId: submitRunClientResult
@@ -8662,9 +8717,9 @@ components:
         type:
           type: string
           description: >-
-            model (chiamata al modello), tool (chiamata a un tool) o queued (azione accodata per la
+            model (chiamata al modello), tool (chiamata a un tool), queued (azione accodata per la
             conferma dell'utente: args = { numero, destinatario, sintesi, argomenti } con gli argomenti
-            sensibili oscurati)
+            sensibili oscurati) o message (istruzione dell'utente consegnata durante la run, con la nota)
         toolName:
           type: ["string", "null"]
         args:
@@ -8686,6 +8741,35 @@ components:
         createdAt:
           type: string
           format: date-time
+
+    RunMessage:
+      type: object
+      required: [id, runId, content, status, createdAt, deliveredAt]
+      properties:
+        id:
+          type: integer
+        runId:
+          type: integer
+        content:
+          type: string
+        status:
+          type: string
+          enum: [pending, delivered, dropped]
+        createdAt:
+          type: string
+          format: date-time
+        deliveredAt:
+          type: ["string", "null"]
+          format: date-time
+
+    RunMessageCreate:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 2000
 
     RunTrigger:
       type: object

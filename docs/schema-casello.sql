@@ -1849,3 +1849,15 @@ CREATE TABLE IF NOT EXISTS "app_bootstraps" (
 CREATE UNIQUE INDEX IF NOT EXISTS "app_bootstraps_slug_open_uidx" ON "app_bootstraps" USING btree ("slug") WHERE ("app_bootstraps"."status" in ('pending', 'running') OR ("app_bootstraps"."status" = 'done' AND "app_bootstraps"."app_id" IS NOT NULL));
 CREATE UNIQUE INDEX IF NOT EXISTS "app_bootstraps_repo_open_uidx" ON "app_bootstraps" USING btree ("repo") WHERE ("app_bootstraps"."status" in ('pending', 'running') OR ("app_bootstraps"."status" = 'done' AND "app_bootstraps"."app_id" IS NOT NULL));
 CREATE INDEX IF NOT EXISTS "app_bootstraps_app_id_idx" ON "app_bootstraps" USING btree ("app_id");
+
+-- Rate limit persistente e per utente (docs/migrations/2026-11-24-rate-limit-persistente.sql)
+CREATE TABLE IF NOT EXISTS "rate_limit_counters" (
+	"user_id" integer NOT NULL,
+	"bucket" varchar(100) NOT NULL,
+	"window_start" timestamp with time zone NOT NULL,
+	"count" integer DEFAULT 0 NOT NULL,
+	CONSTRAINT "rate_limit_counters_user_id_bucket_window_start_pk" PRIMARY KEY ("user_id", "bucket", "window_start"),
+	CONSTRAINT "rate_limit_counters_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action
+);
+
+CREATE INDEX IF NOT EXISTS "rate_limit_counters_window_start_idx" ON "rate_limit_counters" USING btree ("window_start");

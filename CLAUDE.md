@@ -2008,7 +2008,7 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
 - **Ambito `runs`** (`lib/auth.ts`, `RUNS_SCOPE_ROUTES`): token personale `cas_…` per le app ospiti, valido solo su `POST /agents/:id/runs`,
   `GET /runs/:id` e `GET /runs/:id/steps`; altrove 403 «il token non ha l'ambito per questa operazione», su `/mcp` 401. Si sceglie alla creazione
   (`PERSONAL_TOKEN_SCOPES`). Limite delle run: `runTriggerRateLimit`, 60/min per ogni token personale (id del token); sessione e pannello incorporato
-  restano a 10/min per IP.
+  a 10/min per utente (contatori persistenti, vedi "Deploy").
 - **Responsabile di prodotto**: è l'agente `general` dell'app (solo l'etichetta cambia in console; il ruolo resta `general`). `agents.confirm_writes`
   (PATCH `confirmWrites`): sempre vero per il `general` (il serializer lo mostra vero, il valore salvato non cambia e il PATCH su di lui è ignorato),
   facoltativo per gli agenti di area. Con la conferma attiva (`writesNeedConfirmation`) i tool con livello effettivo L1 si trattano come L2 solo in memoria
@@ -2397,9 +2397,14 @@ modello del centralino: `GET|PUT /api/account/centralino-model`, solo login).
 - Healthcheck di `casello-api`: `GET /api/healthz` sulla porta 3000. È nel `HEALTHCHECK` di
   `docker/api.Dockerfile` (con `node`); su Coolify impostarlo anche in Health Check (path `/api/healthz`, porta 3000),
   altrimenti Coolify non lo usa per il deploy. Coolify esegue un suo comando con curl o wget: per questo l'immagine installa curl.
-- `POST /api/agents/:id/runs` ha un rate limit in memoria (`runTriggerRateLimit`, `middlewares/rate-limit.ts`): 60/min per token con
-  qualunque token personale `cas_…`, 10 run/minuto per IP con sessione o pannello incorporato:
-  l'IP reale arriva da `trust proxy` = 2 (Traefik di Coolify + nginx di `casello-web`).
+- `POST /api/agents/:id/runs` e l'avvio delle analisi hanno un rate limit **persistente e per utente** (issue #98; `runTriggerRateLimit` e `runRateLimit`,
+  `persistentWindowCounter` in `middlewares/rate-limit.ts`): contatori a finestra fissa allineata nella tabella `rate_limit_counters` (utente `CASCADE`, contatore,
+  inizio della finestra; un upsert per richiesta), che non si azzerano ai deploy e valgono con più container. 60/min per token con qualunque token personale
+  `cas_…` (contatore per id del token), 10/min per utente con sessione o pannello incorporato, condivisi tra run e analisi; 429 con `Retry-After`. Un errore del DB
+  (o un utente che non c'è più) ricade su un contatore in memoria con le stesse regole; senza utente (fuori da `requireAuth`) vale il limite in memoria per IP
+  (l'IP reale arriva da `trust proxy` = 2: Traefik di Coolify + nginx di `casello-web`). Le righe più vecchie di un giorno si cancellano al più ogni 10 minuti.
+  Gli altri limiti di `rate-limit.ts` restano in memoria. Migrazione `docs/migrations/2026-11-24-rate-limit-persistente.sql` (additiva, la applica il deploy).
+  Nei test (Postgres condiviso tra i file) `test/reset-rate-limits.ts` svuota la tabella all'inizio di ogni file.
 - Schema DB (spec `docs/superpowers/specs/2026-11-16-botcave-migrazioni-automatiche-design.md`): le migrazioni **additive** le applica `casello-api` da sola all'avvio, prima di `listen` (`lib/migrations/`, `docker/api.Dockerfile` copia
   `docs/migrations` in `/app/migrations`): registro `schema_migrations`, lock advisory (due container non migrano insieme; `lock_timeout` 10 s impostato solo dopo averlo preso, connessione distrutta alla fine), file in ordine di nome, `-post` esclusi,
   ogni istruzione in autocommit con il protocollo esteso (così `ALTER TYPE … ADD VALUE` funziona e un pezzo letto male da `splitSql` non esegue altre istruzioni), righe registrate solo a riuscita. Un errore (`MigrationError` con file, numero dell'istruzione, 0 = rifiutata prima di eseguire, e codice SQLSTATE, mai il testo SQL)

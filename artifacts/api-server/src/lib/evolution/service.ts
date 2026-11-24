@@ -644,7 +644,7 @@ export async function startImplementation(roundId: number): Promise<void> {
       .where(and(eq(evolutionRoundsTable.id, roundId), eq(evolutionRoundsTable.status, "implementing"), sql`${evolutionRoundsTable.implementationStartedAt} is null`))
       .returning({ id: evolutionRoundsTable.id });
     if (!updated) return false;
-    await enqueueTurnReason(team.id, { type: "request", text }, tx);
+    await enqueueTurnReason(team.id, { type: "request", text, source: "system" }, tx);
     await cycleEvent({ teamInstanceId: team.id }, `Giro ${round.number} del ciclo di evoluzione: ${implementingOutcome(ordered.length)}.`, tx);
     return true;
   });
@@ -958,7 +958,7 @@ export async function resumeCycle(appId: number, userId: number): Promise<Evolut
       );
     const [team] = await db.select({ status: teamInstancesTable.status }).from(teamInstancesTable).where(eq(teamInstancesTable.id, teamId)).limit(1);
     if (team?.status === "active") {
-      await enqueueTurnReason(teamId, { type: "request", text: EVOLUTION_MESSAGES.resumeRequest });
+      await enqueueTurnReason(teamId, { type: "request", text: EVOLUTION_MESSAGES.resumeRequest, source: "system" });
       void pumpTasks(teamId).catch((err: unknown) =>
         logger.error({ instanceId: teamId, errName: err instanceof Error ? err.name : "unknown" }, "Ripresa dei compiti della squadra del ciclo non riuscita"),
       );

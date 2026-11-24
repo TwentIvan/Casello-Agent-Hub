@@ -389,7 +389,7 @@ export async function setInstanceBudget(id: number, monthlyBudgetUsd: number | n
   }
   if (updated[0]!.status === "active") {
     const room = monthlyBudgetUsd === null || !isExhausted((await teamSpend(id)).spentUsd, monthlyBudgetUsd);
-    if (room) await enqueueTurnReason(id, { type: "request", text: BUDGET_RESUME_REQUEST });
+    if (room) await enqueueTurnReason(id, { type: "request", text: BUDGET_RESUME_REQUEST, source: "system" });
   }
   return getInstance(id);
 }

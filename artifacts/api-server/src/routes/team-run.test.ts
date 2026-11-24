@@ -106,7 +106,7 @@ describe("route dell'esecuzione delle squadre", () => {
     const turns = await db.select().from(teamTurnsTable).where(eq(teamTurnsTable.instanceId, instanceId));
     expect(turns).toHaveLength(1);
     expect(turns[0]!.reasons[0]).toEqual({ type: "activation" });
-    expect(turns[0]!.reasons[1]).toEqual({ type: "request", text: "prima richiesta" });
+    expect(turns[0]!.reasons[1]).toEqual({ type: "request", text: "prima richiesta", source: "user" });
   });
 
   it("tetto della squadra: PUT salva e azzera; negativo → 400; squadra chiusa → 409", async () => {

@@ -436,7 +436,7 @@ async function executeTurn(turn: TeamTurnRow, usage: LoopUsage): Promise<TurnRes
   const outcome = await runAgentLoop({ messages, queue: [], rounds: 0, tokens: 0, activeMs: 0 }, deps);
   switch (outcome.type) {
     case "finished":
-      if (userRequested) await emitLeadReply(instance.id, outcome.content);
+      if (userRequested) await emitLeadReply(instance.id, turn.id, outcome.content);
       return { status: "done", aiModelId };
     case "failed":
       return { status: "failed", error: outcome.error, aiModelId };
@@ -457,14 +457,14 @@ export function hasUserRequest(reasons: TeamTurnReason[]): boolean {
  * Risposta del capo a un messaggio dell'utente: evento `risposta_capo` (bollettino su una riga ≤ 300, testo intero nel dettaglio se
  * più lungo). Una risposta vuota non produce nulla; un errore si registra solo nel log (il turno è comunque riuscito).
  */
-async function emitLeadReply(instanceId: number, content: string): Promise<void> {
+async function emitLeadReply(instanceId: number, turnId: number, content: string): Promise<void> {
   const oneLine = content.replace(/\s+/g, " ").trim();
   if (!oneLine) return;
   const bulletin = oneLine.length > MAX_BULLETIN ? `${oneLine.slice(0, MAX_BULLETIN - 1)}…` : oneLine;
   try {
-    await emitEvent({ instanceId, type: "risposta_capo", bulletin, ...(oneLine.length > MAX_BULLETIN ? { detail: content.trim() } : {}) });
+    await emitEvent({ instanceId, type: "risposta_capo", turnId, bulletin, ...(oneLine.length > MAX_BULLETIN ? { detail: content.trim() } : {}) });
   } catch (err) {
-    logger.warn({ instanceId, errName: errName(err) }, "Risposta del capo non registrata nel bollettino");
+    logger.warn({ instanceId, turnId, errName: errName(err) }, "Risposta del capo non registrata nel bollettino");
   }
 }
 
@@ -571,5 +571,5 @@ export async function activateInstance(userId: number, id: number): Promise<Inst
 export async function sendToLead(_userId: number, id: number, text: string): Promise<void> {
   const instance = await getInstance(id);
   if (instance.status !== "active") throw new InstanceError(409, TASK_MESSAGES.teamNotActive);
-  await enqueueTurnReason(id, { type: "request", text });
+  await enqueueTurnReason(id, { type: "request", text, source: "user" });
 }

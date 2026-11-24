@@ -156,7 +156,7 @@ describe("PLAN salvato", () => {
     const turns = await db.select().from(teamTurnsTable);
     expect(turns).toHaveLength(1);
     expect(turns[0]).toMatchObject({ status: "queued" });
-    expect(turns[0]!.reasons).toEqual([{ type: "request", text: "Il piano è stato modificato dall'utente: compiti aggiunti: t2 Verifica SCC1; obiettivo cambiato" }]);
+    expect(turns[0]!.reasons).toEqual([{ type: "request", text: "Il piano è stato modificato dall'utente: compiti aggiunti: t2 Verifica SCC1; obiettivo cambiato", source: "system" }]);
     expect(queued).toEqual([instanceId]);
   });
 

@@ -296,7 +296,7 @@ export async function approveBug(userId: number, action: PendingActionRow): Prom
         issueNumber: issue?.number ?? null,
         issueUrl: issue?.url ?? null,
       });
-      await enqueueTurnReason(team.id, { type: "request", text: bugTeamRequest(report, issue) }, tx);
+      await enqueueTurnReason(team.id, { type: "request", text: bugTeamRequest(report, issue), source: "system" }, tx);
       return {
         assigned: true as const,
         row: await finishItem(tx, action.id, { status: "done", result: BUG_APPROVAL_MESSAGES.assigned(lockedTeam.name) }),

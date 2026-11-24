@@ -512,6 +512,7 @@ export * from './teamTemplateInput';
 export * from './teamTurn';
 export * from './teamTurnReason';
 export * from './teamTurnReasonOutcome';
+export * from './teamTurnReasonSource';
 export * from './teamTurnReasonType';
 export * from './teamTurnStatus';
 export * from './teamUpdateApply';

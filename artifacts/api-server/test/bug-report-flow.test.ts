@@ -258,7 +258,7 @@ describe("flusso: segnalazione di un bug dal plugin", () => {
     expect(issue.body).not.toContain("utente-77");
     const turnReasons = (await db.select().from(teamTurnsTable).where(eq(teamTurnsTable.instanceId, teamId))).flatMap((t) => t.reasons);
     expect(turnReasons).toHaveLength(1);
-    expect(turnReasons[0]).toMatchObject({ type: "request" });
+    expect(turnReasons[0]).toMatchObject({ type: "request", source: "system" });
     expect((turnReasons[0] as { text: string }).text).toContain(`#${inProgress.issueNumber}`);
 
     // 5. Il capo crea il compito con la issue; la squadra apre una PR (riga di sorveglianza)

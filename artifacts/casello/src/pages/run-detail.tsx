@@ -23,6 +23,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { RunStatusBadge } from "@/components/run-status-badge";
 import { RunSteps } from "@/components/runs/run-steps";
 import { RunActivityView } from "@/components/runs/run-activity-view";
+import { RunInstructions } from "@/components/runs/run-instructions";
 import { isRunActive } from "@/components/runs/run-queries";
 import { useLiveConnected } from "@/components/live/live-updates";
 import { livePollInterval } from "@/lib/live-updates";
@@ -240,6 +241,8 @@ export default function RunDetailPage() {
       />
 
       <RunSteps run={r} />
+
+      <RunInstructions run={r} />
 
       {active ? (
         <Card>

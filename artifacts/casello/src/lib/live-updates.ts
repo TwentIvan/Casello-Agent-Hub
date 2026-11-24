@@ -5,6 +5,7 @@ import {
   getGetFleetQueryKey,
   getGetRunQueryKey,
   getListAgentActivityQueryKey,
+  getListRunMessagesQueryKey,
   getListRunStepsQueryKey,
   getListRunsQueryKey,
 } from "@workspace/api-client-react";
@@ -46,12 +47,12 @@ export function runSummaryQueryKeys(): ReadonlyArray<readonly unknown[]> {
   return [getListRunsQueryKey(), getListAgentActivityQueryKey(), getGetDashboardStatsQueryKey(), getGetFleetQueryKey()];
 }
 
-/** Chiavi da ricaricare per le run cambiate: la run e i suoi passi, poi elenchi e riepiloghi. */
+/** Chiavi da ricaricare per le run cambiate: la run, i suoi passi e le sue istruzioni, poi elenchi e riepiloghi. */
 export function queryKeysForRunChanges(changes: LiveRunChange[]): ReadonlyArray<readonly unknown[]> {
   if (changes.length === 0) return [];
   const keys: (readonly unknown[])[] = [];
   for (const { runId } of changes) {
-    keys.push(getGetRunQueryKey(runId), getListRunStepsQueryKey(runId));
+    keys.push(getGetRunQueryKey(runId), getListRunStepsQueryKey(runId), getListRunMessagesQueryKey(runId));
   }
   return [...keys, ...runSummaryQueryKeys()];
 }

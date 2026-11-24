@@ -10,6 +10,7 @@ import appBootstrapsRouter from "./app-bootstraps";
 import appBugsRouter from "./app-bugs";
 import agentsRouter from "./agents";
 import runsRouter from "./runs";
+import { createLiveRouter } from "./live";
 import dashboardRouter from "./dashboard";
 import budgetRouter from "./budget";
 import skillsRouter from "./skills";
@@ -35,8 +36,11 @@ import { createNodePairingAccountRouter, createNodePairingPublicRouter } from ".
 import { createOAuthGrantsRouter } from "./oauth-grants";
 import { createAlfredRouter } from "./alfred";
 import { createTriggersRouter } from "./triggers";
+import { createFleetRouter } from "./fleet";
 import { requireNodeToken } from "../lib/nodes/auth";
 import { authRouter, requireAuth } from "../lib/auth";
+import { auditRoutes } from "../lib/audit/record";
+import { createAuditEventsRouter } from "./audit-events";
 
 import { createLeadChatRouter } from "./lead-chat";
 
@@ -54,6 +58,8 @@ router.use("/node", requireNodeToken, createNodeRouter());
 // Abbinamento dei nodi: `start` e `poll` sono pubbliche (il nodo non ha ancora un token), con limiti propri.
 router.use(createNodePairingPublicRouter());
 router.use(requireAuth);
+// Registro delle azioni: un evento per ogni risposta 2xx delle route sensibili (lib/audit/actions.ts)
+router.use(auditRoutes());
 router.use(embedStatusRouter);
 router.use(appsRouter);
 router.use(appToolsRouter);
@@ -63,6 +69,7 @@ router.use(appBootstrapsRouter);
 router.use(appBugsRouter);
 router.use(agentsRouter);
 router.use(runsRouter);
+router.use(createLiveRouter());
 router.use(dashboardRouter);
 router.use(budgetRouter);
 router.use(skillsRouter);
@@ -81,6 +88,7 @@ router.use(createAiRouter());
 router.use(createCatalogRouter());
 router.use(createPendingActionsRouter());
 router.use(createApiTokensRouter());
+router.use(createAuditEventsRouter());
 router.use(createAccountModelRouter());
 router.use(createAccountCharactersRouter());
 router.use(createNodesRouter());
@@ -88,5 +96,6 @@ router.use(createNodePairingAccountRouter());
 router.use(createOAuthGrantsRouter());
 router.use(createAlfredRouter());
 router.use(createTriggersRouter());
+router.use(createFleetRouter());
 
 export default router;

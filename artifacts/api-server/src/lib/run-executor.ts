@@ -25,6 +25,7 @@ import {
   DEFAULT_LIMITS,
   QUEUE_FAILED,
   runAgentLoop,
+  type LoopActivity,
   type LoopDeps,
   type LoopLimits,
   type LoopState,
@@ -36,6 +37,9 @@ import { aiModelOwner } from "./ai/model-owner";
 import { runBudgetBlock } from "./budget";
 import { delegateTurn } from "./node-turns/delegate";
 import { logger } from "./logger";
+import { publishRunChange } from "./live/events";
+import { dropPendingRunMessages, takeRunInstructions } from "./run-messages";
+import { applyRunActivity, beginRunActivity, endRunActivity } from "./live/run-activity";
 import { loopModelCallError, modelChatDeps, newUsage, stepWriter, type LoopUsage } from "./loop-wiring";
 import { ARCHITECTURE_TOOL_NAME, architecturePromptBlock, architectureTool, handleReadArchitecture } from "./architecture/tool";
 import { ESCALATION_TOOL_NAME, escalationTool, handleEscalation, productLead } from "./escalation";
@@ -139,6 +143,8 @@ export async function cancelRun(runId: number): Promise<CancelRunResult> {
   }
   activeRuns.get(runId)?.abort();
   clearUserToken(runId);
+  await dropPendingRunMessages([runId]).catch(() => undefined);
+  publishRunChange(run.id, run.agentId);
   return { kind: "cancelled", run };
 }
 
@@ -318,9 +324,20 @@ export function maskProposeArgs(args: unknown, tools: CatalogTool[]): unknown {
 }
 
 /** Scrive i passi della run con posizioni crescenti, oscurando gli argomenti sensibili. */
-function runStepWriter(runId: number, appId: number, startPosition: number, tools: CatalogTool[], baseTools: CatalogTool[]) {
+function runStepWriter(
+  run: Pick<Run, "id" | "agentId">,
+  appId: number,
+  startPosition: number,
+  tools: CatalogTool[],
+  baseTools: CatalogTool[],
+) {
+  const runId = run.id;
   const write = stepWriter(
-    (row) => db.insert(runStepsTable).values({ runId, ...row }),
+    async (row) => {
+      await db.insert(runStepsTable).values({ runId, ...row });
+      // Un passo nuovo: la timeline della console si aggiorna subito (issue #108)
+      publishRunChange(runId, run.agentId);
+    },
     (toolName) => stepSchema(appId, tools, toolName),
     startPosition,
   );
@@ -461,6 +478,17 @@ function runToolDeps(
   };
 }
 
+/**
+ * Avvisi sull'attività in corso della run (issue #118): aggiornano il registro in memoria e avvisano la console, che
+ * mostra subito cosa sta facendo la run (modello, tool in esecuzione).
+ */
+function runActivitySink(run: Pick<Run, "id" | "agentId">): (activity: LoopActivity) => void {
+  return (activity) => {
+    applyRunActivity(run.id, activity);
+    publishRunChange(run.id, run.agentId);
+  };
+}
+
 /** Strumenti offerti al modello (o a Claude Code): quelli dell'app più gli interni (`proponi`, segnalazione). */
 function runFunctionTools(ctx: RunContext): ChatCompletionTool[] {
   return roleFunctionTools(
@@ -489,6 +517,7 @@ async function finishRun(ctx: RunContext, segmentStart: number, usage: SegmentUs
     )
     .where(and(eq(runsTable.id, ctx.run.id), eq(runsTable.status, "running")));
   clearUserToken(ctx.run.id);
+  publishRunChange(ctx.run.id, ctx.run.agentId);
 }
 
 /** Modello risolto per scegliere l'esecutore; null se non si risolve (l'errore lo dà il ciclo cloud come passo `model`). */
@@ -552,6 +581,9 @@ async function driveCloudLoop(
     chat,
     limits: loopLimits,
     signal: abort,
+    onActivity: runActivitySink(ctx.run),
+    // Istruzioni dell'utente mandate durante la run (issue #119), lette tra un passo e l'altro
+    takeInstructions: () => takeRunInstructions(runId, ctx.run.agentId),
   });
 
   switch (outcome.type) {
@@ -632,7 +664,10 @@ async function driveNodeTurn(
 ): Promise<void> {
   const runId = ctx.run.id;
   const deps = runToolDeps(ctx, resolved.aiModelId, writeStep, abort);
+  const onActivity = runActivitySink(ctx.run);
   const t0 = Date.now();
+  // Mentre Claude Code lavora sul nodo la run «pensa»; le sue chiamate agli strumenti si vedono una per una
+  onActivity({ type: "model_start" });
   const outcome = await delegateTurn({
     resolved,
     userId: resolved.ownerUserId,
@@ -640,12 +675,19 @@ async function driveNodeTurn(
     refId: runId,
     messages: state.messages,
     tools: runFunctionTools(ctx).filter((t): t is ChatCompletionFunctionTool => t.type === "function"),
-    dispatch: (call) => dispatchAgentCall(call, deps),
+    dispatch: async (call) => {
+      onActivity({ type: "tool_start", callId: call.id, toolName: call.name });
+      try {
+        return await dispatchAgentCall(call, deps);
+      } finally {
+        onActivity({ type: "tool_end", callId: call.id });
+      }
+    },
     // Giri del ciclo cloud più la risposta finale
     maxTurns: (runLimitsFor(ctx.agent).maxRounds ?? DEFAULT_LIMITS.maxRounds) + 1,
     timeoutMs: ctx.agent.role === "general" ? PRODUCT_LEAD_NODE_TIMEOUT_MS : RUN_NODE_TIMEOUT_MS,
     signal: abort,
-  });
+  }).finally(() => onActivity({ type: "model_end" }));
   const durationMs = Date.now() - t0;
 
   switch (outcome.kind) {
@@ -735,6 +777,7 @@ async function failRun(
   } catch (dbErr) {
     logger.error({ runId, error: errorMessage(dbErr) }, "Impossibile chiudere la run fallita");
   }
+  publishRunChange(runId, run.agentId);
 }
 
 /**
@@ -768,6 +811,8 @@ export async function startRun(runId: number, opts: RunOptions = {}): Promise<vo
   }
 
   adoptRun(runId, abort);
+  beginRunActivity(runId);
+  publishRunChange(runId, run.agentId);
   const segmentStart = Date.now();
   const usage = newUsage();
   try {
@@ -791,12 +836,17 @@ export async function startRun(runId: number, opts: RunOptions = {}): Promise<vo
       tokens: 0,
       activeMs: 0,
     };
-    const writeStep = runStepWriter(runId, ctx.app.id, await nextPosition(runId), ctx.tools, ctx.baseTools);
+    const writeStep = runStepWriter(run, ctx.app.id, await nextPosition(runId), ctx.tools, ctx.baseTools);
     await driveLoop(ctx, initial, segmentStart, writeStep, usage, abort.signal, opts.limits);
   } catch (err) {
     await failRun(run, err, segmentStart, usage, abort.signal.aborted);
   } finally {
+    endRunActivity(runId);
     untrackRun(runId, abort);
+    // Istruzioni arrivate dopo l'ultimo passo: la run è finita, non si consegnano più
+    await dropPendingRunMessages([runId]).catch((err: unknown) =>
+      logger.error({ runId, error: errorMessage(err) }, "Istruzioni non consegnate non chiuse"),
+    );
   }
 }
 
@@ -832,5 +882,10 @@ export async function failInterruptedRuns(): Promise<{ failed: number; cancelled
        set status = 'cancelled', error_message = ${PAUSE_REPLACED_MESSAGE}, finished_at = now()
      where status = 'awaiting_client'
     returning id`);
+  // Istruzioni ancora in attesa per le run chiuse qui: non arriveranno più
+  const closedIds = [...failed.rows, ...clientWait.rows, ...userTokenLost.rows, ...cancelled.rows].map((r) =>
+    Number((r as { id: unknown }).id),
+  );
+  await dropPendingRunMessages(closedIds);
   return { failed: failed.rows.length + clientWait.rows.length, cancelled: cancelled.rows.length, userTokenLost: userTokenLost.rows.length };
 }

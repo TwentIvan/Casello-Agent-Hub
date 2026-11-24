@@ -34,4 +34,9 @@ export interface TriggerPatch {
   intervalSeconds?: number | null;
   /** @nullable */
   dedupHeader?: string | null;
+  /**
+     * Solo schedule: espressione cron a 5 campi (minuto ora giorno mese giorno-della-settimana) nell'ora italiana, almeno 5 minuti tra due run
+     * @nullable
+     */
+  cron?: string | null;
 }

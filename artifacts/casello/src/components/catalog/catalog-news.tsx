@@ -16,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { invalidateAiQueries } from "@/components/ai/ai-queries";
 import { useProviderLabel } from "@/components/account/ai-account-dialog";
 import { useToast } from "@/hooks/use-toast";
+import { agentDeprecationLine } from "@/lib/agent-deprecations";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { formatModelPrice, formatRelative } from "@/lib/format";
 
@@ -163,6 +164,10 @@ export function CatalogNews() {
                   items={summary.deprecating.map(
                     (d) => `${nameOf(d)}, dal ${new Date(d.deprecationDate).toLocaleDateString("it-IT")}`,
                   )}
+                />
+                <NewsList
+                  title="Agenti con il modello in dismissione"
+                  items={summary.agents.map(agentDeprecationLine)}
                 />
                 <NewsList
                   title="Prezzi cambiati"

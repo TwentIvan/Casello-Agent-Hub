@@ -172,8 +172,8 @@ export async function confirmDecision(userId: number, sessionId: number, code: s
   // Il limite di 20 decisioni/min e il messaggio d'errore stanno nelle funzioni del centralino
   const out =
     used.decision === "approve"
-      ? await approvePending(userId, used.number, undefined, savedExclude(used.excludeSteps))
-      : await rejectPending(userId, used.number, used.note ?? undefined);
+      ? await approvePending(userId, used.number, undefined, savedExclude(used.excludeSteps), "alfred")
+      : await rejectPending(userId, used.number, used.note ?? undefined, "alfred");
   logger.info({ numero: used.number, esito: out.status }, "decisione via Alfred");
   // Esito breve da leggere ad alta voce; il testo dell'app non entra mai nella risposta
   const esito = out.status === "rejected" ? "rifiutata" : out.status === "failed" ? CONFIRM_MESSAGES.failed : "approvata";

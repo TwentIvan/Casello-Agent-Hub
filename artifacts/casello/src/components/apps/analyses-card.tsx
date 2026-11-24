@@ -6,6 +6,7 @@ import {
   type Analysis,
   type App,
   getEstimateAnalysisCostQueryKey,
+  getGetAppQueryKey,
   getGetCharacterSettingsQueryKey,
   getListAnalysesQueryKey,
   useEstimateAnalysisCost,
@@ -13,6 +14,7 @@ import {
   useListAnalyses,
   useStartAnalysis,
   useStartZipAnalysis,
+  useUpdateApp,
 } from "@workspace/api-client-react";
 import { Led, type LedState } from "@/components/brand/led";
 import { LuciusMark } from "@/components/brand/marks";
@@ -28,6 +30,7 @@ import { phaseLabel } from "@/components/analysis/payload";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { formatCost, formatUsd } from "@/lib/format";
+import { autoReanalysisAvailable, autoReanalysisLabel } from "@/lib/reanalysis";
 import { cn } from "@/lib/utils";
 
 const POLL_MS = 2000;
@@ -106,6 +109,16 @@ export function AnalysesCard({ app }: { app: App }) {
     });
   };
   const startAnalysis = useStartAnalysis({ mutation: { onSuccess: onStarted, onError } });
+  const updateApp = useUpdateApp({
+    mutation: {
+      onSuccess: (updated) => {
+        void queryClient.invalidateQueries({ queryKey: getGetAppQueryKey(app.id) });
+        toast({ title: updated.autoReanalysis ? "Rianalisi automatica accesa" : "Rianalisi automatica spenta" });
+      },
+      onError: (error) => toast({ variant: "destructive", title: "Salvataggio non riuscito", description: apiErrorMessage(error) }),
+    },
+  });
+  const canAutoReanalyze = autoReanalysisAvailable(app);
   const startZip = useStartZipAnalysis({ mutation: { onSuccess: onStarted, onError } });
   const starting = startAnalysis.isPending || startZip.isPending;
 
@@ -173,6 +186,22 @@ export function AnalysesCard({ app }: { app: App }) {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-5">
+        <div className="space-y-1">
+          <div className="flex items-center gap-3">
+            <Switch
+              id="analysis-auto"
+              checked={app.autoReanalysis}
+              disabled={updateApp.isPending || (!canAutoReanalyze && !app.autoReanalysis)}
+              onCheckedChange={(checked) => updateApp.mutate({ id: app.id, data: { autoReanalysis: checked } })}
+            />
+            <Label htmlFor="analysis-auto">Rianalizza a ogni nuovo commit del branch base</Label>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            {canAutoReanalyze
+              ? "Botcave controlla il branch ogni 30 minuti e dopo ogni merge delle squadre: a un commit nuovo mette in coda un'analisi per l'agente locale, senza costi API. Nella revisione restano solo le differenze dal catalogo attuale; un'analisi che nessun agente prende entro 24 ore si chiude."
+              : "Disponibile con il codice collegato tramite l'App GitHub."}
+          </p>
+        </div>
         <div className="flex items-center gap-3">
           <Switch id="analysis-local" checked={local} onCheckedChange={setLocal} />
           <Label htmlFor="analysis-local">Esegui con un agente locale (Claude Code)</Label>
@@ -262,6 +291,7 @@ export function AnalysesCard({ app }: { app: App }) {
                     </Link>
                     <Led state={ANALYSIS_STATUS_LED[a.status]} label={ANALYSIS_STATUS_LABELS[a.status]} />
                     <span className="font-mono text-xs text-muted-foreground">{a.model}</span>
+                    {autoReanalysisLabel(a) && <span className="font-mono text-xs text-muted-foreground">{autoReanalysisLabel(a)}</span>}
                     {a.executor === "local" ? (
                       <Badge variant="secondary">agente locale</Badge>
                     ) : (

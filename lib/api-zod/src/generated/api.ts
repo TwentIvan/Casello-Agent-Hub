@@ -405,6 +405,37 @@ export const RevokeApiTokenResponse = zod.void()
 
 
 /**
+ * Eventi delle operazioni sensibili dell'utente (approvazioni, conferme, token, segreti, account AI, nodi, accessi), dal più recente, con azione, oggetto, canale e IP; mai segreti, token né testi. Paginazione con `before` (id dell'ultimo evento della pagina precedente). Conservati 365 giorni. Solo con il login: con un token risponde 403.
+ * @summary Registro delle azioni dell'utente
+ */
+export const listAuditEventsQueryLimitDefault = 50;
+export const listAuditEventsQueryLimitMax = 100;
+
+
+
+
+export const ListAuditEventsQueryParams = zod.object({
+  "limit": zod.coerce.number().min(1).max(listAuditEventsQueryLimitMax).default(listAuditEventsQueryLimitDefault),
+  "before": zod.coerce.number().min(1).optional()
+})
+
+export const ListAuditEventsResponse = zod.object({
+  "events": zod.array(zod.object({
+  "id": zod.number(),
+  "action": zod.string().describe('Codice dell\'azione, es. api_token.create, pending_action.approve, auth.login'),
+  "objectType": zod.string().nullable(),
+  "objectId": zod.string().nullable(),
+  "detail": zod.record(zod.string(), zod.unknown()).nullable().describe('Pochi campi non sensibili scelti dal server (esito, ambiti, segreto cambiato sì\/no)'),
+  "via": zod.string().describe('Canale (session, token, embed, mcp, alfred)'),
+  "tokenId": zod.number().nullable().describe('Token personale usato, se la richiesta è arrivata con un token'),
+  "ip": zod.string().nullable(),
+  "createdAt": zod.coerce.date()
+})),
+  "nextBefore": zod.number().nullable().describe('Valore di `before` per la pagina successiva; null se non ce ne sono altre')
+})
+
+
+/**
  * Collegamenti non revocati dell'utente (app come Claude che usano `/mcp` con OAuth), dal più recente. Solo con il login: con un token risponde 403.
  * @summary Elenca le app collegate (connettore OAuth)
  */
@@ -1699,6 +1730,9 @@ export const ListAppsResponseItem = zod.object({
   "openapiUrl": zod.string().nullable().describe('URL dell\'OpenAPI dell\'app, letto (GET) dall\'architetto'),
   "functionalDescription": zod.string().nullable().describe('Descrizione funzionale dell\'app per l\'architetto'),
   "architectureRefresh": zod.enum(['off', 'hourly', '6h', 'daily', 'weekly']).describe('Frequenza di controllo della sintesi dell\'architettura'),
+  "autoReanalysis": zod.boolean().describe('Rianalisi automatica, a ogni nuovo commit del branch base un\'analisi in coda per l\'agente locale'),
+  "reanalysisSeenSha": zod.string().nullable().describe('Ultimo SHA del branch base già gestito dalla rianalisi automatica'),
+  "reanalysisCheckedAt": zod.coerce.date().nullable().describe('Ultimo controllo della rianalisi automatica'),
   "stagingBranch": zod.string().nullable().describe('Branch di prova dell\'App, riscritto da Botcave a ogni lavoro delle squadre (null = nessuna versione di prova)'),
   "alfredName": zod.string().nullable().describe('Nome scelto per Alfred in questa App (null = predefinito)'),
   "luciusName": zod.string().nullable().describe('Nome scelto per Lucius in questa App (null = predefinito)'),
@@ -1796,6 +1830,9 @@ export const CreateAppResponse = zod.object({
   "openapiUrl": zod.string().nullable().describe('URL dell\'OpenAPI dell\'app, letto (GET) dall\'architetto'),
   "functionalDescription": zod.string().nullable().describe('Descrizione funzionale dell\'app per l\'architetto'),
   "architectureRefresh": zod.enum(['off', 'hourly', '6h', 'daily', 'weekly']).describe('Frequenza di controllo della sintesi dell\'architettura'),
+  "autoReanalysis": zod.boolean().describe('Rianalisi automatica, a ogni nuovo commit del branch base un\'analisi in coda per l\'agente locale'),
+  "reanalysisSeenSha": zod.string().nullable().describe('Ultimo SHA del branch base già gestito dalla rianalisi automatica'),
+  "reanalysisCheckedAt": zod.coerce.date().nullable().describe('Ultimo controllo della rianalisi automatica'),
   "stagingBranch": zod.string().nullable().describe('Branch di prova dell\'App, riscritto da Botcave a ogni lavoro delle squadre (null = nessuna versione di prova)'),
   "alfredName": zod.string().nullable().describe('Nome scelto per Alfred in questa App (null = predefinito)'),
   "luciusName": zod.string().nullable().describe('Nome scelto per Lucius in questa App (null = predefinito)'),
@@ -1860,6 +1897,9 @@ export const GetAppResponse = zod.object({
   "openapiUrl": zod.string().nullable().describe('URL dell\'OpenAPI dell\'app, letto (GET) dall\'architetto'),
   "functionalDescription": zod.string().nullable().describe('Descrizione funzionale dell\'app per l\'architetto'),
   "architectureRefresh": zod.enum(['off', 'hourly', '6h', 'daily', 'weekly']).describe('Frequenza di controllo della sintesi dell\'architettura'),
+  "autoReanalysis": zod.boolean().describe('Rianalisi automatica, a ogni nuovo commit del branch base un\'analisi in coda per l\'agente locale'),
+  "reanalysisSeenSha": zod.string().nullable().describe('Ultimo SHA del branch base già gestito dalla rianalisi automatica'),
+  "reanalysisCheckedAt": zod.coerce.date().nullable().describe('Ultimo controllo della rianalisi automatica'),
   "stagingBranch": zod.string().nullable().describe('Branch di prova dell\'App, riscritto da Botcave a ogni lavoro delle squadre (null = nessuna versione di prova)'),
   "alfredName": zod.string().nullable().describe('Nome scelto per Alfred in questa App (null = predefinito)'),
   "luciusName": zod.string().nullable().describe('Nome scelto per Lucius in questa App (null = predefinito)'),
@@ -1928,6 +1968,7 @@ export const UpdateAppBody = zod.object({
   "openapiUrl": zod.string().nullish(),
   "functionalDescription": zod.string().nullish(),
   "architectureRefresh": zod.enum(['off', 'hourly', '6h', 'daily', 'weekly']).optional().describe('Frequenza di controllo della sintesi dell\'architettura'),
+  "autoReanalysis": zod.boolean().optional().describe('Accende o spegne la rianalisi automatica (serve il codice da GitHub tramite installazione per avere effetto)'),
   "stagingBranch": zod.string().nullish().describe('Branch di prova (non il base, non main\/master, non botcave\/…); null lo toglie'),
   "alfredName": zod.string().max(updateAppBodyAlfredNameMax).nullish().describe('Nome di Alfred in questa App; null torna al predefinito'),
   "luciusName": zod.string().max(updateAppBodyLuciusNameMax).nullish().describe('Nome di Lucius in questa App; null torna al predefinito'),
@@ -1971,6 +2012,9 @@ export const UpdateAppResponse = zod.object({
   "openapiUrl": zod.string().nullable().describe('URL dell\'OpenAPI dell\'app, letto (GET) dall\'architetto'),
   "functionalDescription": zod.string().nullable().describe('Descrizione funzionale dell\'app per l\'architetto'),
   "architectureRefresh": zod.enum(['off', 'hourly', '6h', 'daily', 'weekly']).describe('Frequenza di controllo della sintesi dell\'architettura'),
+  "autoReanalysis": zod.boolean().describe('Rianalisi automatica, a ogni nuovo commit del branch base un\'analisi in coda per l\'agente locale'),
+  "reanalysisSeenSha": zod.string().nullable().describe('Ultimo SHA del branch base già gestito dalla rianalisi automatica'),
+  "reanalysisCheckedAt": zod.coerce.date().nullable().describe('Ultimo controllo della rianalisi automatica'),
   "stagingBranch": zod.string().nullable().describe('Branch di prova dell\'App, riscritto da Botcave a ogni lavoro delle squadre (null = nessuna versione di prova)'),
   "alfredName": zod.string().nullable().describe('Nome scelto per Alfred in questa App (null = predefinito)'),
   "luciusName": zod.string().nullable().describe('Nome scelto per Lucius in questa App (null = predefinito)'),
@@ -2054,6 +2098,9 @@ export const UpdateAppPageActionsResponse = zod.object({
   "openapiUrl": zod.string().nullable().describe('URL dell\'OpenAPI dell\'app, letto (GET) dall\'architetto'),
   "functionalDescription": zod.string().nullable().describe('Descrizione funzionale dell\'app per l\'architetto'),
   "architectureRefresh": zod.enum(['off', 'hourly', '6h', 'daily', 'weekly']).describe('Frequenza di controllo della sintesi dell\'architettura'),
+  "autoReanalysis": zod.boolean().describe('Rianalisi automatica, a ogni nuovo commit del branch base un\'analisi in coda per l\'agente locale'),
+  "reanalysisSeenSha": zod.string().nullable().describe('Ultimo SHA del branch base già gestito dalla rianalisi automatica'),
+  "reanalysisCheckedAt": zod.coerce.date().nullable().describe('Ultimo controllo della rianalisi automatica'),
   "stagingBranch": zod.string().nullable().describe('Branch di prova dell\'App, riscritto da Botcave a ogni lavoro delle squadre (null = nessuna versione di prova)'),
   "alfredName": zod.string().nullable().describe('Nome scelto per Alfred in questa App (null = predefinito)'),
   "luciusName": zod.string().nullable().describe('Nome scelto per Lucius in questa App (null = predefinito)'),
@@ -3339,7 +3386,15 @@ export const ListRunsResponseItem = zod.object({
   "action": zod.string().describe('Azione della definizione del tool (es. navigate)'),
   "args": zod.record(zod.string(), zod.unknown()).describe('Argomenti del modello più quelli fissi della definizione (che vincono)'),
   "requestedAt": zod.coerce.date()
-}),zod.null()]).optional().describe('Azione ui in attesa del client (solo con status awaiting_client), altrimenti null')
+}),zod.null()]).optional().describe('Azione ui in attesa del client (solo con status awaiting_client), altrimenti null'),
+  "activity": zod.union([zod.object({
+  "startedAt": zod.coerce.date().describe('Inizio dell\'esecuzione in questo processo'),
+  "items": zod.array(zod.object({
+  "kind": zod.enum(['model', 'tool']),
+  "toolName": zod.string().nullable().describe('Nome del tool (null per il modello)'),
+  "since": zod.coerce.date()
+})).describe('Attività in corso insieme (al più 20); vuoto tra un passo e l\'altro')
+}),zod.null()]).optional().describe('Cosa sta facendo ora la run (chiamata al modello, tool in esecuzione): solo nel dettaglio (GET \/runs\/{id}), solo mentre la run è running o awaiting_client e la esegue il processo che risponde; altrimenti null')
 })
 export const ListRunsResponse = zod.array(ListRunsResponseItem)
 
@@ -3386,7 +3441,15 @@ export const TriggerRunResponse = zod.object({
   "action": zod.string().describe('Azione della definizione del tool (es. navigate)'),
   "args": zod.record(zod.string(), zod.unknown()).describe('Argomenti del modello più quelli fissi della definizione (che vincono)'),
   "requestedAt": zod.coerce.date()
-}),zod.null()]).optional().describe('Azione ui in attesa del client (solo con status awaiting_client), altrimenti null')
+}),zod.null()]).optional().describe('Azione ui in attesa del client (solo con status awaiting_client), altrimenti null'),
+  "activity": zod.union([zod.object({
+  "startedAt": zod.coerce.date().describe('Inizio dell\'esecuzione in questo processo'),
+  "items": zod.array(zod.object({
+  "kind": zod.enum(['model', 'tool']),
+  "toolName": zod.string().nullable().describe('Nome del tool (null per il modello)'),
+  "since": zod.coerce.date()
+})).describe('Attività in corso insieme (al più 20); vuoto tra un passo e l\'altro')
+}),zod.null()]).optional().describe('Cosa sta facendo ora la run (chiamata al modello, tool in esecuzione): solo nel dettaglio (GET \/runs\/{id}), solo mentre la run è running o awaiting_client e la esegue il processo che risponde; altrimenti null')
 })
 
 
@@ -3422,7 +3485,15 @@ export const GetRunResponse = zod.object({
   "action": zod.string().describe('Azione della definizione del tool (es. navigate)'),
   "args": zod.record(zod.string(), zod.unknown()).describe('Argomenti del modello più quelli fissi della definizione (che vincono)'),
   "requestedAt": zod.coerce.date()
-}),zod.null()]).optional().describe('Azione ui in attesa del client (solo con status awaiting_client), altrimenti null')
+}),zod.null()]).optional().describe('Azione ui in attesa del client (solo con status awaiting_client), altrimenti null'),
+  "activity": zod.union([zod.object({
+  "startedAt": zod.coerce.date().describe('Inizio dell\'esecuzione in questo processo'),
+  "items": zod.array(zod.object({
+  "kind": zod.enum(['model', 'tool']),
+  "toolName": zod.string().nullable().describe('Nome del tool (null per il modello)'),
+  "since": zod.coerce.date()
+})).describe('Attività in corso insieme (al più 20); vuoto tra un passo e l\'altro')
+}),zod.null()]).optional().describe('Cosa sta facendo ora la run (chiamata al modello, tool in esecuzione): solo nel dettaglio (GET \/runs\/{id}), solo mentre la run è running o awaiting_client e la esegue il processo che risponde; altrimenti null')
 })
 
 
@@ -3437,7 +3508,7 @@ export const ListRunStepsResponseItem = zod.object({
   "id": zod.number(),
   "runId": zod.number(),
   "position": zod.number(),
-  "type": zod.string().describe('model (chiamata al modello), tool (chiamata a un tool) o queued (azione accodata per la conferma dell\'utente: args = { numero, destinatario, sintesi, argomenti } con gli argomenti sensibili oscurati)'),
+  "type": zod.string().describe('model (chiamata al modello), tool (chiamata a un tool), queued (azione accodata per la conferma dell\'utente: args = { numero, destinatario, sintesi, argomenti } con gli argomenti sensibili oscurati) o message (istruzione dell\'utente consegnata durante la run, con la nota)'),
   "toolName": zod.string().nullish(),
   "args": zod.record(zod.string(), zod.unknown()).nullish(),
   "ok": zod.boolean().nullish(),
@@ -3448,6 +3519,216 @@ export const ListRunStepsResponseItem = zod.object({
   "createdAt": zod.coerce.date()
 })
 export const ListRunStepsResponse = zod.array(ListRunStepsResponseItem)
+
+
+/**
+ * Flusso `text/event-stream` solo con il login (EventSource della console; con un token 403). Eventi: `ready` all'apertura, `runs` con `{runs: [{runId, agentId}]}` quando lo stato o i passi di quelle run cambiano (al più un messaggio ogni 300 ms, `agentId` null se non noto), un commento `: ping` ogni 25 s. Dice solo quale run è cambiata: i dati si rileggono con le GET di sempre. In memoria: con più container gli avvisi dell'altro non arrivano. Al più 6 flussi per utente (429).
+ * @summary Aggiornamenti in tempo reale delle run (Server-Sent Events)
+ */
+export const StreamLiveUpdatesResponse = zod.unknown()
+
+
+/**
+ * Legge le ultime run concluse dell'agente (al più 50 degli ultimi 30 giorni: esito, token, costo, passi tool falliti), calcola il costo medio stimato di una run con il modello attuale e con i modelli con strumenti degli account AI dell'utente (disponibili, prezzi noti, non in anteprima, non Claude Code sul nodo) e propone al più 5 modelli più economici. Un modello già provato dall'agente (almeno 3 run) con un successo più basso di 10 punti rispetto al riferimento non si propone. Solo lettura, nessuna chiamata a modelli: per cambiare modello si usa PATCH /agents/{id}.
+ * @summary Valutazione del modello di un agente con i modelli più economici
+ */
+export const GetAgentModelEvaluationParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetAgentModelEvaluationResponse = zod.object({
+  "agentId": zod.number(),
+  "agentName": zod.string(),
+  "windowDays": zod.number().describe('Giorni delle run considerate'),
+  "enoughData": zod.boolean().describe('Almeno 5 run concluse e non annullate nella finestra'),
+  "currentModel": zod.object({
+  "aiModelId": zod.number(),
+  "name": zod.string(),
+  "accountName": zod.string(),
+  "priceInput": zod.number().nullable(),
+  "priceOutput": zod.number().nullable(),
+  "estimatedCostPerRunUsd": zod.number().nullable().describe('Costo stimato di una run media con i prezzi del modello; null senza prezzi o senza run')
+}).nullable(),
+  "usage": zod.object({
+  "runs": zod.number().describe('Run lette (al più 50)'),
+  "succeeded": zod.number(),
+  "failed": zod.number(),
+  "cancelled": zod.number(),
+  "successRate": zod.number().nullable().describe('Riuscite su riuscite più fallite (0..1)'),
+  "avgPromptTokens": zod.number().nullable(),
+  "avgCachedTokens": zod.number().nullable(),
+  "avgCompletionTokens": zod.number().nullable(),
+  "avgCostUsd": zod.number().nullable().describe('Costo medio registrato delle run con prezzo'),
+  "unpricedRuns": zod.number(),
+  "toolCalls": zod.number(),
+  "toolErrors": zod.number(),
+  "runsInWindow": zod.number().describe('Run concluse dell\'agente nella finestra (base della stima mensile)')
+}),
+  "byModel": zod.array(zod.object({
+  "aiModelId": zod.number().nullable(),
+  "name": zod.string().nullable(),
+  "runs": zod.number(),
+  "succeeded": zod.number(),
+  "failed": zod.number(),
+  "successRate": zod.number().nullable(),
+  "avgCostUsd": zod.number().nullable(),
+  "toolCalls": zod.number(),
+  "toolErrors": zod.number()
+})),
+  "suggestions": zod.array(zod.object({
+  "aiModelId": zod.number().describe('Id da passare come aiModelId a PATCH \/agents\/{id}'),
+  "name": zod.string(),
+  "accountName": zod.string(),
+  "priceInput": zod.number(),
+  "priceOutput": zod.number(),
+  "estimatedCostPerRunUsd": zod.number(),
+  "savingPerRunUsd": zod.number(),
+  "savingPercent": zod.number(),
+  "estimatedMonthlySavingUsd": zod.number().describe('Risparmio per run per le run della finestra'),
+  "observedRuns": zod.number().describe('Run concluse dell\'agente già fatte con questo modello'),
+  "observedSuccessRate": zod.number().nullable()
+})),
+  "note": zod.string().describe('Esito in una frase (messaggio fisso)')
+})
+
+
+/**
+ * Solo gli agenti non fermi (gli assenti sono fermi), in ordine di id. `waiting_user` se una run aspetta il client o ci sono voci `pending` di «Da confermare» dell'utente nate dall'agente; `working` con run `pending`/`running` o run figlie ancora aperte; altrimenti `idle`.
+ * @summary Stato per agente (in lavoro, in attesa dell'utente, fermo)
+ */
+export const ListAgentActivityResponseItem = zod.object({
+  "agentId": zod.number(),
+  "state": zod.enum(['working', 'waiting_user', 'idle']),
+  "runningRuns": zod.number(),
+  "pendingRuns": zod.number(),
+  "awaitingClientRuns": zod.number(),
+  "activeChildRuns": zod.number().describe('Run figlie ancora aperte nate da run dell\'agente'),
+  "pendingActions": zod.number().describe('Voci pending di «Da confermare» dell\'utente nate da run dell\'agente')
+})
+export const ListAgentActivityResponse = zod.array(ListAgentActivityResponseItem)
+
+
+/**
+ * Ogni agente con salute (`failing` senza modello, con un innesco in errore o con meno della metà delle run riuscite su almeno 3; `degraded` con qualche errore, una run in corso da oltre 15 minuti o almeno 20 run in coda; `off` se non attivo), problemi, attività, run in corso e in coda e numeri delle ultime 24 ore; poi il riepilogo e la politica di coordinamento. Dal più grave. Solo letture.
+ * @summary Salute e attività della flotta degli agenti
+ */
+export const GetFleetResponse = zod.object({
+  "policy": zod.object({
+  "paused": zod.boolean(),
+  "pausedAt": zod.coerce.date().nullable(),
+  "pausedBy": zod.number().nullable(),
+  "pausedByName": zod.string().nullable(),
+  "pauseReason": zod.string().nullable(),
+  "maxRunningRuns": zod.number(),
+  "maxRunningPerAgent": zod.number(),
+  "updatedAt": zod.coerce.date().nullable().describe('Null finché la politica non è mai stata cambiata (valori predefiniti)')
+}),
+  "summary": zod.object({
+  "agents": zod.number(),
+  "healthy": zod.number(),
+  "degraded": zod.number(),
+  "failing": zod.number(),
+  "off": zod.number(),
+  "working": zod.number(),
+  "waitingUser": zod.number(),
+  "runningRuns": zod.number(),
+  "pendingRuns": zod.number(),
+  "succeeded24h": zod.number(),
+  "failed24h": zod.number(),
+  "cost24hUsd": zod.number()
+}),
+  "agents": zod.array(zod.object({
+  "agentId": zod.number(),
+  "name": zod.string(),
+  "appId": zod.number(),
+  "appName": zod.string(),
+  "role": zod.enum(['general', 'area']),
+  "status": zod.enum(['draft', 'active', 'inactive']),
+  "health": zod.enum(['healthy', 'degraded', 'failing', 'off']),
+  "issues": zod.array(zod.enum(['no_model', 'trigger_error', 'high_failure', 'some_failures', 'backlog', 'stuck_run'])),
+  "activity": zod.enum(['working', 'waiting_user', 'idle']),
+  "runningRuns": zod.number(),
+  "pendingRuns": zod.number(),
+  "pendingActions": zod.number().describe('Voci pending di «Da confermare» dell\'utente nate da run dell\'agente'),
+  "triggersInError": zod.number(),
+  "succeeded24h": zod.number(),
+  "failed24h": zod.number(),
+  "cancelled24h": zod.number(),
+  "successRate": zod.number().nullable().describe('Run riuscite su riuscite + fallite nelle ultime 24 ore (null senza run concluse)'),
+  "avgDurationMs": zod.number().nullable(),
+  "cost24hUsd": zod.number().nullable().describe('Costo delle run concluse nelle ultime 24 ore (null se nessuna ha un prezzo)'),
+  "unpriced24h": zod.number(),
+  "lastRunAt": zod.coerce.date().nullable(),
+  "lastError": zod.string().nullable().describe('Errore dell\'ultima run fallita nelle ultime 24 ore, su una riga (≤ 200 caratteri)')
+}))
+})
+
+
+/**
+ * Run in corso al più `maxRunningRuns` (1..20) in tutto e `maxRunningPerAgent` (1..10, non oltre il totale) per agente; valgono dal giro successivo dello scheduler, le run già partite non si fermano. Solo con il login.
+ * @summary Limiti di concorrenza delle run di tutta la flotta
+ */
+export const updateFleetPolicyBodyMaxRunningRunsMax = 20;
+
+export const updateFleetPolicyBodyMaxRunningPerAgentMax = 10;
+
+
+
+export const UpdateFleetPolicyBody = zod.object({
+  "maxRunningRuns": zod.number().min(1).max(updateFleetPolicyBodyMaxRunningRunsMax),
+  "maxRunningPerAgent": zod.number().min(1).max(updateFleetPolicyBodyMaxRunningPerAgentMax)
+})
+
+export const UpdateFleetPolicyResponse = zod.object({
+  "paused": zod.boolean(),
+  "pausedAt": zod.coerce.date().nullable(),
+  "pausedBy": zod.number().nullable(),
+  "pausedByName": zod.string().nullable(),
+  "pauseReason": zod.string().nullable(),
+  "maxRunningRuns": zod.number(),
+  "maxRunningPerAgent": zod.number(),
+  "updatedAt": zod.coerce.date().nullable().describe('Null finché la politica non è mai stata cambiata (valori predefiniti)')
+})
+
+
+/**
+ * Nessuna run nuova parte (restano in coda) e sorveglianza e run programmate non scattano finché la flotta non riprende; le run in corso arrivano in fondo, i webhook accodano le run. Già in pausa → 409. Solo con il login.
+ * @summary Mette in pausa la flotta
+ */
+export const pauseFleetBodyReasonMax = 300;
+
+
+
+export const PauseFleetBody = zod.object({
+  "reason": zod.string().max(pauseFleetBodyReasonMax).nullish()
+})
+
+export const PauseFleetResponse = zod.object({
+  "paused": zod.boolean(),
+  "pausedAt": zod.coerce.date().nullable(),
+  "pausedBy": zod.number().nullable(),
+  "pausedByName": zod.string().nullable(),
+  "pauseReason": zod.string().nullable(),
+  "maxRunningRuns": zod.number(),
+  "maxRunningPerAgent": zod.number(),
+  "updatedAt": zod.coerce.date().nullable().describe('Null finché la politica non è mai stata cambiata (valori predefiniti)')
+})
+
+
+/**
+ * Toglie la pausa e avvia subito le run in coda nei limiti. Non in pausa → 409. Solo con il login.
+ * @summary Riprende la flotta
+ */
+export const ResumeFleetResponse = zod.object({
+  "paused": zod.boolean(),
+  "pausedAt": zod.coerce.date().nullable(),
+  "pausedBy": zod.number().nullable(),
+  "pausedByName": zod.string().nullable(),
+  "pauseReason": zod.string().nullable(),
+  "maxRunningRuns": zod.number(),
+  "maxRunningPerAgent": zod.number(),
+  "updatedAt": zod.coerce.date().nullable().describe('Null finché la politica non è mai stata cambiata (valori predefiniti)')
+})
 
 
 /**
@@ -3483,7 +3764,60 @@ export const CancelRunResponse = zod.object({
   "action": zod.string().describe('Azione della definizione del tool (es. navigate)'),
   "args": zod.record(zod.string(), zod.unknown()).describe('Argomenti del modello più quelli fissi della definizione (che vincono)'),
   "requestedAt": zod.coerce.date()
-}),zod.null()]).optional().describe('Azione ui in attesa del client (solo con status awaiting_client), altrimenti null')
+}),zod.null()]).optional().describe('Azione ui in attesa del client (solo con status awaiting_client), altrimenti null'),
+  "activity": zod.union([zod.object({
+  "startedAt": zod.coerce.date().describe('Inizio dell\'esecuzione in questo processo'),
+  "items": zod.array(zod.object({
+  "kind": zod.enum(['model', 'tool']),
+  "toolName": zod.string().nullable().describe('Nome del tool (null per il modello)'),
+  "since": zod.coerce.date()
+})).describe('Attività in corso insieme (al più 20); vuoto tra un passo e l\'altro')
+}),zod.null()]).optional().describe('Cosa sta facendo ora la run (chiamata al modello, tool in esecuzione): solo nel dettaglio (GET \/runs\/{id}), solo mentre la run è running o awaiting_client e la esegue il processo che risponde; altrimenti null')
+})
+
+
+/**
+ * Istruzioni mandate dall'utente alla run durante l'esecuzione, dalla prima, con lo stato: pending (in attesa del prossimo passo), delivered (consegnata al modello), dropped (la run è finita prima di consegnarla).
+ * @summary Istruzioni mandate a una run
+ */
+export const ListRunMessagesParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListRunMessagesResponseItem = zod.object({
+  "id": zod.number(),
+  "runId": zod.number(),
+  "content": zod.string(),
+  "status": zod.enum(['pending', 'delivered', 'dropped']),
+  "createdAt": zod.coerce.date(),
+  "deliveredAt": zod.coerce.date().nullable()
+})
+export const ListRunMessagesResponse = zod.array(ListRunMessagesResponseItem)
+
+
+/**
+ * Solo con la run running ed eseguita dal ciclo cloud (non da Claude Code sul nodo). Il ciclo dell'agente legge le istruzioni tra un passo e l'altro (e prima di chiudere con la risposta finale) e le inserisce come messaggio dell'utente prima della chiamata successiva al modello, senza perdere i passi già eseguiti. L'istruzione non concede permessi: i tool L2 restano in «Da confermare», gli L3 non si offrono. Testo 1..2000 caratteri, al più 5 istruzioni in attesa e 20 in tutto per run (409), 10 al minuto per utente (429).
+ * @summary Manda un'istruzione a una run in corso
+ */
+export const CreateRunMessageParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const createRunMessageBodyContentMax = 2000;
+
+
+
+export const CreateRunMessageBody = zod.object({
+  "content": zod.string().min(1).max(createRunMessageBodyContentMax)
+})
+
+export const CreateRunMessageResponse = zod.object({
+  "id": zod.number(),
+  "runId": zod.number(),
+  "content": zod.string(),
+  "status": zod.enum(['pending', 'delivered', 'dropped']),
+  "createdAt": zod.coerce.date(),
+  "deliveredAt": zod.coerce.date().nullable()
 })
 
 
@@ -3520,7 +3854,7 @@ export const ListAgentTriggersParams = zod.object({
 export const ListAgentTriggersResponseItem = zod.object({
   "id": zod.number(),
   "agentId": zod.number(),
-  "kind": zod.enum(['poll', 'webhook']),
+  "kind": zod.enum(['poll', 'webhook', 'schedule']).describe('poll = sorveglianza di un tool, webhook = chiamata in entrata, schedule = run programmata (espressione cron nell\'ora italiana)'),
   "name": zod.string(),
   "status": zod.enum(['active', 'paused', 'error']),
   "instructions": zod.string().nullable(),
@@ -3538,9 +3872,10 @@ export const ListAgentTriggersResponseItem = zod.object({
   "equals": zod.union([zod.string(),zod.number(),zod.boolean()]).describe('Valore atteso, confronto stretto')
 }),zod.null()]),
   "intervalSeconds": zod.number().nullable(),
-  "nextPollAt": zod.coerce.date().nullable(),
+  "nextPollAt": zod.coerce.date().nullable().describe('Prossimo giro della sorveglianza o prossima run programmata'),
   "baselineDone": zod.boolean().describe('Linea di partenza fatta (solo sorveglianza)'),
   "dedupHeader": zod.string().nullable(),
+  "cron": zod.string().nullable().describe('Solo schedule, espressione cron nell\'ora italiana'),
   "signingSecretSet": zod.boolean().describe('C\'è un segreto di firma (il valore non si legge mai)'),
   "lastPolledAt": zod.coerce.date().nullable().describe('Ultimo giro o ultimo evento ricevuto'),
   "lastError": zod.string().nullable(),
@@ -3561,7 +3896,7 @@ export const CreateAgentTriggerParams = zod.object({
 })
 
 export const CreateAgentTriggerBody = zod.object({
-  "kind": zod.enum(['poll', 'webhook']),
+  "kind": zod.enum(['poll', 'webhook', 'schedule']).describe('poll = sorveglianza di un tool, webhook = chiamata in entrata, schedule = run programmata (espressione cron nell\'ora italiana)'),
   "name": zod.string().describe('Da 1 a 80 caratteri, unico per agente'),
   "instructions": zod.string().nullish().describe('Testo che apre l\'input della run, al massimo 2000 caratteri'),
   "toolId": zod.number().nullish(),
@@ -3576,13 +3911,14 @@ export const CreateAgentTriggerBody = zod.object({
   "equals": zod.union([zod.string(),zod.number(),zod.boolean()]).describe('Valore atteso, confronto stretto')
 }),zod.null()]).optional(),
   "intervalSeconds": zod.number().nullish().describe('Da 60 a 86400 secondi (default 300)'),
-  "dedupHeader": zod.string().nullish()
-}).describe('Configurazione di un innesco. Solo `poll`: `toolId`, `args`, `cursorParam`, `cursorField`, `intervalSeconds`. Solo `webhook`: `dedupHeader`. Percorsi da 1 a 5 segmenti `[A-Za-z0-9_-]` separati da punto.')
+  "dedupHeader": zod.string().nullish(),
+  "cron": zod.string().nullish().describe('Solo schedule: espressione cron a 5 campi (minuto ora giorno mese giorno-della-settimana) nell\'ora italiana, almeno 5 minuti tra due run')
+}).describe('Configurazione di un innesco. Solo `poll`: `toolId`, `args`, `cursorParam`, `cursorField`, `intervalSeconds`. Solo `webhook`: `dedupHeader`. Solo `schedule`: `cron` (obbligatorio) e `instructions` obbligatorie, nessun altro campo. Percorsi da 1 a 5 segmenti `[A-Za-z0-9_-]` separati da punto.')
 
 export const CreateAgentTriggerResponse = zod.object({
   "id": zod.number(),
   "agentId": zod.number(),
-  "kind": zod.enum(['poll', 'webhook']),
+  "kind": zod.enum(['poll', 'webhook', 'schedule']).describe('poll = sorveglianza di un tool, webhook = chiamata in entrata, schedule = run programmata (espressione cron nell\'ora italiana)'),
   "name": zod.string(),
   "status": zod.enum(['active', 'paused', 'error']),
   "instructions": zod.string().nullable(),
@@ -3600,9 +3936,10 @@ export const CreateAgentTriggerResponse = zod.object({
   "equals": zod.union([zod.string(),zod.number(),zod.boolean()]).describe('Valore atteso, confronto stretto')
 }),zod.null()]),
   "intervalSeconds": zod.number().nullable(),
-  "nextPollAt": zod.coerce.date().nullable(),
+  "nextPollAt": zod.coerce.date().nullable().describe('Prossimo giro della sorveglianza o prossima run programmata'),
   "baselineDone": zod.boolean().describe('Linea di partenza fatta (solo sorveglianza)'),
   "dedupHeader": zod.string().nullable(),
+  "cron": zod.string().nullable().describe('Solo schedule, espressione cron nell\'ora italiana'),
   "signingSecretSet": zod.boolean().describe('C\'è un segreto di firma (il valore non si legge mai)'),
   "lastPolledAt": zod.coerce.date().nullable().describe('Ultimo giro o ultimo evento ricevuto'),
   "lastError": zod.string().nullable(),
@@ -3624,7 +3961,7 @@ export const TestAgentTriggerConfigParams = zod.object({
 })
 
 export const TestAgentTriggerConfigBody = zod.object({
-  "kind": zod.enum(['poll', 'webhook']),
+  "kind": zod.enum(['poll', 'webhook', 'schedule']).describe('poll = sorveglianza di un tool, webhook = chiamata in entrata, schedule = run programmata (espressione cron nell\'ora italiana)'),
   "name": zod.string().describe('Da 1 a 80 caratteri, unico per agente'),
   "instructions": zod.string().nullish().describe('Testo che apre l\'input della run, al massimo 2000 caratteri'),
   "toolId": zod.number().nullish(),
@@ -3639,8 +3976,9 @@ export const TestAgentTriggerConfigBody = zod.object({
   "equals": zod.union([zod.string(),zod.number(),zod.boolean()]).describe('Valore atteso, confronto stretto')
 }),zod.null()]).optional(),
   "intervalSeconds": zod.number().nullish().describe('Da 60 a 86400 secondi (default 300)'),
-  "dedupHeader": zod.string().nullish()
-}).describe('Configurazione di un innesco. Solo `poll`: `toolId`, `args`, `cursorParam`, `cursorField`, `intervalSeconds`. Solo `webhook`: `dedupHeader`. Percorsi da 1 a 5 segmenti `[A-Za-z0-9_-]` separati da punto.')
+  "dedupHeader": zod.string().nullish(),
+  "cron": zod.string().nullish().describe('Solo schedule: espressione cron a 5 campi (minuto ora giorno mese giorno-della-settimana) nell\'ora italiana, almeno 5 minuti tra due run')
+}).describe('Configurazione di un innesco. Solo `poll`: `toolId`, `args`, `cursorParam`, `cursorField`, `intervalSeconds`. Solo `webhook`: `dedupHeader`. Solo `schedule`: `cron` (obbligatorio) e `instructions` obbligatorie, nessun altro campo. Percorsi da 1 a 5 segmenti `[A-Za-z0-9_-]` separati da punto.')
 
 export const TestAgentTriggerConfigResponse = zod.object({
   "items": zod.array(zod.object({
@@ -3664,7 +4002,7 @@ export const GetTriggerParams = zod.object({
 export const GetTriggerResponse = zod.object({
   "id": zod.number(),
   "agentId": zod.number(),
-  "kind": zod.enum(['poll', 'webhook']),
+  "kind": zod.enum(['poll', 'webhook', 'schedule']).describe('poll = sorveglianza di un tool, webhook = chiamata in entrata, schedule = run programmata (espressione cron nell\'ora italiana)'),
   "name": zod.string(),
   "status": zod.enum(['active', 'paused', 'error']),
   "instructions": zod.string().nullable(),
@@ -3682,9 +4020,10 @@ export const GetTriggerResponse = zod.object({
   "equals": zod.union([zod.string(),zod.number(),zod.boolean()]).describe('Valore atteso, confronto stretto')
 }),zod.null()]),
   "intervalSeconds": zod.number().nullable(),
-  "nextPollAt": zod.coerce.date().nullable(),
+  "nextPollAt": zod.coerce.date().nullable().describe('Prossimo giro della sorveglianza o prossima run programmata'),
   "baselineDone": zod.boolean().describe('Linea di partenza fatta (solo sorveglianza)'),
   "dedupHeader": zod.string().nullable(),
+  "cron": zod.string().nullable().describe('Solo schedule, espressione cron nell\'ora italiana'),
   "signingSecretSet": zod.boolean().describe('C\'è un segreto di firma (il valore non si legge mai)'),
   "lastPolledAt": zod.coerce.date().nullable().describe('Ultimo giro o ultimo evento ricevuto'),
   "lastError": zod.string().nullable(),
@@ -3718,13 +4057,14 @@ export const UpdateTriggerBody = zod.object({
   "equals": zod.union([zod.string(),zod.number(),zod.boolean()]).describe('Valore atteso, confronto stretto')
 }),zod.null()]).optional(),
   "intervalSeconds": zod.number().nullish(),
-  "dedupHeader": zod.string().nullish()
+  "dedupHeader": zod.string().nullish(),
+  "cron": zod.string().nullish().describe('Solo schedule: espressione cron a 5 campi (minuto ora giorno mese giorno-della-settimana) nell\'ora italiana, almeno 5 minuti tra due run')
 }).describe('Campi da cambiare (assente = invariato, null = tolto); il tipo non cambia.')
 
 export const UpdateTriggerResponse = zod.object({
   "id": zod.number(),
   "agentId": zod.number(),
-  "kind": zod.enum(['poll', 'webhook']),
+  "kind": zod.enum(['poll', 'webhook', 'schedule']).describe('poll = sorveglianza di un tool, webhook = chiamata in entrata, schedule = run programmata (espressione cron nell\'ora italiana)'),
   "name": zod.string(),
   "status": zod.enum(['active', 'paused', 'error']),
   "instructions": zod.string().nullable(),
@@ -3742,9 +4082,10 @@ export const UpdateTriggerResponse = zod.object({
   "equals": zod.union([zod.string(),zod.number(),zod.boolean()]).describe('Valore atteso, confronto stretto')
 }),zod.null()]),
   "intervalSeconds": zod.number().nullable(),
-  "nextPollAt": zod.coerce.date().nullable(),
+  "nextPollAt": zod.coerce.date().nullable().describe('Prossimo giro della sorveglianza o prossima run programmata'),
   "baselineDone": zod.boolean().describe('Linea di partenza fatta (solo sorveglianza)'),
   "dedupHeader": zod.string().nullable(),
+  "cron": zod.string().nullable().describe('Solo schedule, espressione cron nell\'ora italiana'),
   "signingSecretSet": zod.boolean().describe('C\'è un segreto di firma (il valore non si legge mai)'),
   "lastPolledAt": zod.coerce.date().nullable().describe('Ultimo giro o ultimo evento ricevuto'),
   "lastError": zod.string().nullable(),
@@ -3775,7 +4116,7 @@ export const PauseTriggerParams = zod.object({
 export const PauseTriggerResponse = zod.object({
   "id": zod.number(),
   "agentId": zod.number(),
-  "kind": zod.enum(['poll', 'webhook']),
+  "kind": zod.enum(['poll', 'webhook', 'schedule']).describe('poll = sorveglianza di un tool, webhook = chiamata in entrata, schedule = run programmata (espressione cron nell\'ora italiana)'),
   "name": zod.string(),
   "status": zod.enum(['active', 'paused', 'error']),
   "instructions": zod.string().nullable(),
@@ -3793,9 +4134,10 @@ export const PauseTriggerResponse = zod.object({
   "equals": zod.union([zod.string(),zod.number(),zod.boolean()]).describe('Valore atteso, confronto stretto')
 }),zod.null()]),
   "intervalSeconds": zod.number().nullable(),
-  "nextPollAt": zod.coerce.date().nullable(),
+  "nextPollAt": zod.coerce.date().nullable().describe('Prossimo giro della sorveglianza o prossima run programmata'),
   "baselineDone": zod.boolean().describe('Linea di partenza fatta (solo sorveglianza)'),
   "dedupHeader": zod.string().nullable(),
+  "cron": zod.string().nullable().describe('Solo schedule, espressione cron nell\'ora italiana'),
   "signingSecretSet": zod.boolean().describe('C\'è un segreto di firma (il valore non si legge mai)'),
   "lastPolledAt": zod.coerce.date().nullable().describe('Ultimo giro o ultimo evento ricevuto'),
   "lastError": zod.string().nullable(),
@@ -3816,7 +4158,7 @@ export const ResumeTriggerParams = zod.object({
 export const ResumeTriggerResponse = zod.object({
   "id": zod.number(),
   "agentId": zod.number(),
-  "kind": zod.enum(['poll', 'webhook']),
+  "kind": zod.enum(['poll', 'webhook', 'schedule']).describe('poll = sorveglianza di un tool, webhook = chiamata in entrata, schedule = run programmata (espressione cron nell\'ora italiana)'),
   "name": zod.string(),
   "status": zod.enum(['active', 'paused', 'error']),
   "instructions": zod.string().nullable(),
@@ -3834,9 +4176,10 @@ export const ResumeTriggerResponse = zod.object({
   "equals": zod.union([zod.string(),zod.number(),zod.boolean()]).describe('Valore atteso, confronto stretto')
 }),zod.null()]),
   "intervalSeconds": zod.number().nullable(),
-  "nextPollAt": zod.coerce.date().nullable(),
+  "nextPollAt": zod.coerce.date().nullable().describe('Prossimo giro della sorveglianza o prossima run programmata'),
   "baselineDone": zod.boolean().describe('Linea di partenza fatta (solo sorveglianza)'),
   "dedupHeader": zod.string().nullable(),
+  "cron": zod.string().nullable().describe('Solo schedule, espressione cron nell\'ora italiana'),
   "signingSecretSet": zod.boolean().describe('C\'è un segreto di firma (il valore non si legge mai)'),
   "lastPolledAt": zod.coerce.date().nullable().describe('Ultimo giro o ultimo evento ricevuto'),
   "lastError": zod.string().nullable(),
@@ -3895,7 +4238,7 @@ export const SetTriggerSigningSecretBody = zod.object({
 export const SetTriggerSigningSecretResponse = zod.object({
   "id": zod.number(),
   "agentId": zod.number(),
-  "kind": zod.enum(['poll', 'webhook']),
+  "kind": zod.enum(['poll', 'webhook', 'schedule']).describe('poll = sorveglianza di un tool, webhook = chiamata in entrata, schedule = run programmata (espressione cron nell\'ora italiana)'),
   "name": zod.string(),
   "status": zod.enum(['active', 'paused', 'error']),
   "instructions": zod.string().nullable(),
@@ -3913,9 +4256,10 @@ export const SetTriggerSigningSecretResponse = zod.object({
   "equals": zod.union([zod.string(),zod.number(),zod.boolean()]).describe('Valore atteso, confronto stretto')
 }),zod.null()]),
   "intervalSeconds": zod.number().nullable(),
-  "nextPollAt": zod.coerce.date().nullable(),
+  "nextPollAt": zod.coerce.date().nullable().describe('Prossimo giro della sorveglianza o prossima run programmata'),
   "baselineDone": zod.boolean().describe('Linea di partenza fatta (solo sorveglianza)'),
   "dedupHeader": zod.string().nullable(),
+  "cron": zod.string().nullable().describe('Solo schedule, espressione cron nell\'ora italiana'),
   "signingSecretSet": zod.boolean().describe('C\'è un segreto di firma (il valore non si legge mai)'),
   "lastPolledAt": zod.coerce.date().nullable().describe('Ultimo giro o ultimo evento ricevuto'),
   "lastError": zod.string().nullable(),
@@ -3958,7 +4302,15 @@ export const ListTriggerRunsResponseItem = zod.object({
   "action": zod.string().describe('Azione della definizione del tool (es. navigate)'),
   "args": zod.record(zod.string(), zod.unknown()).describe('Argomenti del modello più quelli fissi della definizione (che vincono)'),
   "requestedAt": zod.coerce.date()
-}),zod.null()]).optional().describe('Azione ui in attesa del client (solo con status awaiting_client), altrimenti null')
+}),zod.null()]).optional().describe('Azione ui in attesa del client (solo con status awaiting_client), altrimenti null'),
+  "activity": zod.union([zod.object({
+  "startedAt": zod.coerce.date().describe('Inizio dell\'esecuzione in questo processo'),
+  "items": zod.array(zod.object({
+  "kind": zod.enum(['model', 'tool']),
+  "toolName": zod.string().nullable().describe('Nome del tool (null per il modello)'),
+  "since": zod.coerce.date()
+})).describe('Attività in corso insieme (al più 20); vuoto tra un passo e l\'altro')
+}),zod.null()]).optional().describe('Cosa sta facendo ora la run (chiamata al modello, tool in esecuzione): solo nel dettaglio (GET \/runs\/{id}), solo mentre la run è running o awaiting_client e la esegue il processo che risponde; altrimenti null')
 })
 export const ListTriggerRunsResponse = zod.array(ListTriggerRunsResponseItem)
 
@@ -3973,6 +4325,8 @@ export const ListAnalysesParams = zod.object({
 export const ListAnalysesResponseItem = zod.object({
   "id": zod.number(),
   "appId": zod.number(),
+  "sourceCommit": zod.string().nullable().describe('Commit del clone su cui ha lavorato l\'agente locale (null se non riferito)'),
+  "triggerCommit": zod.string().nullable().describe('SHA del branch base che ha avviato la rianalisi automatica (null = avviata a mano)'),
   "model": zod.string(),
   "aiModelId": zod.number().nullable(),
   "status": zod.enum(['queued', 'running', 'completed', 'failed', 'interrupted']),
@@ -4022,6 +4376,8 @@ export const StartAnalysisBody = zod.object({
 export const StartAnalysisResponse = zod.object({
   "id": zod.number(),
   "appId": zod.number(),
+  "sourceCommit": zod.string().nullable().describe('Commit del clone su cui ha lavorato l\'agente locale (null se non riferito)'),
+  "triggerCommit": zod.string().nullable().describe('SHA del branch base che ha avviato la rianalisi automatica (null = avviata a mano)'),
   "model": zod.string(),
   "aiModelId": zod.number().nullable(),
   "status": zod.enum(['queued', 'running', 'completed', 'failed', 'interrupted']),
@@ -4070,6 +4426,8 @@ export const StartZipAnalysisQueryParams = zod.object({
 export const StartZipAnalysisResponse = zod.object({
   "id": zod.number(),
   "appId": zod.number(),
+  "sourceCommit": zod.string().nullable().describe('Commit del clone su cui ha lavorato l\'agente locale (null se non riferito)'),
+  "triggerCommit": zod.string().nullable().describe('SHA del branch base che ha avviato la rianalisi automatica (null = avviata a mano)'),
   "model": zod.string(),
   "aiModelId": zod.number().nullable(),
   "status": zod.enum(['queued', 'running', 'completed', 'failed', 'interrupted']),
@@ -4105,6 +4463,8 @@ export const GetAnalysisParams = zod.object({
 export const GetAnalysisResponse = zod.object({
   "id": zod.number(),
   "appId": zod.number(),
+  "sourceCommit": zod.string().nullable().describe('Commit del clone su cui ha lavorato l\'agente locale (null se non riferito)'),
+  "triggerCommit": zod.string().nullable().describe('SHA del branch base che ha avviato la rianalisi automatica (null = avviata a mano)'),
   "model": zod.string(),
   "aiModelId": zod.number().nullable(),
   "status": zod.enum(['queued', 'running', 'completed', 'failed', 'interrupted']),
@@ -4179,6 +4539,8 @@ export const ReleaseAnalysisParams = zod.object({
 export const ReleaseAnalysisResponse = zod.object({
   "id": zod.number(),
   "appId": zod.number(),
+  "sourceCommit": zod.string().nullable().describe('Commit del clone su cui ha lavorato l\'agente locale (null se non riferito)'),
+  "triggerCommit": zod.string().nullable().describe('SHA del branch base che ha avviato la rianalisi automatica (null = avviata a mano)'),
   "model": zod.string(),
   "aiModelId": zod.number().nullable(),
   "status": zod.enum(['queued', 'running', 'completed', 'failed', 'interrupted']),
@@ -4215,6 +4577,8 @@ export const CancelAnalysisParams = zod.object({
 export const CancelAnalysisResponse = zod.object({
   "id": zod.number(),
   "appId": zod.number(),
+  "sourceCommit": zod.string().nullable().describe('Commit del clone su cui ha lavorato l\'agente locale (null se non riferito)'),
+  "triggerCommit": zod.string().nullable().describe('SHA del branch base che ha avviato la rianalisi automatica (null = avviata a mano)'),
   "model": zod.string(),
   "aiModelId": zod.number().nullable(),
   "status": zod.enum(['queued', 'running', 'completed', 'failed', 'interrupted']),
@@ -4377,6 +4741,7 @@ export const GetDashboardStatsResponse = zod.object({
   "pendingActions": zod.number().describe('Azioni dell\'utente corrente in attesa di conferma'),
   "triggersInError": zod.number().describe('Inneschi fermi in stato error (servono «Riprendi»)'),
   "evolutionCyclesPaused": zod.number().describe('Cicli di evoluzione in pausa attivati dall\'utente corrente'),
+  "fleetPaused": zod.boolean().describe('La flotta degli agenti è in pausa (nessuna run nuova parte, vedi \/fleet)'),
   "recentlyPairedNodes": zod.array(zod.object({
   "id": zod.number(),
   "name": zod.string(),
@@ -7066,7 +7431,24 @@ export const GetCatalogStatusResponse = zod.object({
   "accountId": zod.number(),
   "accountName": zod.string(),
   "missing": zod.array(zod.string())
-})).describe('Solo gli account dell\'utente corrente')
+})).describe('Solo gli account dell\'utente corrente'),
+  "agents": zod.array(zod.object({
+  "agentId": zod.number(),
+  "agentName": zod.string(),
+  "appId": zod.number(),
+  "appName": zod.string(),
+  "aiModelId": zod.number(),
+  "modelName": zod.string(),
+  "deprecationDate": zod.string().nullable().describe('Giorno della dismissione (AAAA-MM-GG); null per un modello ritirato senza data'),
+  "retired": zod.boolean(),
+  "replacement": zod.union([zod.object({
+  "aiModelId": zod.number(),
+  "name": zod.string(),
+  "accountName": zod.string(),
+  "priceInput": zod.number(),
+  "priceOutput": zod.number()
+}),zod.null()]).describe('Sostituto più economico con strumenti tra i modelli dell\'utente; null se non ce n\'è uno')
+})).describe('Agenti con il modello ritirato o in dismissione entro 30 giorni, solo quelli con il modello di un account dell\'utente corrente, con il sostituto proposto tra i suoi modelli')
 }),zod.null()])
 }),zod.null()]),
   "lastCompleted": zod.union([zod.object({
@@ -7114,9 +7496,51 @@ export const GetCatalogStatusResponse = zod.object({
   "accountId": zod.number(),
   "accountName": zod.string(),
   "missing": zod.array(zod.string())
-})).describe('Solo gli account dell\'utente corrente')
+})).describe('Solo gli account dell\'utente corrente'),
+  "agents": zod.array(zod.object({
+  "agentId": zod.number(),
+  "agentName": zod.string(),
+  "appId": zod.number(),
+  "appName": zod.string(),
+  "aiModelId": zod.number(),
+  "modelName": zod.string(),
+  "deprecationDate": zod.string().nullable().describe('Giorno della dismissione (AAAA-MM-GG); null per un modello ritirato senza data'),
+  "retired": zod.boolean(),
+  "replacement": zod.union([zod.object({
+  "aiModelId": zod.number(),
+  "name": zod.string(),
+  "accountName": zod.string(),
+  "priceInput": zod.number(),
+  "priceOutput": zod.number()
+}),zod.null()]).describe('Sostituto più economico con strumenti tra i modelli dell\'utente; null se non ce n\'è uno')
+})).describe('Agenti con il modello ritirato o in dismissione entro 30 giorni, solo quelli con il modello di un account dell\'utente corrente, con il sostituto proposto tra i suoi modelli')
 }),zod.null()])
 }),zod.null()]).describe('Ultima esecuzione completed o partial, da cui leggere le novità')
+})
+
+
+/**
+ * Agenti il cui modello è ritirato o ha la data di dismissione entro 30 giorni, con il sostituto più economico con strumenti tra i modelli degli account dell'utente corrente (null se non ce n'è uno). Solo letture.
+ * @summary Agenti con il modello in dismissione
+ */
+export const ListAgentModelDeprecationsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "agentId": zod.number(),
+  "agentName": zod.string(),
+  "appId": zod.number(),
+  "appName": zod.string(),
+  "aiModelId": zod.number(),
+  "modelName": zod.string(),
+  "deprecationDate": zod.string().nullable().describe('Giorno della dismissione (AAAA-MM-GG); null per un modello ritirato senza data'),
+  "retired": zod.boolean(),
+  "replacement": zod.union([zod.object({
+  "aiModelId": zod.number(),
+  "name": zod.string(),
+  "accountName": zod.string(),
+  "priceInput": zod.number(),
+  "priceOutput": zod.number()
+}),zod.null()]).describe('Sostituto più economico con strumenti tra i modelli dell\'utente; null se non ce n\'è uno')
+}))
 })
 
 
@@ -7176,7 +7600,24 @@ export const RefreshCatalogResponse = zod.object({
   "accountId": zod.number(),
   "accountName": zod.string(),
   "missing": zod.array(zod.string())
-})).describe('Solo gli account dell\'utente corrente')
+})).describe('Solo gli account dell\'utente corrente'),
+  "agents": zod.array(zod.object({
+  "agentId": zod.number(),
+  "agentName": zod.string(),
+  "appId": zod.number(),
+  "appName": zod.string(),
+  "aiModelId": zod.number(),
+  "modelName": zod.string(),
+  "deprecationDate": zod.string().nullable().describe('Giorno della dismissione (AAAA-MM-GG); null per un modello ritirato senza data'),
+  "retired": zod.boolean(),
+  "replacement": zod.union([zod.object({
+  "aiModelId": zod.number(),
+  "name": zod.string(),
+  "accountName": zod.string(),
+  "priceInput": zod.number(),
+  "priceOutput": zod.number()
+}),zod.null()]).describe('Sostituto più economico con strumenti tra i modelli dell\'utente; null se non ce n\'è uno')
+})).describe('Agenti con il modello ritirato o in dismissione entro 30 giorni, solo quelli con il modello di un account dell\'utente corrente, con il sostituto proposto tra i suoi modelli')
 }),zod.null()])
 })
 

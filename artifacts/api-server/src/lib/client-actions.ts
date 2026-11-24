@@ -8,6 +8,7 @@
 import { randomUUID } from "node:crypto";
 import { db, runsTable, type ClientActionRow } from "@workspace/db";
 import { and, eq, sql } from "drizzle-orm";
+import { publishRunChange } from "./live/events";
 import { validateArgs } from "./tools/definition";
 import type { CatalogTool, ToolResult, UiDefinition } from "./tools/types";
 
@@ -66,7 +67,9 @@ async function resume(runId: number, actionId: string): Promise<ClientActionRow 
       from (select client_action as old from runs where id = ${runId} for update) o
      where r.id = ${runId} and r.status = 'awaiting_client' and r.client_action->>'id' = ${actionId}
     returning o.old`);
-  return rows.rows[0]?.old ?? null;
+  const old = rows.rows[0]?.old ?? null;
+  if (old) publishRunChange(runId, null);
+  return old;
 }
 
 function toToolResult(result: NonNullable<ClientActionRow["result"]>): ToolResult {
@@ -106,6 +109,7 @@ export async function requestClientAction(input: {
     .where(and(eq(runsTable.id, runId), eq(runsTable.status, "running")))
     .returning({ id: runsTable.id });
   if (!started) return { ok: false, content: CLIENT_ACTION_MESSAGES.notRunning };
+  publishRunChange(runId, null);
 
   const deadline = now() + (input.timeoutMs ?? CLIENT_ACTION_TIMEOUT_MS);
   let wake: () => void = () => {};

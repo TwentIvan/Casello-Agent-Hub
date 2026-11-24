@@ -5,6 +5,7 @@
  * Casello — hub per agentificare applicazioni
  * OpenAPI spec version: 0.1.0
  */
+import type { RunActivity } from './runActivity';
 import type { RunClientAction } from './runClientAction';
 import type { RunStatus } from './runStatus';
 
@@ -61,4 +62,6 @@ export interface Run {
   clientTools?: boolean;
   /** Azione ui in attesa del client (solo con status awaiting_client), altrimenti null */
   clientAction?: RunClientAction | null;
+  /** Cosa sta facendo ora la run (chiamata al modello, tool in esecuzione): solo nel dettaglio (GET /runs/{id}), solo mentre la run è running o awaiting_client e la esegue il processo che risponde; altrimenti null */
+  activity?: RunActivity | null;
 }

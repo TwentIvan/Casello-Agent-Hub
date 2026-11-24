@@ -47,6 +47,11 @@ export const appsTable = pgTable(
     mcpUrl: text("mcp_url"),
     functionalDescription: text("functional_description"),
     architectureRefresh: architectureRefreshEnum("architecture_refresh").notNull().default("6h"),
+    // Rianalisi automatica: a ogni nuovo commit del branch base un'analisi con l'agente locale (issue #113)
+    autoReanalysis: boolean("auto_reanalysis").notNull().default(false),
+    // Ultimo SHA del branch base già gestito dalla rianalisi automatica e ora dell'ultimo controllo
+    reanalysisSeenSha: text("reanalysis_seen_sha"),
+    reanalysisCheckedAt: timestamp("reanalysis_checked_at"),
     // Versione di prova (lavoro su branch unico): branch riscritto da Botcave a ogni lavoro e indirizzo dove la CI/Coolify lo pubblica
     stagingBranch: text("staging_branch"),
     stagingUrl: text("staging_url"),

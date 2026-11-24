@@ -20,6 +20,8 @@ import { compareCursor, extractItems, type ExtractedItem } from "./extract";
 import { buildTriggerInput } from "./input";
 import { TRIGGER_MESSAGES } from "./messages";
 import { isActive, lockActive, NotActive, QueueFull, queueTriggerRun } from "./queue-run";
+import { fireSchedule } from "./schedule";
+import { fleetPaused } from "../fleet/policy";
 
 // Sorveglianza (spec §4.3): un giro chiama il tool dell'innesco, estrae gli elementi e crea una run per
 // ogni elemento nuovo. La chiave dell'elemento e la run stanno nella stessa transazione: una chiave vista
@@ -370,24 +372,29 @@ async function createRunForItem(tx: Tx, trigger: AgentTrigger, agent: Agent, ite
   return runId !== null;
 }
 
-/** Inneschi scaduti, fino a 20, eseguiti con al più 4 giri in parallelo. */
+/** Inneschi scaduti (sorveglianza e run programmate), fino a 20, eseguiti con al più 4 giri in parallelo. */
 async function pollDueTriggers(): Promise<void> {
+  // Flotta in pausa (issue #117): sorveglianza e run programmate non scattano; restano scaduti e ripartono alla
+  // ripresa (una sola run per una scadenza programmata persa, come dopo un fermo del server)
+  if (await fleetPaused()) return;
   const due = await db
-    .select({ id: agentTriggersTable.id })
+    .select({ id: agentTriggersTable.id, kind: agentTriggersTable.kind })
     .from(agentTriggersTable)
     .where(
       and(
         eq(agentTriggersTable.status, "active"),
-        eq(agentTriggersTable.kind, "poll"),
+        inArray(agentTriggersTable.kind, ["poll", "schedule"]),
         lte(agentTriggersTable.nextPollAt, sql`now()`),
       ),
     )
     .orderBy(asc(agentTriggersTable.nextPollAt))
     .limit(DUE_PER_CHECK);
-  const queue = due.map((d) => d.id);
+  const queue = [...due];
   const worker = async () => {
-    for (let id = queue.shift(); id !== undefined; id = queue.shift()) {
-      await pollTrigger(id).catch((err: unknown) => {
+    for (let next = queue.shift(); next !== undefined; next = queue.shift()) {
+      const id = next.id;
+      const pass = next.kind === "schedule" ? fireSchedule(id) : pollTrigger(id);
+      await pass.catch((err: unknown) => {
         logger.error({ triggerId: id, errName: err instanceof Error ? err.name : typeof err }, "Giro dell'innesco non riuscito");
       });
     }
@@ -415,7 +422,7 @@ export async function sweepSeenItems(): Promise<void> {
 }
 
 /**
- * Avvia la sorveglianza: un controllo ogni 15 s (uno alla volta) e la pulizia delle chiavi ogni ora.
+ * Avvia la sorveglianza e le run programmate: un controllo ogni 15 s (uno alla volta) e la pulizia delle chiavi ogni ora.
  * Restituisce la funzione che la ferma. Nessun recupero all'avvio: lo stato sta tutto nel DB.
  */
 export function startTriggerPoller(): () => void {

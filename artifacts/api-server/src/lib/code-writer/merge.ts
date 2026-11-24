@@ -12,6 +12,7 @@ import { enqueueTurnReason, notifyTurnQueued } from "../teams/turn-queue";
 import type { CatalogTool, ToolResult } from "../tools/types";
 import { ciState } from "./ci-state";
 import { requestArchitectureRefresh } from "../architecture/scheduler";
+import { requestReanalysisCheck } from "../reanalysis/service";
 import { getPullDetail, listPullFiles, markReadyForReview, readCi, readFileAt, squashMerge, type PullDetail, type PullFile, type RepoRef } from "./github-git";
 import { classifyMigration, isPostMigration, MIGRATION_NAME_RE } from "../migrations/classify";
 import { codeBranch, codeErrorMessage } from "./session";
@@ -264,6 +265,8 @@ async function doMerge(ctx: Context, pull: PullDetail): Promise<string> {
     void requestArchitectureRefresh(ctx.instance.refAppId, { bypassOff: false, clearBackoff: false }).catch((e: unknown) =>
       logger.error({ appId: ctx.instance.refAppId, errName: e instanceof Error ? e.name : "Error" }, "Aggiornamento della sintesi dell'architettura non richiesto"),
     );
+    // Rianalisi automatica: il catalogo dei tool si riallinea al codice unito (solo con `auto_reanalysis`)
+    requestReanalysisCheck(ctx.instance.refAppId);
     return merged.sha;
   } catch (err) {
     await release(ctx.row.id).catch((e: unknown) =>

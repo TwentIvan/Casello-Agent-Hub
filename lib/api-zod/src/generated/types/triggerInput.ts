@@ -10,7 +10,7 @@ import type { TriggerInputArgs } from './triggerInputArgs';
 import type { TriggerKind } from './triggerKind';
 
 /**
- * Configurazione di un innesco. Solo `poll`: `toolId`, `args`, `cursorParam`, `cursorField`, `intervalSeconds`. Solo `webhook`: `dedupHeader`. Percorsi da 1 a 5 segmenti `[A-Za-z0-9_-]` separati da punto.
+ * Configurazione di un innesco. Solo `poll`: `toolId`, `args`, `cursorParam`, `cursorField`, `intervalSeconds`. Solo `webhook`: `dedupHeader`. Solo `schedule`: `cron` (obbligatorio) e `instructions` obbligatorie, nessun altro campo. Percorsi da 1 a 5 segmenti `[A-Za-z0-9_-]` separati da punto.
  */
 export interface TriggerInput {
   kind: TriggerKind;
@@ -49,4 +49,9 @@ export interface TriggerInput {
   intervalSeconds?: number | null;
   /** @nullable */
   dedupHeader?: string | null;
+  /**
+     * Solo schedule: espressione cron a 5 campi (minuto ora giorno mese giorno-della-settimana) nell'ora italiana, almeno 5 minuti tra due run
+     * @nullable
+     */
+  cron?: string | null;
 }

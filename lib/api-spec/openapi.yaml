@@ -34,6 +34,8 @@ tags:
     description: Account AI dell'utente (provider, chiave, modelli e prezzi) e stima dei costi
   - name: catalog
     description: Catalogo dei modelli per provider e suo aggiornamento
+  - name: fleet
+    description: Flotta degli agenti (salute, attività e politica di coordinamento comune)
   - name: evolution
     description: Ciclo di evoluzione automatica di un'App (impostazioni, consenso, giri)
   - name: architect
@@ -490,6 +492,45 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+
+  /account/audit-events:
+    get:
+      operationId: listAuditEvents
+      tags: [auth]
+      summary: Registro delle azioni dell'utente
+      description: >-
+        Eventi delle operazioni sensibili dell'utente (approvazioni, conferme, token, segreti, account AI, nodi,
+        accessi), dal più recente, con azione, oggetto, canale e IP; mai segreti, token né testi. Paginazione con
+        `before` (id dell'ultimo evento della pagina precedente). Conservati 365 giorni. Solo con il login: con un
+        token risponde 403.
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+        - name: before
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+      responses:
+        "200":
+          description: Pagina di eventi
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuditEventPage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /account/oauth-grants:
     get:
@@ -2756,6 +2797,168 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /live:
+    get:
+      operationId: streamLiveUpdates
+      tags: [runs]
+      summary: Aggiornamenti in tempo reale delle run (Server-Sent Events)
+      description: >-
+        Flusso `text/event-stream` solo con il login (EventSource della console; con un token 403). Eventi: `ready` all'apertura,
+        `runs` con `{runs: [{runId, agentId}]}` quando lo stato o i passi di quelle run cambiano (al più un messaggio ogni 300 ms,
+        `agentId` null se non noto), un commento `: ping` ogni 25 s. Dice solo quale run è cambiata: i dati si rileggono con le
+        GET di sempre. In memoria: con più container gli avvisi dell'altro non arrivano. Al più 6 flussi per utente (429).
+      responses:
+        "200":
+          description: Flusso di eventi
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /agents/{id}/model-evaluation:
+    get:
+      operationId: getAgentModelEvaluation
+      tags: [agents]
+      summary: Valutazione del modello di un agente con i modelli più economici
+      description: >-
+        Legge le ultime run concluse dell'agente (al più 50 degli ultimi 30 giorni: esito, token, costo, passi tool falliti),
+        calcola il costo medio stimato di una run con il modello attuale e con i modelli con strumenti degli account AI
+        dell'utente (disponibili, prezzi noti, non in anteprima, non Claude Code sul nodo) e propone al più 5 modelli più
+        economici. Un modello già provato dall'agente (almeno 3 run) con un successo più basso di 10 punti rispetto al
+        riferimento non si propone. Solo lettura, nessuna chiamata a modelli: per cambiare modello si usa PATCH /agents/{id}.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Valutazione
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentModelEvaluation"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /agent-activity:
+    get:
+      operationId: listAgentActivity
+      tags: [agents]
+      summary: Stato per agente (in lavoro, in attesa dell'utente, fermo)
+      description: >-
+        Solo gli agenti non fermi (gli assenti sono fermi), in ordine di id. `waiting_user` se una run aspetta il client o
+        ci sono voci `pending` di «Da confermare» dell'utente nate dall'agente; `working` con run `pending`/`running` o run
+        figlie ancora aperte; altrimenti `idle`.
+      responses:
+        "200":
+          description: Attività degli agenti
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AgentActivity"
+
+  /fleet:
+    get:
+      operationId: getFleet
+      tags: [fleet]
+      summary: Salute e attività della flotta degli agenti
+      description: >-
+        Ogni agente con salute (`failing` senza modello, con un innesco in errore o con meno della metà delle run
+        riuscite su almeno 3; `degraded` con qualche errore, una run in corso da oltre 15 minuti o almeno 20 run in coda;
+        `off` se non attivo), problemi, attività, run in corso e in coda e numeri delle ultime 24 ore; poi il riepilogo
+        e la politica di coordinamento. Dal più grave. Solo letture.
+      responses:
+        "200":
+          description: Vista della flotta
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FleetView"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /fleet/policy:
+    put:
+      operationId: updateFleetPolicy
+      tags: [fleet]
+      summary: Limiti di concorrenza delle run di tutta la flotta
+      description: >-
+        Run in corso al più `maxRunningRuns` (1..20) in tutto e `maxRunningPerAgent` (1..10, non oltre il totale) per
+        agente; valgono dal giro successivo dello scheduler, le run già partite non si fermano. Solo con il login.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FleetLimitsUpdate"
+      responses:
+        "200":
+          description: Politica aggiornata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FleetPolicy"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /fleet/pause:
+    post:
+      operationId: pauseFleet
+      tags: [fleet]
+      summary: Mette in pausa la flotta
+      description: >-
+        Nessuna run nuova parte (restano in coda) e sorveglianza e run programmate non scattano finché la flotta non
+        riprende; le run in corso arrivano in fondo, i webhook accodano le run. Già in pausa → 409. Solo con il login.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FleetPauseRequest"
+      responses:
+        "200":
+          description: Flotta in pausa
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FleetPolicy"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /fleet/resume:
+    post:
+      operationId: resumeFleet
+      tags: [fleet]
+      summary: Riprende la flotta
+      description: Toglie la pausa e avvia subito le run in coda nei limiti. Non in pausa → 409. Solo con il login.
+      responses:
+        "200":
+          description: Flotta ripresa
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FleetPolicy"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
   /runs/{id}/cancel:
     post:
       operationId: cancelRun
@@ -2778,6 +2981,61 @@ paths:
           $ref: "#/components/responses/NotFound"
         "409":
           $ref: "#/components/responses/Conflict"
+
+  /runs/{id}/messages:
+    get:
+      operationId: listRunMessages
+      tags: [runs]
+      summary: Istruzioni mandate a una run
+      description: >-
+        Istruzioni mandate dall'utente alla run durante l'esecuzione, dalla prima, con lo stato: pending (in attesa del
+        prossimo passo), delivered (consegnata al modello), dropped (la run è finita prima di consegnarla).
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Istruzioni della run
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/RunMessage"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      operationId: createRunMessage
+      tags: [runs]
+      summary: Manda un'istruzione a una run in corso
+      description: >-
+        Solo con la run running ed eseguita dal ciclo cloud (non da Claude Code sul nodo). Il ciclo dell'agente legge le
+        istruzioni tra un passo e l'altro (e prima di chiudere con la risposta finale) e le inserisce come messaggio
+        dell'utente prima della chiamata successiva al modello, senza perdere i passi già eseguiti. L'istruzione non
+        concede permessi: i tool L2 restano in «Da confermare», gli L3 non si offrono. Testo 1..2000 caratteri, al più 5
+        istruzioni in attesa e 20 in tutto per run (409), 10 al minuto per utente (429).
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RunMessageCreate"
+      responses:
+        "201":
+          description: Istruzione in attesa di consegna
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RunMessage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
 
   /runs/{id}/client-result:
     post:
@@ -4922,6 +5180,22 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/CatalogStatus"
+
+  /catalog/agent-deprecations:
+    get:
+      operationId: listAgentModelDeprecations
+      tags: [catalog]
+      summary: Agenti con il modello in dismissione
+      description: >-
+        Agenti il cui modello è ritirato o ha la data di dismissione entro 30 giorni, con il sostituto più economico con
+        strumenti tra i modelli degli account dell'utente corrente (null se non ce n'è uno). Solo letture.
+      responses:
+        "200":
+          description: Agenti
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentModelDeprecationList"
 
   /catalog/refresh:
     post:
@@ -7103,7 +7377,7 @@ components:
 
     App:
       type: object
-      required: [id, name, slug, baseUrl, status, serviceSecretSet, extraHeaders, sourceType, sourceRepo, sourceBranch, sourceTokenSet, sourceInstallationId, openapiUrl, functionalDescription, architectureRefresh, stagingBranch, stagingUrl, alfredName, luciusName, leadName, botNames, pageActions, embedPagesSeen, createdAt, updatedAt]
+      required: [id, name, slug, baseUrl, status, serviceSecretSet, extraHeaders, sourceType, sourceRepo, sourceBranch, sourceTokenSet, sourceInstallationId, openapiUrl, functionalDescription, architectureRefresh, autoReanalysis, reanalysisSeenSha, reanalysisCheckedAt, stagingBranch, stagingUrl, alfredName, luciusName, leadName, botNames, pageActions, embedPagesSeen, createdAt, updatedAt]
       properties:
         id:
           type: integer
@@ -7161,6 +7435,16 @@ components:
           description: Descrizione funzionale dell'app per l'architetto
         architectureRefresh:
           $ref: "#/components/schemas/ArchitectureRefresh"
+        autoReanalysis:
+          type: boolean
+          description: Rianalisi automatica, a ogni nuovo commit del branch base un'analisi in coda per l'agente locale
+        reanalysisSeenSha:
+          type: ["string", "null"]
+          description: Ultimo SHA del branch base già gestito dalla rianalisi automatica
+        reanalysisCheckedAt:
+          type: ["string", "null"]
+          format: date-time
+          description: Ultimo controllo della rianalisi automatica
         stagingBranch:
           type: ["string", "null"]
           description: Branch di prova dell'App, riscritto da Botcave a ogni lavoro delle squadre (null = nessuna versione di prova)
@@ -7655,6 +7939,9 @@ components:
           type: ["string", "null"]
         architectureRefresh:
           $ref: "#/components/schemas/ArchitectureRefresh"
+        autoReanalysis:
+          type: boolean
+          description: Accende o spegne la rianalisi automatica (serve il codice da GitHub tramite installazione per avere effetto)
         stagingBranch:
           type: ["string", "null"]
           description: Branch di prova (non il base, non main/master, non botcave/…); null lo toglie
@@ -7972,6 +8259,310 @@ components:
 
     # ── Run ────────────────────────────────────────────────────────────────────
 
+    AgentModelEvaluation:
+      type: object
+      required: [agentId, agentName, windowDays, enoughData, currentModel, usage, byModel, suggestions, note]
+      properties:
+        agentId:
+          type: integer
+        agentName:
+          type: string
+        windowDays:
+          type: integer
+          description: Giorni delle run considerate
+        enoughData:
+          type: boolean
+          description: Almeno 5 run concluse e non annullate nella finestra
+        currentModel:
+          type: [object, "null"]
+          required: [aiModelId, name, accountName, priceInput, priceOutput, estimatedCostPerRunUsd]
+          properties:
+            aiModelId:
+              type: integer
+            name:
+              type: string
+            accountName:
+              type: string
+            priceInput:
+              type: [number, "null"]
+            priceOutput:
+              type: [number, "null"]
+            estimatedCostPerRunUsd:
+              type: [number, "null"]
+              description: Costo stimato di una run media con i prezzi del modello; null senza prezzi o senza run
+        usage:
+          type: object
+          required: [runs, succeeded, failed, cancelled, successRate, avgPromptTokens, avgCachedTokens, avgCompletionTokens, avgCostUsd, unpricedRuns, toolCalls, toolErrors, runsInWindow]
+          properties:
+            runs:
+              type: integer
+              description: Run lette (al più 50)
+            succeeded:
+              type: integer
+            failed:
+              type: integer
+            cancelled:
+              type: integer
+            successRate:
+              type: [number, "null"]
+              description: Riuscite su riuscite più fallite (0..1)
+            avgPromptTokens:
+              type: [integer, "null"]
+            avgCachedTokens:
+              type: [integer, "null"]
+            avgCompletionTokens:
+              type: [integer, "null"]
+            avgCostUsd:
+              type: [number, "null"]
+              description: Costo medio registrato delle run con prezzo
+            unpricedRuns:
+              type: integer
+            toolCalls:
+              type: integer
+            toolErrors:
+              type: integer
+            runsInWindow:
+              type: integer
+              description: Run concluse dell'agente nella finestra (base della stima mensile)
+        byModel:
+          type: array
+          items:
+            type: object
+            required: [aiModelId, name, runs, succeeded, failed, successRate, avgCostUsd, toolCalls, toolErrors]
+            properties:
+              aiModelId:
+                type: [integer, "null"]
+              name:
+                type: [string, "null"]
+              runs:
+                type: integer
+              succeeded:
+                type: integer
+              failed:
+                type: integer
+              successRate:
+                type: [number, "null"]
+              avgCostUsd:
+                type: [number, "null"]
+              toolCalls:
+                type: integer
+              toolErrors:
+                type: integer
+        suggestions:
+          type: array
+          items:
+            type: object
+            required: [aiModelId, name, accountName, priceInput, priceOutput, estimatedCostPerRunUsd, savingPerRunUsd, savingPercent, estimatedMonthlySavingUsd, observedRuns, observedSuccessRate]
+            properties:
+              aiModelId:
+                type: integer
+                description: Id da passare come aiModelId a PATCH /agents/{id}
+              name:
+                type: string
+              accountName:
+                type: string
+              priceInput:
+                type: number
+              priceOutput:
+                type: number
+              estimatedCostPerRunUsd:
+                type: number
+              savingPerRunUsd:
+                type: number
+              savingPercent:
+                type: integer
+              estimatedMonthlySavingUsd:
+                type: number
+                description: Risparmio per run per le run della finestra
+              observedRuns:
+                type: integer
+                description: Run concluse dell'agente già fatte con questo modello
+              observedSuccessRate:
+                type: [number, "null"]
+        note:
+          type: string
+          description: Esito in una frase (messaggio fisso)
+
+    AgentActivity:
+      type: object
+      required: [agentId, state, runningRuns, pendingRuns, awaitingClientRuns, activeChildRuns, pendingActions]
+      properties:
+        agentId:
+          type: integer
+        state:
+          type: string
+          enum: [working, waiting_user, idle]
+        runningRuns:
+          type: integer
+        pendingRuns:
+          type: integer
+        awaitingClientRuns:
+          type: integer
+        activeChildRuns:
+          type: integer
+          description: Run figlie ancora aperte nate da run dell'agente
+        pendingActions:
+          type: integer
+          description: Voci pending di «Da confermare» dell'utente nate da run dell'agente
+
+    FleetPolicy:
+      type: object
+      required: [paused, pausedAt, pausedBy, pausedByName, pauseReason, maxRunningRuns, maxRunningPerAgent, updatedAt]
+      properties:
+        paused:
+          type: boolean
+        pausedAt:
+          type: string
+          format: date-time
+          nullable: true
+        pausedBy:
+          type: integer
+          nullable: true
+        pausedByName:
+          type: string
+          nullable: true
+        pauseReason:
+          type: string
+          nullable: true
+        maxRunningRuns:
+          type: integer
+        maxRunningPerAgent:
+          type: integer
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Null finché la politica non è mai stata cambiata (valori predefiniti)
+    FleetLimitsUpdate:
+      type: object
+      required: [maxRunningRuns, maxRunningPerAgent]
+      properties:
+        maxRunningRuns:
+          type: integer
+          minimum: 1
+          maximum: 20
+        maxRunningPerAgent:
+          type: integer
+          minimum: 1
+          maximum: 10
+    FleetPauseRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          maxLength: 300
+          nullable: true
+    FleetHealth:
+      type: string
+      enum: [healthy, degraded, failing, "off"]
+    FleetIssue:
+      type: string
+      enum: [no_model, trigger_error, high_failure, some_failures, backlog, stuck_run]
+    FleetAgent:
+      type: object
+      required: [agentId, name, appId, appName, role, status, health, issues, activity, runningRuns, pendingRuns, pendingActions,
+        triggersInError, succeeded24h, failed24h, cancelled24h, successRate, avgDurationMs, cost24hUsd, unpriced24h, lastRunAt, lastError]
+      properties:
+        agentId:
+          type: integer
+        name:
+          type: string
+        appId:
+          type: integer
+        appName:
+          type: string
+        role:
+          type: string
+          enum: [general, area]
+        status:
+          type: string
+          enum: [draft, active, inactive]
+        health:
+          $ref: "#/components/schemas/FleetHealth"
+        issues:
+          type: array
+          items:
+            $ref: "#/components/schemas/FleetIssue"
+        activity:
+          type: string
+          enum: [working, waiting_user, idle]
+        runningRuns:
+          type: integer
+        pendingRuns:
+          type: integer
+        pendingActions:
+          type: integer
+          description: Voci pending di «Da confermare» dell'utente nate da run dell'agente
+        triggersInError:
+          type: integer
+        succeeded24h:
+          type: integer
+        failed24h:
+          type: integer
+        cancelled24h:
+          type: integer
+        successRate:
+          type: number
+          nullable: true
+          description: Run riuscite su riuscite + fallite nelle ultime 24 ore (null senza run concluse)
+        avgDurationMs:
+          type: integer
+          nullable: true
+        cost24hUsd:
+          type: number
+          nullable: true
+          description: Costo delle run concluse nelle ultime 24 ore (null se nessuna ha un prezzo)
+        unpriced24h:
+          type: integer
+        lastRunAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastError:
+          type: string
+          nullable: true
+          description: Errore dell'ultima run fallita nelle ultime 24 ore, su una riga (≤ 200 caratteri)
+    FleetSummary:
+      type: object
+      required: [agents, healthy, degraded, failing, "off", working, waitingUser, runningRuns, pendingRuns, succeeded24h, failed24h, cost24hUsd]
+      properties:
+        agents:
+          type: integer
+        healthy:
+          type: integer
+        degraded:
+          type: integer
+        failing:
+          type: integer
+        "off":
+          type: integer
+        working:
+          type: integer
+        waitingUser:
+          type: integer
+        runningRuns:
+          type: integer
+        pendingRuns:
+          type: integer
+        succeeded24h:
+          type: integer
+        failed24h:
+          type: integer
+        cost24hUsd:
+          type: number
+    FleetView:
+      type: object
+      required: [policy, summary, agents]
+      properties:
+        policy:
+          $ref: "#/components/schemas/FleetPolicy"
+        summary:
+          $ref: "#/components/schemas/FleetSummary"
+        agents:
+          type: array
+          items:
+            $ref: "#/components/schemas/FleetAgent"
+
     RunStatus:
       type: string
       description: >-
@@ -8077,6 +8668,41 @@ components:
           oneOf:
             - $ref: "#/components/schemas/RunClientAction"
             - type: "null"
+        activity:
+          description: >-
+            Cosa sta facendo ora la run (chiamata al modello, tool in esecuzione): solo nel dettaglio (GET /runs/{id}),
+            solo mentre la run è running o awaiting_client e la esegue il processo che risponde; altrimenti null
+          oneOf:
+            - $ref: "#/components/schemas/RunActivity"
+            - type: "null"
+
+    RunActivity:
+      type: object
+      required: [startedAt, items]
+      properties:
+        startedAt:
+          type: string
+          format: date-time
+          description: Inizio dell'esecuzione in questo processo
+        items:
+          type: array
+          description: Attività in corso insieme (al più 20); vuoto tra un passo e l'altro
+          items:
+            $ref: "#/components/schemas/RunActivityItem"
+
+    RunActivityItem:
+      type: object
+      required: [kind, toolName, since]
+      properties:
+        kind:
+          type: string
+          enum: [model, tool]
+        toolName:
+          type: ["string", "null"]
+          description: Nome del tool (null per il modello)
+        since:
+          type: string
+          format: date-time
 
     RunStep:
       type: object
@@ -8091,9 +8717,9 @@ components:
         type:
           type: string
           description: >-
-            model (chiamata al modello), tool (chiamata a un tool) o queued (azione accodata per la
+            model (chiamata al modello), tool (chiamata a un tool), queued (azione accodata per la
             conferma dell'utente: args = { numero, destinatario, sintesi, argomenti } con gli argomenti
-            sensibili oscurati)
+            sensibili oscurati) o message (istruzione dell'utente consegnata durante la run, con la nota)
         toolName:
           type: ["string", "null"]
         args:
@@ -8116,6 +8742,35 @@ components:
           type: string
           format: date-time
 
+    RunMessage:
+      type: object
+      required: [id, runId, content, status, createdAt, deliveredAt]
+      properties:
+        id:
+          type: integer
+        runId:
+          type: integer
+        content:
+          type: string
+        status:
+          type: string
+          enum: [pending, delivered, dropped]
+        createdAt:
+          type: string
+          format: date-time
+        deliveredAt:
+          type: ["string", "null"]
+          format: date-time
+
+    RunMessageCreate:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          minLength: 1
+          maxLength: 2000
+
     RunTrigger:
       type: object
       properties:
@@ -8133,7 +8788,10 @@ components:
 
     TriggerKind:
       type: string
-      enum: [poll, webhook]
+      enum: [poll, webhook, schedule]
+      description: >-
+        poll = sorveglianza di un tool, webhook = chiamata in entrata, schedule = run programmata (espressione cron
+        nell'ora italiana)
 
     TriggerStatus:
       type: string
@@ -8158,7 +8816,8 @@ components:
       required: [kind, name]
       description: >-
         Configurazione di un innesco. Solo `poll`: `toolId`, `args`, `cursorParam`, `cursorField`, `intervalSeconds`.
-        Solo `webhook`: `dedupHeader`. Percorsi da 1 a 5 segmenti `[A-Za-z0-9_-]` separati da punto.
+        Solo `webhook`: `dedupHeader`. Solo `schedule`: `cron` (obbligatorio) e `instructions` obbligatorie, nessun
+        altro campo. Percorsi da 1 a 5 segmenti `[A-Za-z0-9_-]` separati da punto.
       properties:
         kind:
           $ref: "#/components/schemas/TriggerKind"
@@ -8194,6 +8853,11 @@ components:
           description: Da 60 a 86400 secondi (default 300)
         dedupHeader:
           type: ["string", "null"]
+        cron:
+          type: ["string", "null"]
+          description: >-
+            Solo schedule: espressione cron a 5 campi (minuto ora giorno mese giorno-della-settimana) nell'ora
+            italiana, almeno 5 minuti tra due run
 
     TriggerPatch:
       type: object
@@ -8226,6 +8890,11 @@ components:
           type: ["integer", "null"]
         dedupHeader:
           type: ["string", "null"]
+        cron:
+          type: ["string", "null"]
+          description: >-
+            Solo schedule: espressione cron a 5 campi (minuto ora giorno mese giorno-della-settimana) nell'ora
+            italiana, almeno 5 minuti tra due run
 
     Trigger:
       type: object
@@ -8250,6 +8919,7 @@ components:
         - nextPollAt
         - baselineDone
         - dedupHeader
+        - cron
         - signingSecretSet
         - lastPolledAt
         - lastError
@@ -8299,11 +8969,15 @@ components:
         nextPollAt:
           type: ["string", "null"]
           format: date-time
+          description: Prossimo giro della sorveglianza o prossima run programmata
         baselineDone:
           type: boolean
           description: Linea di partenza fatta (solo sorveglianza)
         dedupHeader:
           type: ["string", "null"]
+        cron:
+          type: ["string", "null"]
+          description: Solo schedule, espressione cron nell'ora italiana
         signingSecretSet:
           type: boolean
           description: C'è un segreto di firma (il valore non si legge mai)
@@ -8538,7 +9212,7 @@ components:
 
     DashboardStats:
       type: object
-      required: [totalApps, totalAgents, totalRuns, successfulRuns, failedRuns, cancelledRuns, activeAgents, pendingActions, triggersInError, evolutionCyclesPaused, recentlyPairedNodes, nodeClaudeWarnings]
+      required: [totalApps, totalAgents, totalRuns, successfulRuns, failedRuns, cancelledRuns, activeAgents, pendingActions, triggersInError, evolutionCyclesPaused, fleetPaused, recentlyPairedNodes, nodeClaudeWarnings]
       properties:
         totalApps:
           type: integer
@@ -8563,6 +9237,9 @@ components:
         evolutionCyclesPaused:
           type: integer
           description: Cicli di evoluzione in pausa attivati dall'utente corrente
+        fleetPaused:
+          type: boolean
+          description: La flotta degli agenti è in pausa (nessuna run nuova parte, vedi /fleet)
         recentlyPairedNodes:
           type: array
           description: Nodi dell'utente collegati nelle ultime 24 ore (attivi)
@@ -8923,12 +9600,18 @@ components:
 
     Analysis:
       type: object
-      required: [id, appId, model, aiModelId, status, executor, sources, maxTokens, tokensUsed, cachedTokens, costUsd, bestPractice, bestPracticeNotes, phase, error, leaseLabel, leaseUntil, createdAt, finishedAt]
+      required: [id, appId, model, aiModelId, status, executor, sources, maxTokens, tokensUsed, cachedTokens, costUsd, bestPractice, bestPracticeNotes, phase, error, leaseLabel, leaseUntil, sourceCommit, triggerCommit, createdAt, finishedAt]
       properties:
         id:
           type: integer
         appId:
           type: integer
+        sourceCommit:
+          type: ["string", "null"]
+          description: Commit del clone su cui ha lavorato l'agente locale (null se non riferito)
+        triggerCommit:
+          type: ["string", "null"]
+          description: SHA del branch base che ha avviato la rianalisi automatica (null = avviata a mano)
         model:
           type: string
         aiModelId:
@@ -10244,6 +10927,47 @@ components:
           type: ["integer", "null"]
           description: Solo per claude_code_node, modello di ripiego, di un account non nodo dell'utente
 
+    AuditEvent:
+      type: object
+      required: [id, action, objectType, objectId, detail, via, tokenId, ip, createdAt]
+      properties:
+        id:
+          type: integer
+        action:
+          type: string
+          description: Codice dell'azione, es. api_token.create, pending_action.approve, auth.login
+        objectType:
+          type: ["string", "null"]
+        objectId:
+          type: ["string", "null"]
+        detail:
+          type: ["object", "null"]
+          additionalProperties: true
+          description: Pochi campi non sensibili scelti dal server (esito, ambiti, segreto cambiato sì/no)
+        via:
+          type: string
+          description: Canale (session, token, embed, mcp, alfred)
+        tokenId:
+          type: ["integer", "null"]
+          description: Token personale usato, se la richiesta è arrivata con un token
+        ip:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
+
+    AuditEventPage:
+      type: object
+      required: [events, nextBefore]
+      properties:
+        events:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuditEvent"
+        nextBefore:
+          type: ["integer", "null"]
+          description: Valore di `before` per la pagina successiva; null se non ce ne sono altre
+
     OAuthGrant:
       type: object
       required: [id, clientName, redirectHost, createdAt, lastUsedAt, canDecide]
@@ -11369,9 +12093,57 @@ components:
         version:
           type: string
 
+    AgentModelDeprecation:
+      type: object
+      required: [agentId, agentName, appId, appName, aiModelId, modelName, deprecationDate, retired, replacement]
+      properties:
+        agentId:
+          type: integer
+        agentName:
+          type: string
+        appId:
+          type: integer
+        appName:
+          type: string
+        aiModelId:
+          type: integer
+        modelName:
+          type: string
+        deprecationDate:
+          type: ["string", "null"]
+          description: Giorno della dismissione (AAAA-MM-GG); null per un modello ritirato senza data
+        retired:
+          type: boolean
+        replacement:
+          description: Sostituto più economico con strumenti tra i modelli dell'utente; null se non ce n'è uno
+          oneOf:
+            - type: object
+              required: [aiModelId, name, accountName, priceInput, priceOutput]
+              properties:
+                aiModelId:
+                  type: integer
+                name:
+                  type: string
+                accountName:
+                  type: string
+                priceInput:
+                  type: number
+                priceOutput:
+                  type: number
+            - type: "null"
+
+    AgentModelDeprecationList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentModelDeprecation"
+
     CatalogSummaryView:
       type: object
-      required: [firstRun, added, retired, deprecating, priceChanged, newProviders, accounts]
+      required: [firstRun, added, retired, deprecating, priceChanged, newProviders, accounts, agents]
       properties:
         firstRun:
           type: boolean
@@ -11437,6 +12209,13 @@ components:
                 type: array
                 items:
                   type: string
+        agents:
+          type: array
+          description: >-
+            Agenti con il modello ritirato o in dismissione entro 30 giorni, solo quelli con il modello di un account
+            dell'utente corrente, con il sostituto proposto tra i suoi modelli
+          items:
+            $ref: "#/components/schemas/AgentModelDeprecation"
 
     CatalogRunView:
       type: object

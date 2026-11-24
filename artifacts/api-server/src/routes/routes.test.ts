@@ -735,6 +735,27 @@ describe("run", () => {
     expect((await api("POST", "/runs/9999/cancel")).status).toBe(404);
   });
 
+  it("istruzioni a una run: POST solo con la run in corso (201, 400, 409, 404), GET le elenca", async () => {
+    const app = await createApp();
+    const general = await runnableAgent(app.id);
+    const [run] = await db.insert(runsTable).values({ agentId: general.id, input: "x" }).returning();
+    const notRunning = await api("POST", `/runs/${run!.id}/messages`, { content: "cambia strada" });
+    expect(notRunning.status).toBe(409);
+    expect(notRunning.json.error).toContain("non è in corso");
+    await db.update(runsTable).set({ status: "running" }).where(eq(runsTable.id, run!.id));
+    const created = await api("POST", `/runs/${run!.id}/messages`, { content: "cambia strada" });
+    expect(created.status).toBe(201);
+    expect(created.json).toMatchObject({ runId: run!.id, content: "cambia strada", status: "pending", deliveredAt: null });
+    expect((await api("POST", `/runs/${run!.id}/messages`, { content: "   " })).status).toBe(400);
+    expect((await api("POST", `/runs/${run!.id}/messages`, {})).status).toBe(400);
+    expect((await api("POST", "/runs/9999/messages", { content: "x" })).status).toBe(404);
+    const list = await api("GET", `/runs/${run!.id}/messages`);
+    expect(list.status).toBe(200);
+    expect(list.json.map((m: { content: string }) => m.content)).toEqual(["cambia strada"]);
+    expect((await api("GET", "/runs/9999/messages")).status).toBe(404);
+    await db.update(runsTable).set({ status: "cancelled" }).where(eq(runsTable.id, run!.id));
+  });
+
   it("argomenti del modello non JSON: GET dei passi → 200 con { _raw }", async () => {
     const app = await createApp();
     await api("POST", `/apps/${app.id}/tools`, HTTP_TOOL);

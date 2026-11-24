@@ -15,6 +15,7 @@ import {
   GetCatalogStatusResponse,
   GetProviderIssueParams,
   GetProviderIssueResponse,
+  ListAgentModelDeprecationsResponse,
   ListCatalogModelOffersParams,
   ListCatalogModelOffersResponse,
   ListCatalogModelsQueryParams,
@@ -25,6 +26,7 @@ import {
 } from "@workspace/api-zod";
 import { currentUserId } from "../lib/auth";
 import { LEGACY_GATEWAY_PROVIDER } from "../lib/ai/providers";
+import { findDeprecatingAgents, type AgentDeprecation } from "../lib/catalog/agent-deprecations";
 import { providerIssue } from "../lib/catalog/provider-issue";
 import { CatalogBusyError, startCatalogRefresh } from "../lib/catalog/refresh";
 import type { OfferSummary } from "../lib/catalog/summary";
@@ -221,10 +223,19 @@ function toRunView(run: CatalogRun, userId: number) {
               // Voci non oggetto (riepilogo non riconosciuto) ignorate
               .filter((a) => a !== null && typeof a === "object" && a.userId === userId)
               .map(({ accountId, accountName, missing }) => ({ accountId, accountName, missing })),
+            // Riepiloghi precedenti senza `agents`: lista vuota; solo i modelli degli account dell'utente
+            agents: list(summary.agents)
+              .filter((a) => a !== null && typeof a === "object" && a.ownerUserId === userId)
+              .map(publicDeprecation),
           }
         : null,
   };
   return RefreshCatalogResponse.safeParse(view).success ? view : { ...view, summary: null };
+}
+
+/** Voce pubblica: senza il proprietario del modello. */
+function publicDeprecation({ ownerUserId: _owner, ...rest }: AgentDeprecation) {
+  return rest;
 }
 
 export function createCatalogRouter(opts: { refreshRateLimit?: RequestHandler; fetchImpl?: typeof fetch } = {}): IRouter {
@@ -370,6 +381,12 @@ export function createCatalogRouter(opts: { refreshRateLimit?: RequestHandler; f
         lastCompleted: lastCompleted ? toRunView(lastCompleted, userId) : null,
       }),
     );
+  });
+
+  // Agenti di tutte le App (sono condivisi), sostituto tra i modelli dell'utente della richiesta
+  router.get("/catalog/agent-deprecations", async (req, res) => {
+    const items = await findDeprecatingAgents({ candidatesFor: currentUserId(req) });
+    res.json(ListAgentModelDeprecationsResponse.parse({ items: items.map(publicDeprecation) }));
   });
 
   router.post("/catalog/refresh", refreshLimit, async (req, res) => {

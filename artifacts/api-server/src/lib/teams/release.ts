@@ -8,6 +8,7 @@ import { db, pendingActionsTable, teamInstancesTable, teamWorksTable, type Pendi
 import { logger } from "../logger";
 import { userHasInstallation } from "../github/installations";
 import { requestArchitectureRefresh } from "../architecture/scheduler";
+import { requestReanalysisCheck } from "../reanalysis/service";
 import { classifyLivePull } from "../code-writer/merge";
 import { ciState, failedNames } from "../code-writer/ci-state";
 import { getPullDetail, mergeBranches, mergeCommit, openReleasePull, readCi, type RepoRef } from "../code-writer/github-git";
@@ -248,5 +249,7 @@ async function finishReleased(work: TeamWork, appId: number): Promise<void> {
   void requestArchitectureRefresh(appId, { bypassOff: false, clearBackoff: false }).catch((e: unknown) =>
     logger.error({ appId, errName: e instanceof Error ? e.name : "Error" }, "Aggiornamento della sintesi dell'architettura non richiesto"),
   );
+  // Rianalisi automatica: il catalogo dei tool si riallinea al codice unito (solo con `auto_reanalysis`)
+  requestReanalysisCheck(appId);
 }
 

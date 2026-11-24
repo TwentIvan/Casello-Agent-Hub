@@ -1079,7 +1079,7 @@ CREATE INDEX IF NOT EXISTS "runs_parent_run_id_idx" ON "runs" USING btree ("pare
 
 -- Inneschi (docs/migrations/2026-11-inneschi.sql)
 DO $$ BEGIN
-  CREATE TYPE "public"."trigger_kind" AS ENUM('poll', 'webhook');
+  CREATE TYPE "public"."trigger_kind" AS ENUM('poll', 'webhook', 'schedule');
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
@@ -1106,6 +1106,7 @@ CREATE TABLE IF NOT EXISTS "agent_triggers" (
 	"cursor_value" text,
 	"filter" jsonb,
 	"interval_seconds" integer DEFAULT 300,
+	"cron" text,
 	"next_poll_at" timestamp with time zone,
 	"baseline_done" boolean DEFAULT false NOT NULL,
 	"dedup_header" text,
@@ -1118,6 +1119,7 @@ CREATE TABLE IF NOT EXISTS "agent_triggers" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "agent_triggers_agent_name_key" UNIQUE ("agent_id", "name"),
+	CONSTRAINT "agent_triggers_schedule_check" CHECK ("kind"::text <> 'schedule' OR ("cron" IS NOT NULL AND "next_poll_at" IS NOT NULL)),
 	CONSTRAINT "agent_triggers_poll_check" CHECK ("kind" <> 'poll' OR ("tool_id" IS NOT NULL AND "interval_seconds" IS NOT NULL AND "next_poll_at" IS NOT NULL)),
 	CONSTRAINT "agent_triggers_webhook_check" CHECK ("kind" <> 'webhook' OR "secret_hash" IS NOT NULL),
 	CONSTRAINT "agent_triggers_cursor_check" CHECK ("cursor_param" IS NULL OR "cursor_field" IS NOT NULL),
@@ -1849,3 +1851,77 @@ CREATE TABLE IF NOT EXISTS "app_bootstraps" (
 CREATE UNIQUE INDEX IF NOT EXISTS "app_bootstraps_slug_open_uidx" ON "app_bootstraps" USING btree ("slug") WHERE ("app_bootstraps"."status" in ('pending', 'running') OR ("app_bootstraps"."status" = 'done' AND "app_bootstraps"."app_id" IS NOT NULL));
 CREATE UNIQUE INDEX IF NOT EXISTS "app_bootstraps_repo_open_uidx" ON "app_bootstraps" USING btree ("repo") WHERE ("app_bootstraps"."status" in ('pending', 'running') OR ("app_bootstraps"."status" = 'done' AND "app_bootstraps"."app_id" IS NOT NULL));
 CREATE INDEX IF NOT EXISTS "app_bootstraps_app_id_idx" ON "app_bootstraps" USING btree ("app_id");
+
+-- Rate limit persistente e per utente (docs/migrations/2026-11-24-rate-limit-persistente.sql)
+CREATE TABLE IF NOT EXISTS "rate_limit_counters" (
+	"user_id" integer NOT NULL,
+	"bucket" varchar(100) NOT NULL,
+	"window_start" timestamp with time zone NOT NULL,
+	"count" integer DEFAULT 0 NOT NULL,
+	CONSTRAINT "rate_limit_counters_user_id_bucket_window_start_pk" PRIMARY KEY ("user_id", "bucket", "window_start"),
+	CONSTRAINT "rate_limit_counters_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action
+);
+
+CREATE INDEX IF NOT EXISTS "rate_limit_counters_window_start_idx" ON "rate_limit_counters" USING btree ("window_start");
+
+-- Rianalisi incrementale dopo ogni merge (docs/migrations/2026-11-24-rianalisi-automatica.sql)
+ALTER TABLE "apps" ADD COLUMN IF NOT EXISTS "auto_reanalysis" boolean DEFAULT false NOT NULL;
+ALTER TABLE "apps" ADD COLUMN IF NOT EXISTS "reanalysis_seen_sha" text;
+ALTER TABLE "apps" ADD COLUMN IF NOT EXISTS "reanalysis_checked_at" timestamp;
+ALTER TABLE "analyses" ADD COLUMN IF NOT EXISTS "trigger_commit" text;
+
+-- Registro delle azioni (docs/migrations/2026-11-24-registro-azioni.sql)
+CREATE TABLE IF NOT EXISTS "audit_events" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"user_id" integer NOT NULL,
+	"action" varchar(80) NOT NULL,
+	"object_type" varchar(40),
+	"object_id" varchar(100),
+	"detail" jsonb,
+	"via" varchar(20) NOT NULL,
+	"token_id" integer,
+	"ip" varchar(64),
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "audit_events_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE cascade ON UPDATE no action
+);
+
+CREATE INDEX IF NOT EXISTS "audit_events_user_created_idx" ON "audit_events" USING btree ("user_id", "created_at");
+CREATE INDEX IF NOT EXISTS "audit_events_created_idx" ON "audit_events" USING btree ("created_at");
+
+-- Politica della flotta degli agenti (issue #117)
+CREATE TABLE IF NOT EXISTS "fleet_policy" (
+	"id" integer PRIMARY KEY DEFAULT 1 NOT NULL,
+	"paused" boolean DEFAULT false NOT NULL,
+	"paused_at" timestamp with time zone,
+	"paused_by" integer,
+	"pause_reason" varchar(300),
+	"max_running_runs" integer DEFAULT 6 NOT NULL,
+	"max_running_per_agent" integer DEFAULT 2 NOT NULL,
+	"updated_by" integer,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "fleet_policy_paused_by_users_id_fk" FOREIGN KEY ("paused_by") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action,
+	CONSTRAINT "fleet_policy_updated_by_users_id_fk" FOREIGN KEY ("updated_by") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action,
+	CONSTRAINT "fleet_policy_singleton_check" CHECK ("id" = 1),
+	CONSTRAINT "fleet_policy_limits_check" CHECK ("max_running_runs" between 1 and 20 and "max_running_per_agent" between 1 and 10)
+);
+
+-- Istruzioni mandate a una run in corso (issue #119)
+DO $$ BEGIN
+	CREATE TYPE "public"."run_message_status" AS ENUM('pending', 'delivered', 'dropped');
+EXCEPTION
+	WHEN duplicate_object THEN null;
+END $$;
+
+CREATE TABLE IF NOT EXISTS "run_messages" (
+	"id" serial PRIMARY KEY NOT NULL,
+	"run_id" integer NOT NULL,
+	"user_id" integer,
+	"content" text NOT NULL,
+	"status" "run_message_status" DEFAULT 'pending' NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"delivered_at" timestamp with time zone,
+	CONSTRAINT "run_messages_run_id_runs_id_fk" FOREIGN KEY ("run_id") REFERENCES "public"."runs"("id") ON DELETE cascade ON UPDATE no action,
+	CONSTRAINT "run_messages_user_id_users_id_fk" FOREIGN KEY ("user_id") REFERENCES "public"."users"("id") ON DELETE set null ON UPDATE no action
+);
+
+CREATE INDEX IF NOT EXISTS "run_messages_run_id_status_idx" ON "run_messages" USING btree ("run_id","status");

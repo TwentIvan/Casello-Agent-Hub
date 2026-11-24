@@ -537,6 +537,18 @@ export interface App {
      */
   functionalDescription: string | null;
   architectureRefresh: ArchitectureRefresh;
+  /** Rianalisi automatica, a ogni nuovo commit del branch base un'analisi in coda per l'agente locale */
+  autoReanalysis: boolean;
+  /**
+     * Ultimo SHA del branch base già gestito dalla rianalisi automatica
+     * @nullable
+     */
+  reanalysisSeenSha: string | null;
+  /**
+     * Ultimo controllo della rianalisi automatica
+     * @nullable
+     */
+  reanalysisCheckedAt: string | null;
   /**
      * Branch di prova dell'App, riscritto da Botcave a ogni lavoro delle squadre (null = nessuna versione di prova)
      * @nullable
@@ -935,6 +947,8 @@ export interface AppUpdate {
   /** @nullable */
   functionalDescription?: string | null;
   architectureRefresh?: ArchitectureRefresh;
+  /** Accende o spegne la rianalisi automatica (serve il codice da GitHub tramite installazione per avere effetto) */
+  autoReanalysis?: boolean;
   /**
      * Branch di prova (non il base, non main/master, non botcave/…); null lo toglie
      * @nullable
@@ -1200,6 +1214,252 @@ export interface AppToolUpdate {
 }
 
 /**
+ * @nullable
+ */
+export type AgentModelEvaluationCurrentModel = {
+  aiModelId: number;
+  name: string;
+  accountName: string;
+  /** @nullable */
+  priceInput: number | null;
+  /** @nullable */
+  priceOutput: number | null;
+  /**
+     * Costo stimato di una run media con i prezzi del modello; null senza prezzi o senza run
+     * @nullable
+     */
+  estimatedCostPerRunUsd: number | null;
+} | null;
+
+export type AgentModelEvaluationUsage = {
+  /** Run lette (al più 50) */
+  runs: number;
+  succeeded: number;
+  failed: number;
+  cancelled: number;
+  /**
+     * Riuscite su riuscite più fallite (0..1)
+     * @nullable
+     */
+  successRate: number | null;
+  /** @nullable */
+  avgPromptTokens: number | null;
+  /** @nullable */
+  avgCachedTokens: number | null;
+  /** @nullable */
+  avgCompletionTokens: number | null;
+  /**
+     * Costo medio registrato delle run con prezzo
+     * @nullable
+     */
+  avgCostUsd: number | null;
+  unpricedRuns: number;
+  toolCalls: number;
+  toolErrors: number;
+  /** Run concluse dell'agente nella finestra (base della stima mensile) */
+  runsInWindow: number;
+};
+
+export type AgentModelEvaluationByModelItem = {
+  /** @nullable */
+  aiModelId: number | null;
+  /** @nullable */
+  name: string | null;
+  runs: number;
+  succeeded: number;
+  failed: number;
+  /** @nullable */
+  successRate: number | null;
+  /** @nullable */
+  avgCostUsd: number | null;
+  toolCalls: number;
+  toolErrors: number;
+};
+
+export type AgentModelEvaluationSuggestionsItem = {
+  /** Id da passare come aiModelId a PATCH /agents/{id} */
+  aiModelId: number;
+  name: string;
+  accountName: string;
+  priceInput: number;
+  priceOutput: number;
+  estimatedCostPerRunUsd: number;
+  savingPerRunUsd: number;
+  savingPercent: number;
+  /** Risparmio per run per le run della finestra */
+  estimatedMonthlySavingUsd: number;
+  /** Run concluse dell'agente già fatte con questo modello */
+  observedRuns: number;
+  /** @nullable */
+  observedSuccessRate: number | null;
+};
+
+export interface AgentModelEvaluation {
+  agentId: number;
+  agentName: string;
+  /** Giorni delle run considerate */
+  windowDays: number;
+  /** Almeno 5 run concluse e non annullate nella finestra */
+  enoughData: boolean;
+  /** @nullable */
+  currentModel: AgentModelEvaluationCurrentModel;
+  usage: AgentModelEvaluationUsage;
+  byModel: AgentModelEvaluationByModelItem[];
+  suggestions: AgentModelEvaluationSuggestionsItem[];
+  /** Esito in una frase (messaggio fisso) */
+  note: string;
+}
+
+export type AgentActivityState = typeof AgentActivityState[keyof typeof AgentActivityState];
+
+
+export const AgentActivityState = {
+  working: 'working',
+  waiting_user: 'waiting_user',
+  idle: 'idle',
+} as const;
+
+export interface AgentActivity {
+  agentId: number;
+  state: AgentActivityState;
+  runningRuns: number;
+  pendingRuns: number;
+  awaitingClientRuns: number;
+  /** Run figlie ancora aperte nate da run dell'agente */
+  activeChildRuns: number;
+  /** Voci pending di «Da confermare» dell'utente nate da run dell'agente */
+  pendingActions: number;
+}
+
+export interface FleetPolicy {
+  paused: boolean;
+  pausedAt: string | null;
+  pausedBy: number | null;
+  pausedByName: string | null;
+  pauseReason: string | null;
+  maxRunningRuns: number;
+  maxRunningPerAgent: number;
+  /** Null finché la politica non è mai stata cambiata (valori predefiniti) */
+  updatedAt: string | null;
+}
+
+export interface FleetLimitsUpdate {
+  /**
+     * @minimum 1
+     * @maximum 20
+     */
+  maxRunningRuns: number;
+  /**
+     * @minimum 1
+     * @maximum 10
+     */
+  maxRunningPerAgent: number;
+}
+
+export interface FleetPauseRequest {
+  /** @maxLength 300 */
+  reason?: string | null;
+}
+
+export type FleetHealth = typeof FleetHealth[keyof typeof FleetHealth];
+
+
+export const FleetHealth = {
+  healthy: 'healthy',
+  degraded: 'degraded',
+  failing: 'failing',
+  off: 'off',
+} as const;
+
+export type FleetIssue = typeof FleetIssue[keyof typeof FleetIssue];
+
+
+export const FleetIssue = {
+  no_model: 'no_model',
+  trigger_error: 'trigger_error',
+  high_failure: 'high_failure',
+  some_failures: 'some_failures',
+  backlog: 'backlog',
+  stuck_run: 'stuck_run',
+} as const;
+
+export type FleetAgentRole = typeof FleetAgentRole[keyof typeof FleetAgentRole];
+
+
+export const FleetAgentRole = {
+  general: 'general',
+  area: 'area',
+} as const;
+
+export type FleetAgentStatus = typeof FleetAgentStatus[keyof typeof FleetAgentStatus];
+
+
+export const FleetAgentStatus = {
+  draft: 'draft',
+  active: 'active',
+  inactive: 'inactive',
+} as const;
+
+export type FleetAgentActivity = typeof FleetAgentActivity[keyof typeof FleetAgentActivity];
+
+
+export const FleetAgentActivity = {
+  working: 'working',
+  waiting_user: 'waiting_user',
+  idle: 'idle',
+} as const;
+
+export interface FleetAgent {
+  agentId: number;
+  name: string;
+  appId: number;
+  appName: string;
+  role: FleetAgentRole;
+  status: FleetAgentStatus;
+  health: FleetHealth;
+  issues: FleetIssue[];
+  activity: FleetAgentActivity;
+  runningRuns: number;
+  pendingRuns: number;
+  /** Voci pending di «Da confermare» dell'utente nate da run dell'agente */
+  pendingActions: number;
+  triggersInError: number;
+  succeeded24h: number;
+  failed24h: number;
+  cancelled24h: number;
+  /** Run riuscite su riuscite + fallite nelle ultime 24 ore (null senza run concluse) */
+  successRate: number | null;
+  avgDurationMs: number | null;
+  /** Costo delle run concluse nelle ultime 24 ore (null se nessuna ha un prezzo) */
+  cost24hUsd: number | null;
+  unpriced24h: number;
+  lastRunAt: string | null;
+  /** Errore dell'ultima run fallita nelle ultime 24 ore, su una riga (≤ 200 caratteri) */
+  lastError: string | null;
+}
+
+export interface FleetSummary {
+  agents: number;
+  healthy: number;
+  degraded: number;
+  failing: number;
+  off: number;
+  working: number;
+  waitingUser: number;
+  runningRuns: number;
+  pendingRuns: number;
+  succeeded24h: number;
+  failed24h: number;
+  cost24hUsd: number;
+}
+
+export interface FleetView {
+  policy: FleetPolicy;
+  summary: FleetSummary;
+  agents: FleetAgent[];
+}
+
+/**
  * awaiting_client: la run aspetta l'esito di un'azione ui dal client (`clientAction`, vedi POST /runs/{id}/client-result). All'avvio del server le run in attesa diventano failed; quelle rimaste nella vecchia pausa per conferma (senza azione) diventano cancelled.
  */
 export type RunStatus = typeof RunStatus[keyof typeof RunStatus];
@@ -1245,6 +1505,31 @@ export interface RunClientResult {
      * @nullable
      */
   result?: string | null;
+}
+
+export type RunActivityItemKind = typeof RunActivityItemKind[keyof typeof RunActivityItemKind];
+
+
+export const RunActivityItemKind = {
+  model: 'model',
+  tool: 'tool',
+} as const;
+
+export interface RunActivityItem {
+  kind: RunActivityItemKind;
+  /**
+     * Nome del tool (null per il modello)
+     * @nullable
+     */
+  toolName: string | null;
+  since: string;
+}
+
+export interface RunActivity {
+  /** Inizio dell'esecuzione in questo processo */
+  startedAt: string;
+  /** Attività in corso insieme (al più 20); vuoto tra un passo e l'altro */
+  items: RunActivityItem[];
 }
 
 export interface Run {
@@ -1300,6 +1585,8 @@ export interface Run {
   clientTools?: boolean;
   /** Azione ui in attesa del client (solo con status awaiting_client), altrimenti null */
   clientAction?: RunClientAction | null;
+  /** Cosa sta facendo ora la run (chiamata al modello, tool in esecuzione): solo nel dettaglio (GET /runs/{id}), solo mentre la run è running o awaiting_client e la esegue il processo che risponde; altrimenti null */
+  activity?: RunActivity | null;
 }
 
 /**
@@ -1311,7 +1598,7 @@ export interface RunStep {
   id: number;
   runId: number;
   position: number;
-  /** model (chiamata al modello), tool (chiamata a un tool) o queued (azione accodata per la conferma dell'utente: args = { numero, destinatario, sintesi, argomenti } con gli argomenti sensibili oscurati) */
+  /** model (chiamata al modello), tool (chiamata a un tool), queued (azione accodata per la conferma dell'utente: args = { numero, destinatario, sintesi, argomenti } con gli argomenti sensibili oscurati) o message (istruzione dell'utente consegnata durante la run, con la nota) */
   type: string;
   /** @nullable */
   toolName?: string | null;
@@ -1333,6 +1620,33 @@ export interface RunStep {
   createdAt: string;
 }
 
+export type RunMessageStatus = typeof RunMessageStatus[keyof typeof RunMessageStatus];
+
+
+export const RunMessageStatus = {
+  pending: 'pending',
+  delivered: 'delivered',
+  dropped: 'dropped',
+} as const;
+
+export interface RunMessage {
+  id: number;
+  runId: number;
+  content: string;
+  status: RunMessageStatus;
+  createdAt: string;
+  /** @nullable */
+  deliveredAt: string | null;
+}
+
+export interface RunMessageCreate {
+  /**
+     * @minLength 1
+     * @maxLength 2000
+     */
+  content: string;
+}
+
 export interface RunTrigger {
   /** Input testuale da passare all'agente */
   input?: string;
@@ -1340,12 +1654,16 @@ export interface RunTrigger {
   clientTools?: boolean;
 }
 
+/**
+ * poll = sorveglianza di un tool, webhook = chiamata in entrata, schedule = run programmata (espressione cron nell'ora italiana)
+ */
 export type TriggerKind = typeof TriggerKind[keyof typeof TriggerKind];
 
 
 export const TriggerKind = {
   poll: 'poll',
   webhook: 'webhook',
+  schedule: 'schedule',
 } as const;
 
 export type TriggerStatus = typeof TriggerStatus[keyof typeof TriggerStatus];
@@ -1371,7 +1689,7 @@ export interface TriggerFilter {
 export type TriggerInputArgs = { [key: string]: unknown } | null;
 
 /**
- * Configurazione di un innesco. Solo `poll`: `toolId`, `args`, `cursorParam`, `cursorField`, `intervalSeconds`. Solo `webhook`: `dedupHeader`. Percorsi da 1 a 5 segmenti `[A-Za-z0-9_-]` separati da punto.
+ * Configurazione di un innesco. Solo `poll`: `toolId`, `args`, `cursorParam`, `cursorField`, `intervalSeconds`. Solo `webhook`: `dedupHeader`. Solo `schedule`: `cron` (obbligatorio) e `instructions` obbligatorie, nessun altro campo. Percorsi da 1 a 5 segmenti `[A-Za-z0-9_-]` separati da punto.
  */
 export interface TriggerInput {
   kind: TriggerKind;
@@ -1410,6 +1728,11 @@ export interface TriggerInput {
   intervalSeconds?: number | null;
   /** @nullable */
   dedupHeader?: string | null;
+  /**
+     * Solo schedule: espressione cron a 5 campi (minuto ora giorno mese giorno-della-settimana) nell'ora italiana, almeno 5 minuti tra due run
+     * @nullable
+     */
+  cron?: string | null;
 }
 
 /**
@@ -1443,6 +1766,11 @@ export interface TriggerPatch {
   intervalSeconds?: number | null;
   /** @nullable */
   dedupHeader?: string | null;
+  /**
+     * Solo schedule: espressione cron a 5 campi (minuto ora giorno mese giorno-della-settimana) nell'ora italiana, almeno 5 minuti tra due run
+     * @nullable
+     */
+  cron?: string | null;
 }
 
 export type TriggerArgs = { [key: string]: unknown };
@@ -1478,12 +1806,20 @@ export interface Trigger {
   filter: TriggerFilter | null;
   /** @nullable */
   intervalSeconds: number | null;
-  /** @nullable */
+  /**
+     * Prossimo giro della sorveglianza o prossima run programmata
+     * @nullable
+     */
   nextPollAt: string | null;
   /** Linea di partenza fatta (solo sorveglianza) */
   baselineDone: boolean;
   /** @nullable */
   dedupHeader: string | null;
+  /**
+     * Solo schedule, espressione cron nell'ora italiana
+     * @nullable
+     */
+  cron: string | null;
   /** C'è un segreto di firma (il valore non si legge mai) */
   signingSecretSet: boolean;
   /**
@@ -1733,6 +2069,8 @@ export interface DashboardStats {
   triggersInError: number;
   /** Cicli di evoluzione in pausa attivati dall'utente corrente */
   evolutionCyclesPaused: number;
+  /** La flotta degli agenti è in pausa (nessuna run nuova parte, vedi /fleet) */
+  fleetPaused: boolean;
   /** Nodi dell'utente collegati nelle ultime 24 ore (attivi) */
   recentlyPairedNodes: DashboardStatsRecentlyPairedNodesItem[];
   /** Nodi con un account «Claude Code (nodo)» dell'utente il cui Claude non è pronto */
@@ -2052,6 +2390,16 @@ export interface AnalysisSources {
 export interface Analysis {
   id: number;
   appId: number;
+  /**
+     * Commit del clone su cui ha lavorato l'agente locale (null se non riferito)
+     * @nullable
+     */
+  sourceCommit: string | null;
+  /**
+     * SHA del branch base che ha avviato la rianalisi automatica (null = avviata a mano)
+     * @nullable
+     */
+  triggerCommit: string | null;
   model: string;
   /** @nullable */
   aiModelId: number | null;
@@ -3233,6 +3581,46 @@ export interface AiAccountInput {
   fallbackAiModelId?: number | null;
 }
 
+/**
+ * Pochi campi non sensibili scelti dal server (esito, ambiti, segreto cambiato sì/no)
+ * @nullable
+ */
+export type AuditEventDetail = { [key: string]: unknown } | null;
+
+export interface AuditEvent {
+  id: number;
+  /** Codice dell'azione, es. api_token.create, pending_action.approve, auth.login */
+  action: string;
+  /** @nullable */
+  objectType: string | null;
+  /** @nullable */
+  objectId: string | null;
+  /**
+     * Pochi campi non sensibili scelti dal server (esito, ambiti, segreto cambiato sì/no)
+     * @nullable
+     */
+  detail: AuditEventDetail;
+  /** Canale (session, token, embed, mcp, alfred) */
+  via: string;
+  /**
+     * Token personale usato, se la richiesta è arrivata con un token
+     * @nullable
+     */
+  tokenId: number | null;
+  /** @nullable */
+  ip: string | null;
+  createdAt: string;
+}
+
+export interface AuditEventPage {
+  events: AuditEvent[];
+  /**
+     * Valore di `before` per la pagina successiva; null se non ce ne sono altre
+     * @nullable
+     */
+  nextBefore: number | null;
+}
+
 export interface OAuthGrant {
   id: number;
   clientName: string;
@@ -4233,6 +4621,38 @@ export interface CatalogChange {
   version: string;
 }
 
+/**
+ * Sostituto più economico con strumenti tra i modelli dell'utente; null se non ce n'è uno
+ */
+export type AgentModelDeprecationReplacement = {
+  aiModelId: number;
+  name: string;
+  accountName: string;
+  priceInput: number;
+  priceOutput: number;
+} | null;
+
+export interface AgentModelDeprecation {
+  agentId: number;
+  agentName: string;
+  appId: number;
+  appName: string;
+  aiModelId: number;
+  modelName: string;
+  /**
+     * Giorno della dismissione (AAAA-MM-GG); null per un modello ritirato senza data
+     * @nullable
+     */
+  deprecationDate: string | null;
+  retired: boolean;
+  /** Sostituto più economico con strumenti tra i modelli dell'utente; null se non ce n'è uno */
+  replacement: AgentModelDeprecationReplacement;
+}
+
+export interface AgentModelDeprecationList {
+  items: AgentModelDeprecation[];
+}
+
 export type CatalogSummaryViewDeprecatingItem = CatalogChange & {
   deprecationDate: string;
 };
@@ -4270,6 +4690,8 @@ export interface CatalogSummaryView {
   newProviders: CatalogSummaryViewNewProvidersItem[];
   /** Solo gli account dell'utente corrente */
   accounts: CatalogSummaryViewAccountsItem[];
+  /** Agenti con il modello ritirato o in dismissione entro 30 giorni, solo quelli con il modello di un account dell'utente corrente, con il sostituto proposto tra i suoi modelli */
+  agents: AgentModelDeprecation[];
 }
 
 export type CatalogRunViewTrigger = typeof CatalogRunViewTrigger[keyof typeof CatalogRunViewTrigger];
@@ -5426,6 +5848,18 @@ app: EmbedBugAppParameter;
  * Origine della pagina ospite
  */
 origin: EmbedBugOriginParameter;
+};
+
+export type ListAuditEventsParams = {
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+/**
+ * @minimum 1
+ */
+before?: number;
 };
 
 export type GetAlfredNotificationsParams = {

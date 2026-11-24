@@ -5,6 +5,7 @@
  * Casello — hub per agentificare applicazioni
  * OpenAPI spec version: 0.1.0
  */
+import type { AgentModelDeprecation } from './agentModelDeprecation';
 import type { CatalogChange } from './catalogChange';
 import type { CatalogSummaryViewAccountsItem } from './catalogSummaryViewAccountsItem';
 import type { CatalogSummaryViewDeprecatingItem } from './catalogSummaryViewDeprecatingItem';
@@ -21,4 +22,6 @@ export interface CatalogSummaryView {
   newProviders: CatalogSummaryViewNewProvidersItem[];
   /** Solo gli account dell'utente corrente */
   accounts: CatalogSummaryViewAccountsItem[];
+  /** Agenti con il modello ritirato o in dismissione entro 30 giorni, solo quelli con il modello di un account dell'utente corrente, con il sostituto proposto tra i suoi modelli */
+  agents: AgentModelDeprecation[];
 }

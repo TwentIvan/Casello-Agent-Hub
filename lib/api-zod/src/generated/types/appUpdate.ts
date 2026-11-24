@@ -54,6 +54,8 @@ export interface AppUpdate {
   /** @nullable */
   functionalDescription?: string | null;
   architectureRefresh?: ArchitectureRefresh;
+  /** Accende o spegne la rianalisi automatica (serve il codice da GitHub tramite installazione per avere effetto) */
+  autoReanalysis?: boolean;
   /**
      * Branch di prova (non il base, non main/master, non botcave/…); null lo toglie
      * @nullable

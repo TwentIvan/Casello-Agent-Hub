@@ -22,7 +22,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { RunStatusBadge } from "@/components/run-status-badge";
 import { RunSteps } from "@/components/runs/run-steps";
+import { RunActivityView } from "@/components/runs/run-activity-view";
+import { RunInstructions } from "@/components/runs/run-instructions";
 import { isRunActive } from "@/components/runs/run-queries";
+import { useLiveConnected } from "@/components/live/live-updates";
+import { livePollInterval } from "@/lib/live-updates";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { formatCost, formatDuration, formatRelative } from "@/lib/format";
 
@@ -36,13 +40,15 @@ export default function RunDetailPage() {
   const params = useParams<{ id: string }>();
   const runId = Number(params.id);
   const queryClient = useQueryClient();
+  const live = useLiveConnected();
 
   const run = useGetRun(runId, {
     query: {
       queryKey: getGetRunQueryKey(runId),
       enabled: Number.isInteger(runId),
-      // Polling solo finché la run è in attesa o in corso.
-      refetchInterval: (query) => (query.state.data && isRunActive(query.state.data) ? POLL_MS : false),
+      // Polling solo finché la run è in attesa o in corso; con il flusso in tempo reale resta lento (rete di sicurezza).
+      refetchInterval: (query) =>
+        livePollInterval(query.state.data && isRunActive(query.state.data) ? POLL_MS : false, live),
     },
   });
   const { toast } = useToast();
@@ -236,11 +242,19 @@ export default function RunDetailPage() {
 
       <RunSteps run={r} />
 
+      <RunInstructions run={r} />
+
       {active ? (
         <Card>
           <CardContent className="flex items-center gap-3 py-8 text-sm text-muted-foreground">
-            <Spinner className="size-5" />
-            {r.status === "pending" ? "In coda: parte appena c'è posto…" : "L'agente sta lavorando…"}
+            {r.status === "pending" ? (
+              <>
+                <Spinner className="size-5" />
+                In coda: parte appena c'è posto…
+              </>
+            ) : (
+              <RunActivityView activity={r.activity} />
+            )}
           </CardContent>
         </Card>
       ) : r.status === "cancelled" ? (

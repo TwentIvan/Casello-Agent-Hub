@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { Link } from "wouter";
-import { Bot, Check, Wrench, X } from "lucide-react";
+import { Bot, Check, MessageSquare, Wrench, X } from "lucide-react";
 import {
   type Run,
   type RunStep,
@@ -15,6 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { formatDuration } from "@/lib/format";
+import { useLivePollInterval } from "@/components/live/live-updates";
 import { isRunActive } from "./run-queries";
 
 const POLL_MS = 1500;
@@ -60,9 +61,17 @@ function StepRow({ step }: { step: StepView }) {
     <li className="space-y-1 py-3">
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <span className="w-6 text-right text-xs font-mono tabular-nums text-muted-foreground">{step.position + 1}</span>
-        {isTool ? <Wrench className="size-4 text-muted-foreground" /> : <Bot className="size-4 text-muted-foreground" />}
+        {step.type === "message" ? (
+          <MessageSquare className="size-4 text-muted-foreground" />
+        ) : isTool ? (
+          <Wrench className="size-4 text-muted-foreground" />
+        ) : (
+          <Bot className="size-4 text-muted-foreground" />
+        )}
         {queued?.numero != null ? (
           <QueuedLink numero={queued.numero} />
+        ) : step.type === "message" ? (
+          <span className="font-medium">Istruzione</span>
         ) : (
           <span className="font-medium">{step.type === "queued" ? "Accodata" : isTool ? "Tool" : "Modello"}</span>
         )}
@@ -116,10 +125,12 @@ export function StepList({ steps }: { steps: StepView[] }) {
 /** Timeline dei passi di una run (chiamate al modello e ai tool), ricaricata finché la run è attiva. */
 export function RunSteps({ run }: { run: Run }) {
   const active = isRunActive(run);
+  // Con il flusso in tempo reale i passi arrivano dagli avvisi: il polling resta lento, come rete di sicurezza
+  const poll = useLivePollInterval(active ? POLL_MS : false);
   const steps = useListRunSteps(run.id, {
     query: {
       queryKey: getListRunStepsQueryKey(run.id),
-      refetchInterval: active ? POLL_MS : false,
+      refetchInterval: poll,
     },
   });
   // Quando lo stato della run cambia (pausa, ripresa, fine) si ricaricano subito anche i passi.

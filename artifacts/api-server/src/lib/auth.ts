@@ -12,6 +12,7 @@ import { GetAuthProvidersResponse, GetCurrentUserResponse } from "@workspace/api
 import { githubConfig } from "./github/config";
 import { githubAuthRouter } from "./github/oauth-routes";
 import { logger } from "./logger";
+import { recordAudit } from "./audit/record";
 import { originOfEmbedClient } from "./embed/origins";
 import { verifyAccessToken } from "./oauth/tokens";
 import { tokenRateLimit } from "../middlewares/rate-limit";
@@ -493,6 +494,7 @@ export function authRouter(): IRouter {
         }
         req.session.userId = dbUser.id;
         req.session.user = user;
+        void recordAudit({ userId: dbUser.id, action: "auth.login", objectType: null, detail: { provider: "google" }, via: "session", ip: req.ip ?? null });
         req.session.save(() => res.redirect(pending.returnTo));
       });
     } catch (err) {

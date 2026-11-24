@@ -4,13 +4,17 @@ import { logger } from "./logger";
 import type { DbTransaction } from "./tools/types";
 import { USER_TOKEN_LOST, startRun } from "./run-executor";
 import { setUserToken } from "./user-tokens";
+import { publishRunChange } from "./live/events";
+import { FLEET_DEFAULTS, readSchedulerPolicy } from "./fleet/policy";
 
 // Coda delle run: il POST crea la run `pending`, lo scheduler di questo processo la avvia quando c'è posto.
-// Limiti di concorrenza per agente e in totale; le run aspettano in ordine di creazione (created_at, id).
+// Limiti di concorrenza per agente e in totale, dalla politica della flotta (lib/fleet/policy.ts, letta a ogni giro);
+// con la flotta in pausa nessuna run nuova parte. Le run aspettano in ordine di creazione (created_at, id).
 // La presa in carico resta l'UPDATE condizionato `pending` → `running` di startRun: ogni run gira una volta.
 
-export const MAX_RUNNING_PER_AGENT = 2;
-export const MAX_RUNNING_RUNS = 6;
+/** Limiti predefiniti: valgono finché la politica della flotta non li cambia. */
+export const MAX_RUNNING_PER_AGENT = FLEET_DEFAULTS.maxRunningPerAgent;
+export const MAX_RUNNING_RUNS = FLEET_DEFAULTS.maxRunningRuns;
 export const MAX_PENDING_PER_AGENT = 200;
 /** Controllo di riserva dello scheduler (oltre a creazione e fine di ogni run). */
 const SCHEDULE_INTERVAL_MS = 30_000;
@@ -63,6 +67,7 @@ export async function createQueuedRun(input: {
     })
     .returning();
   if (userToken) setUserToken(run!.id, userToken);
+  publishRunChange(run!.id, run!.agentId);
   if (!input.tx) void scheduleRuns();
   return { ok: true, run: run! };
 }
@@ -106,18 +111,23 @@ export function scheduleRuns(): Promise<void> {
 }
 
 async function schedulePass(): Promise<void> {
+  const policy = await readSchedulerPolicy();
+  // Flotta in pausa: le run restano `pending` e partono alla ripresa (resumeFleet chiama scheduleRuns)
+  if (policy.paused) return;
+  const maxRunning = policy.maxRunningRuns;
+  const maxPerAgent = policy.maxRunningPerAgent;
   const busy = new Map<number, number>(launched);
   const running = await db
     .select({ id: runsTable.id, agentId: runsTable.agentId })
     .from(runsTable)
     .where(eq(runsTable.status, "running"));
   for (const r of running) busy.set(r.id, r.agentId);
-  if (busy.size >= MAX_RUNNING_RUNS) return;
+  if (busy.size >= maxRunning) return;
 
   const perAgent = new Map<number, number>();
   for (const agentId of busy.values()) perAgent.set(agentId, (perAgent.get(agentId) ?? 0) + 1);
 
-  // Per ogni agente bastano le prime MAX_RUNNING_PER_AGENT in attesa: quelle già avviate da qui ma ancora
+  // Per ogni agente bastano le prime maxPerAgent in attesa: quelle già avviate da qui ma ancora
   // `pending` nel DB occupano un posto dell'agente. L'elenco resta piccolo anche con molte run in coda.
   const candidates = await db.execute<{ id: number; agent_id: number }>(sql`
     select id, agent_id from (
@@ -126,16 +136,16 @@ async function schedulePass(): Promise<void> {
         from runs
        where status = 'pending'
     ) queued
-     where position <= ${MAX_RUNNING_PER_AGENT}
+     where position <= ${maxPerAgent}
      order by created_at, id`);
 
   let total = busy.size;
   for (const c of candidates.rows) {
-    if (total >= MAX_RUNNING_RUNS) break;
+    if (total >= maxRunning) break;
     const id = Number(c.id);
     const agentId = Number(c.agent_id);
     if (busy.has(id)) continue;
-    if ((perAgent.get(agentId) ?? 0) >= MAX_RUNNING_PER_AGENT) continue;
+    if ((perAgent.get(agentId) ?? 0) >= maxPerAgent) continue;
     busy.set(id, agentId);
     perAgent.set(agentId, (perAgent.get(agentId) ?? 0) + 1);
     total++;

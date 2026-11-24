@@ -1,7 +1,7 @@
 # Botcave · configurazione del Responsabile di prodotto di Botcave stesso
 
 Data: 9 novembre 2026. Spec: `docs/superpowers/specs/2026-11-09-botcave-responsabile-di-se-stesso-design.md` (§6 e §7.3).
-Catalogo: `docs/botcave-self/catalogo-tool.json` (67 tool).
+Catalogo: `docs/botcave-self/catalogo-tool.json` (68 tool; il passo 3 descrive i primi 67, il 68° `evaluate_agent_model` si aggiunge col passo 9).
 
 Questi passi si fanno **dopo il merge e il deploy**, uno alla volta, ognuno con la conferma di Ivan. Nessuna migrazione del DB e
 nessuna variabile nuova. Ogni chiamata si esegue nella console del browser (DevTools → Console) su una pagina di
@@ -400,3 +400,46 @@ for (const name of ["create_team_template", "update_team_template", "create_team
   await api("PATCH", `/api/apps/4/tools/${tool.id}`, { description: voce.description, paramsSchema: voce.paramsSchema });
 }
 ```
+
+## 9. Aggiornamento del 24 novembre 2026: il Configuratore valuta i modelli (issue #112)
+
+Il Configuratore degli agenti (agente 8) consiglia un modello più economico a parità di successo. Il server calcola tutto in
+`GET /api/agents/{id}/model-evaluation` (ultime run concluse dell'agente, al più 50 in 30 giorni: successo, token, costo, passi tool
+falliti; costo stimato di una run media con il modello attuale e con i modelli con strumenti degli account dell'utente del token; al più 5
+modelli più economici, scartati quelli già provati dall'agente con un successo più basso di 10 punti). Nessuna chiamata a modelli.
+
+Dopo il deploy (funzione `api` del passo 0): si crea il tool `evaluate_agent_model` (L0) e si collegano al Configuratore il nuovo tool e
+`update_agent` (L2: la proposta di cambio modello va sempre in «Da confermare» e la decide l'utente); poi si aggiunge al prompt la skill qui
+sotto.
+
+```js
+const catalogo = await (await fetch("https://raw.githubusercontent.com/TwentIvan/Casello-Agent-Hub/main/docs/botcave-self/catalogo-tool.json")).json();
+const { replaces, ...voce } = catalogo.find((t) => t.name === "evaluate_agent_model");
+let tools = await api("GET", "/api/apps/4/tools");
+if (!tools.some((t) => t.name === voce.name)) await api("POST", "/api/apps/4/tools", voce);
+tools = await api("GET", "/api/apps/4/tools");
+const configuratore = await api("GET", "/api/agents/8");
+const ids = new Set(configuratore.toolIds);
+for (const name of ["evaluate_agent_model", "update_agent"]) ids.add(tools.find((t) => t.name === name && t.status === "active").id);
+await api("PUT", "/api/agents/8/tools", { toolIds: [...ids] });
+```
+
+Skill «Valutatore dei modelli» da aggiungere in fondo al prompt di sistema del Configuratore (scheda agente → Prompt di sistema):
+
+```text
+## Valutare il modello di un agente
+
+Quando ti chiedono di valutare un agente, o di rendere gli agenti più economici:
+1. Leggi l'agente con get_agent e la valutazione con evaluate_agent_model.
+2. Se la nota dice che le run sono poche o mancano, riferiscilo e non proporre nulla.
+3. Riporta per il modello attuale: run lette, tasso di successo, errori dei tool, costo medio registrato e costo stimato per run.
+4. Per al più 3 suggerimenti riporta nome, account, costo stimato per run, risparmio per run (USD e %) e risparmio mensile stimato,
+   dicendo se il modello è già stato provato dall'agente (run e successo osservati) o se il confronto è solo sui prezzi.
+5. Se un suggerimento ha senso, proponi con update_agent il solo campo aiModelId (l'id del suggerimento), con nella sintesi il risparmio
+   mensile stimato e il successo osservato. Va in «Da confermare»: decide l'utente.
+6. Non proporre modelli fuori dalla valutazione e non cambiare prompt, tool o tetti in questa richiesta. Se il successo osservato è basso
+   (sotto il 70%), dillo: prima del modello va rivisto il prompt.
+```
+
+La stima usa i token medi delle run per i prezzi di listino del modello (i token letti dalla cache al prezzo della cache, se noto, altrimenti
+pieno): è indicativa, i modelli diversi usano token diversi per lo stesso lavoro.

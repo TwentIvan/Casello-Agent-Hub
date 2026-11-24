@@ -17,10 +17,10 @@ import { agentsTable } from "./agents";
 import { appToolsTable } from "./app-tools";
 import { usersTable } from "./users";
 
-export const triggerKindEnum = pgEnum("trigger_kind", ["poll", "webhook"]);
+export const triggerKindEnum = pgEnum("trigger_kind", ["poll", "webhook", "schedule"]);
 export const triggerStatusEnum = pgEnum("trigger_status", ["active", "paused", "error"]);
 
-// Innesco: sorveglia un tool (poll) o riceve un webhook e avvia le run di un agente
+// Innesco: sorveglia un tool (poll), riceve un webhook o segue un orario cron (schedule) e avvia le run di un agente
 export const agentTriggersTable = pgTable(
   "agent_triggers",
   {
@@ -47,6 +47,8 @@ export const agentTriggersTable = pgTable(
     // {field, equals}
     filter: jsonb("filter"),
     intervalSeconds: integer("interval_seconds").default(300),
+    // Solo schedule: espressione cron a 5 campi nell'ora italiana; `next_poll_at` è la prossima run
+    cron: text("cron"),
     nextPollAt: timestamp("next_poll_at", { withTimezone: true }),
     baselineDone: boolean("baseline_done").notNull().default(false),
     // Solo webhook: header con l'id dell'evento, hash del segreto dell'URL, segreto di firma cifrato
@@ -67,6 +69,10 @@ export const agentTriggersTable = pgTable(
       sql`${table.kind} <> 'poll' OR (${table.toolId} IS NOT NULL AND ${table.intervalSeconds} IS NOT NULL AND ${table.nextPollAt} IS NOT NULL)`,
     ),
     check("agent_triggers_webhook_check", sql`${table.kind} <> 'webhook' OR ${table.secretHash} IS NOT NULL`),
+    check(
+      "agent_triggers_schedule_check",
+      sql`${table.kind}::text <> 'schedule' OR (${table.cron} IS NOT NULL AND ${table.nextPollAt} IS NOT NULL)`,
+    ),
     check("agent_triggers_cursor_check", sql`${table.cursorParam} IS NULL OR ${table.cursorField} IS NOT NULL`),
     index("agent_triggers_due_idx").on(table.status, table.nextPollAt),
     index("agent_triggers_agent_idx").on(table.agentId),

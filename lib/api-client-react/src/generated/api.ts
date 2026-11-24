@@ -25,8 +25,11 @@ import type {
   AdminBugDetail,
   AdminBugSummary,
   Agent,
+  AgentActivity,
   AgentInput,
   AgentModelAssignments,
+  AgentModelDeprecationList,
+  AgentModelEvaluation,
   AgentSkill,
   AgentToolsInput,
   AgentUpdate,
@@ -71,6 +74,7 @@ import type {
   AppToolUpdate,
   AppUpdate,
   ApproveActionRequest,
+  AuditEventPage,
   AuthProviders,
   BadGatewayResponse,
   BadRequestResponse,
@@ -133,6 +137,10 @@ import type {
   EvolutionCycleView,
   EvolutionRoundView,
   ExportAnalysisIssuesParams,
+  FleetLimitsUpdate,
+  FleetPauseRequest,
+  FleetPolicy,
+  FleetView,
   ForbiddenResponse,
   GetAlfredNotificationsParams,
   GetAppBootstrapConfig200,
@@ -157,6 +165,7 @@ import type {
   LeadMessageCreate,
   ListAgentsParams,
   ListAppBugsParams,
+  ListAuditEventsParams,
   ListCatalogModelsParams,
   ListCatalogProvidersParams,
   ListCharacterConversationsParams,
@@ -227,6 +236,8 @@ import type {
   RejectActionRequest,
   Run,
   RunClientResult,
+  RunMessage,
+  RunMessageCreate,
   RunStep,
   RunTrigger,
   SendLeadMessageParams,
@@ -1617,6 +1628,91 @@ export const useRevokeApiToken = <TError = ErrorType<UnauthorizedResponse | NotF
       > => {
       return useMutation(getRevokeApiTokenMutationOptions(options));
     }
+
+export const getListAuditEventsUrl = (params?: ListAuditEventsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/account/audit-events?${stringifiedParams}` : `/api/account/audit-events`
+}
+
+/**
+ * Eventi delle operazioni sensibili dell'utente (approvazioni, conferme, token, segreti, account AI, nodi, accessi), dal più recente, con azione, oggetto, canale e IP; mai segreti, token né testi. Paginazione con `before` (id dell'ultimo evento della pagina precedente). Conservati 365 giorni. Solo con il login: con un token risponde 403.
+ * @summary Registro delle azioni dell'utente
+ */
+export const listAuditEvents = async (params?: ListAuditEventsParams, options?: RequestInit): Promise<AuditEventPage> => {
+
+  return customFetch<AuditEventPage>(getListAuditEventsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAuditEventsQueryKey = (params?: ListAuditEventsParams,) => {
+    return [
+    `/api/account/audit-events`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListAuditEventsQueryOptions = <TData = Awaited<ReturnType<typeof listAuditEvents>>, TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse>>(params?: ListAuditEventsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAuditEvents>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAuditEventsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAuditEvents>>> = ({ signal }) => listAuditEvents(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAuditEvents>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAuditEventsQueryResult = NonNullable<Awaited<ReturnType<typeof listAuditEvents>>>
+export type ListAuditEventsQueryError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse>
+
+
+/**
+ * @summary Registro delle azioni dell'utente
+ */
+
+export function useListAuditEvents<TData = Awaited<ReturnType<typeof listAuditEvents>>, TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse>>(
+ params?: ListAuditEventsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAuditEvents>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAuditEventsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getListOAuthGrantsUrl = () => {
 
@@ -8364,6 +8460,531 @@ export function useListRunSteps<TData = Awaited<ReturnType<typeof listRunSteps>>
 
 
 
+export const getStreamLiveUpdatesUrl = () => {
+
+
+
+
+  return `/api/live`
+}
+
+/**
+ * Flusso `text/event-stream` solo con il login (EventSource della console; con un token 403). Eventi: `ready` all'apertura, `runs` con `{runs: [{runId, agentId}]}` quando lo stato o i passi di quelle run cambiano (al più un messaggio ogni 300 ms, `agentId` null se non noto), un commento `: ping` ogni 25 s. Dice solo quale run è cambiata: i dati si rileggono con le GET di sempre. In memoria: con più container gli avvisi dell'altro non arrivano. Al più 6 flussi per utente (429).
+ * @summary Aggiornamenti in tempo reale delle run (Server-Sent Events)
+ */
+export const streamLiveUpdates = async ( options?: RequestInit): Promise<string> => {
+
+  return customFetch<string>(getStreamLiveUpdatesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getStreamLiveUpdatesQueryKey = () => {
+    return [
+    `/api/live`
+    ] as const;
+    }
+
+
+export const getStreamLiveUpdatesQueryOptions = <TData = Awaited<ReturnType<typeof streamLiveUpdates>>, TError = ErrorType<ForbiddenResponse | TooManyRequestsResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof streamLiveUpdates>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getStreamLiveUpdatesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof streamLiveUpdates>>> = ({ signal }) => streamLiveUpdates({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof streamLiveUpdates>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type StreamLiveUpdatesQueryResult = NonNullable<Awaited<ReturnType<typeof streamLiveUpdates>>>
+export type StreamLiveUpdatesQueryError = ErrorType<ForbiddenResponse | TooManyRequestsResponse>
+
+
+/**
+ * @summary Aggiornamenti in tempo reale delle run (Server-Sent Events)
+ */
+
+export function useStreamLiveUpdates<TData = Awaited<ReturnType<typeof streamLiveUpdates>>, TError = ErrorType<ForbiddenResponse | TooManyRequestsResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof streamLiveUpdates>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getStreamLiveUpdatesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetAgentModelEvaluationUrl = (id: number,) => {
+
+
+
+
+  return `/api/agents/${id}/model-evaluation`
+}
+
+/**
+ * Legge le ultime run concluse dell'agente (al più 50 degli ultimi 30 giorni: esito, token, costo, passi tool falliti), calcola il costo medio stimato di una run con il modello attuale e con i modelli con strumenti degli account AI dell'utente (disponibili, prezzi noti, non in anteprima, non Claude Code sul nodo) e propone al più 5 modelli più economici. Un modello già provato dall'agente (almeno 3 run) con un successo più basso di 10 punti rispetto al riferimento non si propone. Solo lettura, nessuna chiamata a modelli: per cambiare modello si usa PATCH /agents/{id}.
+ * @summary Valutazione del modello di un agente con i modelli più economici
+ */
+export const getAgentModelEvaluation = async (id: number, options?: RequestInit): Promise<AgentModelEvaluation> => {
+
+  return customFetch<AgentModelEvaluation>(getGetAgentModelEvaluationUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAgentModelEvaluationQueryKey = (id: number,) => {
+    return [
+    `/api/agents/${id}/model-evaluation`
+    ] as const;
+    }
+
+
+export const getGetAgentModelEvaluationQueryOptions = <TData = Awaited<ReturnType<typeof getAgentModelEvaluation>>, TError = ErrorType<NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAgentModelEvaluation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAgentModelEvaluationQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAgentModelEvaluation>>> = ({ signal }) => getAgentModelEvaluation(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAgentModelEvaluation>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAgentModelEvaluationQueryResult = NonNullable<Awaited<ReturnType<typeof getAgentModelEvaluation>>>
+export type GetAgentModelEvaluationQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Valutazione del modello di un agente con i modelli più economici
+ */
+
+export function useGetAgentModelEvaluation<TData = Awaited<ReturnType<typeof getAgentModelEvaluation>>, TError = ErrorType<NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAgentModelEvaluation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAgentModelEvaluationQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListAgentActivityUrl = () => {
+
+
+
+
+  return `/api/agent-activity`
+}
+
+/**
+ * Solo gli agenti non fermi (gli assenti sono fermi), in ordine di id. `waiting_user` se una run aspetta il client o ci sono voci `pending` di «Da confermare» dell'utente nate dall'agente; `working` con run `pending`/`running` o run figlie ancora aperte; altrimenti `idle`.
+ * @summary Stato per agente (in lavoro, in attesa dell'utente, fermo)
+ */
+export const listAgentActivity = async ( options?: RequestInit): Promise<AgentActivity[]> => {
+
+  return customFetch<AgentActivity[]>(getListAgentActivityUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAgentActivityQueryKey = () => {
+    return [
+    `/api/agent-activity`
+    ] as const;
+    }
+
+
+export const getListAgentActivityQueryOptions = <TData = Awaited<ReturnType<typeof listAgentActivity>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAgentActivity>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAgentActivityQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAgentActivity>>> = ({ signal }) => listAgentActivity({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAgentActivity>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAgentActivityQueryResult = NonNullable<Awaited<ReturnType<typeof listAgentActivity>>>
+export type ListAgentActivityQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Stato per agente (in lavoro, in attesa dell'utente, fermo)
+ */
+
+export function useListAgentActivity<TData = Awaited<ReturnType<typeof listAgentActivity>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAgentActivity>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAgentActivityQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetFleetUrl = () => {
+
+
+
+
+  return `/api/fleet`
+}
+
+/**
+ * Ogni agente con salute (`failing` senza modello, con un innesco in errore o con meno della metà delle run riuscite su almeno 3; `degraded` con qualche errore, una run in corso da oltre 15 minuti o almeno 20 run in coda; `off` se non attivo), problemi, attività, run in corso e in coda e numeri delle ultime 24 ore; poi il riepilogo e la politica di coordinamento. Dal più grave. Solo letture.
+ * @summary Salute e attività della flotta degli agenti
+ */
+export const getFleet = async ( options?: RequestInit): Promise<FleetView> => {
+
+  return customFetch<FleetView>(getGetFleetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetFleetQueryKey = () => {
+    return [
+    `/api/fleet`
+    ] as const;
+    }
+
+
+export const getGetFleetQueryOptions = <TData = Awaited<ReturnType<typeof getFleet>>, TError = ErrorType<UnauthorizedResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getFleet>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetFleetQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getFleet>>> = ({ signal }) => getFleet({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getFleet>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetFleetQueryResult = NonNullable<Awaited<ReturnType<typeof getFleet>>>
+export type GetFleetQueryError = ErrorType<UnauthorizedResponse>
+
+
+/**
+ * @summary Salute e attività della flotta degli agenti
+ */
+
+export function useGetFleet<TData = Awaited<ReturnType<typeof getFleet>>, TError = ErrorType<UnauthorizedResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getFleet>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetFleetQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateFleetPolicyUrl = () => {
+
+
+
+
+  return `/api/fleet/policy`
+}
+
+/**
+ * Run in corso al più `maxRunningRuns` (1..20) in tutto e `maxRunningPerAgent` (1..10, non oltre il totale) per agente; valgono dal giro successivo dello scheduler, le run già partite non si fermano. Solo con il login.
+ * @summary Limiti di concorrenza delle run di tutta la flotta
+ */
+export const updateFleetPolicy = async (fleetLimitsUpdate: FleetLimitsUpdate, options?: RequestInit): Promise<FleetPolicy> => {
+
+  return customFetch<FleetPolicy>(getUpdateFleetPolicyUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(fleetLimitsUpdate)
+  }
+);}
+
+
+
+
+export const getUpdateFleetPolicyMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateFleetPolicy>>, TError,{data: BodyType<FleetLimitsUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateFleetPolicy>>, TError,{data: BodyType<FleetLimitsUpdate>}, TContext> => {
+
+const mutationKey = ['updateFleetPolicy'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateFleetPolicy>>, {data: BodyType<FleetLimitsUpdate>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  updateFleetPolicy(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateFleetPolicyMutationResult = NonNullable<Awaited<ReturnType<typeof updateFleetPolicy>>>
+    export type UpdateFleetPolicyMutationBody = BodyType<FleetLimitsUpdate>
+    export type UpdateFleetPolicyMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse>
+
+    /**
+ * @summary Limiti di concorrenza delle run di tutta la flotta
+ */
+export const useUpdateFleetPolicy = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateFleetPolicy>>, TError,{data: BodyType<FleetLimitsUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateFleetPolicy>>,
+        TError,
+        {data: BodyType<FleetLimitsUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateFleetPolicyMutationOptions(options));
+    }
+
+export const getPauseFleetUrl = () => {
+
+
+
+
+  return `/api/fleet/pause`
+}
+
+/**
+ * Nessuna run nuova parte (restano in coda) e sorveglianza e run programmate non scattano finché la flotta non riprende; le run in corso arrivano in fondo, i webhook accodano le run. Già in pausa → 409. Solo con il login.
+ * @summary Mette in pausa la flotta
+ */
+export const pauseFleet = async (fleetPauseRequest?: FleetPauseRequest, options?: RequestInit): Promise<FleetPolicy> => {
+
+  return customFetch<FleetPolicy>(getPauseFleetUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(fleetPauseRequest)
+  }
+);}
+
+
+
+
+export const getPauseFleetMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof pauseFleet>>, TError,{data?: BodyType<FleetPauseRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof pauseFleet>>, TError,{data?: BodyType<FleetPauseRequest>}, TContext> => {
+
+const mutationKey = ['pauseFleet'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof pauseFleet>>, {data?: BodyType<FleetPauseRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  pauseFleet(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PauseFleetMutationResult = NonNullable<Awaited<ReturnType<typeof pauseFleet>>>
+    export type PauseFleetMutationBody = BodyType<FleetPauseRequest> | undefined
+    export type PauseFleetMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | ConflictResponse>
+
+    /**
+ * @summary Mette in pausa la flotta
+ */
+export const usePauseFleet = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof pauseFleet>>, TError,{data?: BodyType<FleetPauseRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof pauseFleet>>,
+        TError,
+        {data?: BodyType<FleetPauseRequest>},
+        TContext
+      > => {
+      return useMutation(getPauseFleetMutationOptions(options));
+    }
+
+export const getResumeFleetUrl = () => {
+
+
+
+
+  return `/api/fleet/resume`
+}
+
+/**
+ * Toglie la pausa e avvia subito le run in coda nei limiti. Non in pausa → 409. Solo con il login.
+ * @summary Riprende la flotta
+ */
+export const resumeFleet = async ( options?: RequestInit): Promise<FleetPolicy> => {
+
+  return customFetch<FleetPolicy>(getResumeFleetUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getResumeFleetMutationOptions = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resumeFleet>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof resumeFleet>>, TError,void, TContext> => {
+
+const mutationKey = ['resumeFleet'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof resumeFleet>>, void> = () => {
+
+
+          return  resumeFleet(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ResumeFleetMutationResult = NonNullable<Awaited<ReturnType<typeof resumeFleet>>>
+
+    export type ResumeFleetMutationError = ErrorType<UnauthorizedResponse | ForbiddenResponse | ConflictResponse>
+
+    /**
+ * @summary Riprende la flotta
+ */
+export const useResumeFleet = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resumeFleet>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof resumeFleet>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getResumeFleetMutationOptions(options));
+    }
+
 export const getCancelRunUrl = (id: number,) => {
 
 
@@ -8433,6 +9054,156 @@ export const useCancelRun = <TError = ErrorType<NotFoundResponse | ConflictRespo
         TContext
       > => {
       return useMutation(getCancelRunMutationOptions(options));
+    }
+
+export const getListRunMessagesUrl = (id: number,) => {
+
+
+
+
+  return `/api/runs/${id}/messages`
+}
+
+/**
+ * Istruzioni mandate dall'utente alla run durante l'esecuzione, dalla prima, con lo stato: pending (in attesa del prossimo passo), delivered (consegnata al modello), dropped (la run è finita prima di consegnarla).
+ * @summary Istruzioni mandate a una run
+ */
+export const listRunMessages = async (id: number, options?: RequestInit): Promise<RunMessage[]> => {
+
+  return customFetch<RunMessage[]>(getListRunMessagesUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListRunMessagesQueryKey = (id: number,) => {
+    return [
+    `/api/runs/${id}/messages`
+    ] as const;
+    }
+
+
+export const getListRunMessagesQueryOptions = <TData = Awaited<ReturnType<typeof listRunMessages>>, TError = ErrorType<NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listRunMessages>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListRunMessagesQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listRunMessages>>> = ({ signal }) => listRunMessages(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listRunMessages>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListRunMessagesQueryResult = NonNullable<Awaited<ReturnType<typeof listRunMessages>>>
+export type ListRunMessagesQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Istruzioni mandate a una run
+ */
+
+export function useListRunMessages<TData = Awaited<ReturnType<typeof listRunMessages>>, TError = ErrorType<NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listRunMessages>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListRunMessagesQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getCreateRunMessageUrl = (id: number,) => {
+
+
+
+
+  return `/api/runs/${id}/messages`
+}
+
+/**
+ * Solo con la run running ed eseguita dal ciclo cloud (non da Claude Code sul nodo). Il ciclo dell'agente legge le istruzioni tra un passo e l'altro (e prima di chiudere con la risposta finale) e le inserisce come messaggio dell'utente prima della chiamata successiva al modello, senza perdere i passi già eseguiti. L'istruzione non concede permessi: i tool L2 restano in «Da confermare», gli L3 non si offrono. Testo 1..2000 caratteri, al più 5 istruzioni in attesa e 20 in tutto per run (409), 10 al minuto per utente (429).
+ * @summary Manda un'istruzione a una run in corso
+ */
+export const createRunMessage = async (id: number,
+    runMessageCreate: RunMessageCreate, options?: RequestInit): Promise<RunMessage> => {
+
+  return customFetch<RunMessage>(getCreateRunMessageUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(runMessageCreate)
+  }
+);}
+
+
+
+
+export const getCreateRunMessageMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createRunMessage>>, TError,{id: number;data: BodyType<RunMessageCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createRunMessage>>, TError,{id: number;data: BodyType<RunMessageCreate>}, TContext> => {
+
+const mutationKey = ['createRunMessage'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createRunMessage>>, {id: number;data: BodyType<RunMessageCreate>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  createRunMessage(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateRunMessageMutationResult = NonNullable<Awaited<ReturnType<typeof createRunMessage>>>
+    export type CreateRunMessageMutationBody = BodyType<RunMessageCreate>
+    export type CreateRunMessageMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Manda un'istruzione a una run in corso
+ */
+export const useCreateRunMessage = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createRunMessage>>, TError,{id: number;data: BodyType<RunMessageCreate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof createRunMessage>>,
+        TError,
+        {id: number;data: BodyType<RunMessageCreate>},
+        TContext
+      > => {
+      return useMutation(getCreateRunMessageMutationOptions(options));
     }
 
 export const getSubmitRunClientResultUrl = (id: number,) => {
@@ -14836,6 +15607,84 @@ export function useGetCatalogStatus<TData = Awaited<ReturnType<typeof getCatalog
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetCatalogStatusQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListAgentModelDeprecationsUrl = () => {
+
+
+
+
+  return `/api/catalog/agent-deprecations`
+}
+
+/**
+ * Agenti il cui modello è ritirato o ha la data di dismissione entro 30 giorni, con il sostituto più economico con strumenti tra i modelli degli account dell'utente corrente (null se non ce n'è uno). Solo letture.
+ * @summary Agenti con il modello in dismissione
+ */
+export const listAgentModelDeprecations = async ( options?: RequestInit): Promise<AgentModelDeprecationList> => {
+
+  return customFetch<AgentModelDeprecationList>(getListAgentModelDeprecationsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAgentModelDeprecationsQueryKey = () => {
+    return [
+    `/api/catalog/agent-deprecations`
+    ] as const;
+    }
+
+
+export const getListAgentModelDeprecationsQueryOptions = <TData = Awaited<ReturnType<typeof listAgentModelDeprecations>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAgentModelDeprecations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAgentModelDeprecationsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAgentModelDeprecations>>> = ({ signal }) => listAgentModelDeprecations({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAgentModelDeprecations>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAgentModelDeprecationsQueryResult = NonNullable<Awaited<ReturnType<typeof listAgentModelDeprecations>>>
+export type ListAgentModelDeprecationsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Agenti con il modello in dismissione
+ */
+
+export function useListAgentModelDeprecations<TData = Awaited<ReturnType<typeof listAgentModelDeprecations>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAgentModelDeprecations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAgentModelDeprecationsQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

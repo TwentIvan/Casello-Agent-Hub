@@ -13480,11 +13480,15 @@ components:
       description: >-
         Motivo di un turno del capo. `outcome` vale approved|rejected per `decision` e success|failure|none per
         `ci_finished`; `taskCodeId` è la riga del compito con codice (CI, PR, merge), `workId` il lavoro (rilascio).
+        `unknown` è un motivo salvato che la risposta non sa descrivere (tipo nuovo o campi non validi): `originalType`
+        ne riporta il tipo, così l'attività si legge comunque.
       required: [type]
       properties:
         type:
           type: string
-          enum: [request, task_finished, decision, activation, restart, ci_finished, pr_closed, merge_failed, release_failed]
+          enum: [request, task_finished, decision, activation, restart, ci_finished, pr_closed, merge_failed, release_failed, unknown]
+        originalType:
+          type: string
         text:
           type: string
         taskId:

@@ -6667,7 +6667,8 @@ export const ListTeamTurnsResponseItem = zod.object({
   "id": zod.number(),
   "instanceId": zod.number(),
   "reasons": zod.array(zod.object({
-  "type": zod.enum(['request', 'task_finished', 'decision', 'activation', 'restart', 'ci_finished', 'pr_closed', 'merge_failed', 'release_failed']),
+  "type": zod.enum(['request', 'task_finished', 'decision', 'activation', 'restart', 'ci_finished', 'pr_closed', 'merge_failed', 'release_failed', 'unknown']),
+  "originalType": zod.string().optional(),
   "text": zod.string().optional(),
   "taskId": zod.number().optional(),
   "number": zod.number().optional(),
@@ -6677,7 +6678,7 @@ export const ListTeamTurnsResponseItem = zod.object({
   "merged": zod.boolean().optional(),
   "message": zod.string().optional(),
   "workId": zod.number().optional()
-}).describe('Motivo di un turno del capo. `outcome` vale approved|rejected per `decision` e success|failure|none per `ci_finished`; `taskCodeId` è la riga del compito con codice (CI, PR, merge), `workId` il lavoro (rilascio).')),
+}).describe('Motivo di un turno del capo. `outcome` vale approved|rejected per `decision` e success|failure|none per `ci_finished`; `taskCodeId` è la riga del compito con codice (CI, PR, merge), `workId` il lavoro (rilascio). `unknown` è un motivo salvato che la risposta non sa descrivere (tipo nuovo o campi non validi): `originalType` ne riporta il tipo, così l\'attività si legge comunque.')),
   "status": zod.enum(['queued', 'running', 'done', 'failed']),
   "error": zod.string().nullable(),
   "aiModelId": zod.number().nullable(),

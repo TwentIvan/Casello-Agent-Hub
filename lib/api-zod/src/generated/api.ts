@@ -3520,7 +3520,7 @@ export const ListAgentTriggersParams = zod.object({
 export const ListAgentTriggersResponseItem = zod.object({
   "id": zod.number(),
   "agentId": zod.number(),
-  "kind": zod.enum(['poll', 'webhook']),
+  "kind": zod.enum(['poll', 'webhook', 'schedule']).describe('poll = sorveglianza di un tool, webhook = chiamata in entrata, schedule = run programmata (espressione cron nell\'ora italiana)'),
   "name": zod.string(),
   "status": zod.enum(['active', 'paused', 'error']),
   "instructions": zod.string().nullable(),
@@ -3538,9 +3538,10 @@ export const ListAgentTriggersResponseItem = zod.object({
   "equals": zod.union([zod.string(),zod.number(),zod.boolean()]).describe('Valore atteso, confronto stretto')
 }),zod.null()]),
   "intervalSeconds": zod.number().nullable(),
-  "nextPollAt": zod.coerce.date().nullable(),
+  "nextPollAt": zod.coerce.date().nullable().describe('Prossimo giro della sorveglianza o prossima run programmata'),
   "baselineDone": zod.boolean().describe('Linea di partenza fatta (solo sorveglianza)'),
   "dedupHeader": zod.string().nullable(),
+  "cron": zod.string().nullable().describe('Solo schedule, espressione cron nell\'ora italiana'),
   "signingSecretSet": zod.boolean().describe('C\'è un segreto di firma (il valore non si legge mai)'),
   "lastPolledAt": zod.coerce.date().nullable().describe('Ultimo giro o ultimo evento ricevuto'),
   "lastError": zod.string().nullable(),
@@ -3561,7 +3562,7 @@ export const CreateAgentTriggerParams = zod.object({
 })
 
 export const CreateAgentTriggerBody = zod.object({
-  "kind": zod.enum(['poll', 'webhook']),
+  "kind": zod.enum(['poll', 'webhook', 'schedule']).describe('poll = sorveglianza di un tool, webhook = chiamata in entrata, schedule = run programmata (espressione cron nell\'ora italiana)'),
   "name": zod.string().describe('Da 1 a 80 caratteri, unico per agente'),
   "instructions": zod.string().nullish().describe('Testo che apre l\'input della run, al massimo 2000 caratteri'),
   "toolId": zod.number().nullish(),
@@ -3576,13 +3577,14 @@ export const CreateAgentTriggerBody = zod.object({
   "equals": zod.union([zod.string(),zod.number(),zod.boolean()]).describe('Valore atteso, confronto stretto')
 }),zod.null()]).optional(),
   "intervalSeconds": zod.number().nullish().describe('Da 60 a 86400 secondi (default 300)'),
-  "dedupHeader": zod.string().nullish()
-}).describe('Configurazione di un innesco. Solo `poll`: `toolId`, `args`, `cursorParam`, `cursorField`, `intervalSeconds`. Solo `webhook`: `dedupHeader`. Percorsi da 1 a 5 segmenti `[A-Za-z0-9_-]` separati da punto.')
+  "dedupHeader": zod.string().nullish(),
+  "cron": zod.string().nullish().describe('Solo schedule: espressione cron a 5 campi (minuto ora giorno mese giorno-della-settimana) nell\'ora italiana, almeno 5 minuti tra due run')
+}).describe('Configurazione di un innesco. Solo `poll`: `toolId`, `args`, `cursorParam`, `cursorField`, `intervalSeconds`. Solo `webhook`: `dedupHeader`. Solo `schedule`: `cron` (obbligatorio) e `instructions` obbligatorie, nessun altro campo. Percorsi da 1 a 5 segmenti `[A-Za-z0-9_-]` separati da punto.')
 
 export const CreateAgentTriggerResponse = zod.object({
   "id": zod.number(),
   "agentId": zod.number(),
-  "kind": zod.enum(['poll', 'webhook']),
+  "kind": zod.enum(['poll', 'webhook', 'schedule']).describe('poll = sorveglianza di un tool, webhook = chiamata in entrata, schedule = run programmata (espressione cron nell\'ora italiana)'),
   "name": zod.string(),
   "status": zod.enum(['active', 'paused', 'error']),
   "instructions": zod.string().nullable(),
@@ -3600,9 +3602,10 @@ export const CreateAgentTriggerResponse = zod.object({
   "equals": zod.union([zod.string(),zod.number(),zod.boolean()]).describe('Valore atteso, confronto stretto')
 }),zod.null()]),
   "intervalSeconds": zod.number().nullable(),
-  "nextPollAt": zod.coerce.date().nullable(),
+  "nextPollAt": zod.coerce.date().nullable().describe('Prossimo giro della sorveglianza o prossima run programmata'),
   "baselineDone": zod.boolean().describe('Linea di partenza fatta (solo sorveglianza)'),
   "dedupHeader": zod.string().nullable(),
+  "cron": zod.string().nullable().describe('Solo schedule, espressione cron nell\'ora italiana'),
   "signingSecretSet": zod.boolean().describe('C\'è un segreto di firma (il valore non si legge mai)'),
   "lastPolledAt": zod.coerce.date().nullable().describe('Ultimo giro o ultimo evento ricevuto'),
   "lastError": zod.string().nullable(),
@@ -3624,7 +3627,7 @@ export const TestAgentTriggerConfigParams = zod.object({
 })
 
 export const TestAgentTriggerConfigBody = zod.object({
-  "kind": zod.enum(['poll', 'webhook']),
+  "kind": zod.enum(['poll', 'webhook', 'schedule']).describe('poll = sorveglianza di un tool, webhook = chiamata in entrata, schedule = run programmata (espressione cron nell\'ora italiana)'),
   "name": zod.string().describe('Da 1 a 80 caratteri, unico per agente'),
   "instructions": zod.string().nullish().describe('Testo che apre l\'input della run, al massimo 2000 caratteri'),
   "toolId": zod.number().nullish(),
@@ -3639,8 +3642,9 @@ export const TestAgentTriggerConfigBody = zod.object({
   "equals": zod.union([zod.string(),zod.number(),zod.boolean()]).describe('Valore atteso, confronto stretto')
 }),zod.null()]).optional(),
   "intervalSeconds": zod.number().nullish().describe('Da 60 a 86400 secondi (default 300)'),
-  "dedupHeader": zod.string().nullish()
-}).describe('Configurazione di un innesco. Solo `poll`: `toolId`, `args`, `cursorParam`, `cursorField`, `intervalSeconds`. Solo `webhook`: `dedupHeader`. Percorsi da 1 a 5 segmenti `[A-Za-z0-9_-]` separati da punto.')
+  "dedupHeader": zod.string().nullish(),
+  "cron": zod.string().nullish().describe('Solo schedule: espressione cron a 5 campi (minuto ora giorno mese giorno-della-settimana) nell\'ora italiana, almeno 5 minuti tra due run')
+}).describe('Configurazione di un innesco. Solo `poll`: `toolId`, `args`, `cursorParam`, `cursorField`, `intervalSeconds`. Solo `webhook`: `dedupHeader`. Solo `schedule`: `cron` (obbligatorio) e `instructions` obbligatorie, nessun altro campo. Percorsi da 1 a 5 segmenti `[A-Za-z0-9_-]` separati da punto.')
 
 export const TestAgentTriggerConfigResponse = zod.object({
   "items": zod.array(zod.object({
@@ -3664,7 +3668,7 @@ export const GetTriggerParams = zod.object({
 export const GetTriggerResponse = zod.object({
   "id": zod.number(),
   "agentId": zod.number(),
-  "kind": zod.enum(['poll', 'webhook']),
+  "kind": zod.enum(['poll', 'webhook', 'schedule']).describe('poll = sorveglianza di un tool, webhook = chiamata in entrata, schedule = run programmata (espressione cron nell\'ora italiana)'),
   "name": zod.string(),
   "status": zod.enum(['active', 'paused', 'error']),
   "instructions": zod.string().nullable(),
@@ -3682,9 +3686,10 @@ export const GetTriggerResponse = zod.object({
   "equals": zod.union([zod.string(),zod.number(),zod.boolean()]).describe('Valore atteso, confronto stretto')
 }),zod.null()]),
   "intervalSeconds": zod.number().nullable(),
-  "nextPollAt": zod.coerce.date().nullable(),
+  "nextPollAt": zod.coerce.date().nullable().describe('Prossimo giro della sorveglianza o prossima run programmata'),
   "baselineDone": zod.boolean().describe('Linea di partenza fatta (solo sorveglianza)'),
   "dedupHeader": zod.string().nullable(),
+  "cron": zod.string().nullable().describe('Solo schedule, espressione cron nell\'ora italiana'),
   "signingSecretSet": zod.boolean().describe('C\'è un segreto di firma (il valore non si legge mai)'),
   "lastPolledAt": zod.coerce.date().nullable().describe('Ultimo giro o ultimo evento ricevuto'),
   "lastError": zod.string().nullable(),
@@ -3718,13 +3723,14 @@ export const UpdateTriggerBody = zod.object({
   "equals": zod.union([zod.string(),zod.number(),zod.boolean()]).describe('Valore atteso, confronto stretto')
 }),zod.null()]).optional(),
   "intervalSeconds": zod.number().nullish(),
-  "dedupHeader": zod.string().nullish()
+  "dedupHeader": zod.string().nullish(),
+  "cron": zod.string().nullish().describe('Solo schedule: espressione cron a 5 campi (minuto ora giorno mese giorno-della-settimana) nell\'ora italiana, almeno 5 minuti tra due run')
 }).describe('Campi da cambiare (assente = invariato, null = tolto); il tipo non cambia.')
 
 export const UpdateTriggerResponse = zod.object({
   "id": zod.number(),
   "agentId": zod.number(),
-  "kind": zod.enum(['poll', 'webhook']),
+  "kind": zod.enum(['poll', 'webhook', 'schedule']).describe('poll = sorveglianza di un tool, webhook = chiamata in entrata, schedule = run programmata (espressione cron nell\'ora italiana)'),
   "name": zod.string(),
   "status": zod.enum(['active', 'paused', 'error']),
   "instructions": zod.string().nullable(),
@@ -3742,9 +3748,10 @@ export const UpdateTriggerResponse = zod.object({
   "equals": zod.union([zod.string(),zod.number(),zod.boolean()]).describe('Valore atteso, confronto stretto')
 }),zod.null()]),
   "intervalSeconds": zod.number().nullable(),
-  "nextPollAt": zod.coerce.date().nullable(),
+  "nextPollAt": zod.coerce.date().nullable().describe('Prossimo giro della sorveglianza o prossima run programmata'),
   "baselineDone": zod.boolean().describe('Linea di partenza fatta (solo sorveglianza)'),
   "dedupHeader": zod.string().nullable(),
+  "cron": zod.string().nullable().describe('Solo schedule, espressione cron nell\'ora italiana'),
   "signingSecretSet": zod.boolean().describe('C\'è un segreto di firma (il valore non si legge mai)'),
   "lastPolledAt": zod.coerce.date().nullable().describe('Ultimo giro o ultimo evento ricevuto'),
   "lastError": zod.string().nullable(),
@@ -3775,7 +3782,7 @@ export const PauseTriggerParams = zod.object({
 export const PauseTriggerResponse = zod.object({
   "id": zod.number(),
   "agentId": zod.number(),
-  "kind": zod.enum(['poll', 'webhook']),
+  "kind": zod.enum(['poll', 'webhook', 'schedule']).describe('poll = sorveglianza di un tool, webhook = chiamata in entrata, schedule = run programmata (espressione cron nell\'ora italiana)'),
   "name": zod.string(),
   "status": zod.enum(['active', 'paused', 'error']),
   "instructions": zod.string().nullable(),
@@ -3793,9 +3800,10 @@ export const PauseTriggerResponse = zod.object({
   "equals": zod.union([zod.string(),zod.number(),zod.boolean()]).describe('Valore atteso, confronto stretto')
 }),zod.null()]),
   "intervalSeconds": zod.number().nullable(),
-  "nextPollAt": zod.coerce.date().nullable(),
+  "nextPollAt": zod.coerce.date().nullable().describe('Prossimo giro della sorveglianza o prossima run programmata'),
   "baselineDone": zod.boolean().describe('Linea di partenza fatta (solo sorveglianza)'),
   "dedupHeader": zod.string().nullable(),
+  "cron": zod.string().nullable().describe('Solo schedule, espressione cron nell\'ora italiana'),
   "signingSecretSet": zod.boolean().describe('C\'è un segreto di firma (il valore non si legge mai)'),
   "lastPolledAt": zod.coerce.date().nullable().describe('Ultimo giro o ultimo evento ricevuto'),
   "lastError": zod.string().nullable(),
@@ -3816,7 +3824,7 @@ export const ResumeTriggerParams = zod.object({
 export const ResumeTriggerResponse = zod.object({
   "id": zod.number(),
   "agentId": zod.number(),
-  "kind": zod.enum(['poll', 'webhook']),
+  "kind": zod.enum(['poll', 'webhook', 'schedule']).describe('poll = sorveglianza di un tool, webhook = chiamata in entrata, schedule = run programmata (espressione cron nell\'ora italiana)'),
   "name": zod.string(),
   "status": zod.enum(['active', 'paused', 'error']),
   "instructions": zod.string().nullable(),
@@ -3834,9 +3842,10 @@ export const ResumeTriggerResponse = zod.object({
   "equals": zod.union([zod.string(),zod.number(),zod.boolean()]).describe('Valore atteso, confronto stretto')
 }),zod.null()]),
   "intervalSeconds": zod.number().nullable(),
-  "nextPollAt": zod.coerce.date().nullable(),
+  "nextPollAt": zod.coerce.date().nullable().describe('Prossimo giro della sorveglianza o prossima run programmata'),
   "baselineDone": zod.boolean().describe('Linea di partenza fatta (solo sorveglianza)'),
   "dedupHeader": zod.string().nullable(),
+  "cron": zod.string().nullable().describe('Solo schedule, espressione cron nell\'ora italiana'),
   "signingSecretSet": zod.boolean().describe('C\'è un segreto di firma (il valore non si legge mai)'),
   "lastPolledAt": zod.coerce.date().nullable().describe('Ultimo giro o ultimo evento ricevuto'),
   "lastError": zod.string().nullable(),
@@ -3895,7 +3904,7 @@ export const SetTriggerSigningSecretBody = zod.object({
 export const SetTriggerSigningSecretResponse = zod.object({
   "id": zod.number(),
   "agentId": zod.number(),
-  "kind": zod.enum(['poll', 'webhook']),
+  "kind": zod.enum(['poll', 'webhook', 'schedule']).describe('poll = sorveglianza di un tool, webhook = chiamata in entrata, schedule = run programmata (espressione cron nell\'ora italiana)'),
   "name": zod.string(),
   "status": zod.enum(['active', 'paused', 'error']),
   "instructions": zod.string().nullable(),
@@ -3913,9 +3922,10 @@ export const SetTriggerSigningSecretResponse = zod.object({
   "equals": zod.union([zod.string(),zod.number(),zod.boolean()]).describe('Valore atteso, confronto stretto')
 }),zod.null()]),
   "intervalSeconds": zod.number().nullable(),
-  "nextPollAt": zod.coerce.date().nullable(),
+  "nextPollAt": zod.coerce.date().nullable().describe('Prossimo giro della sorveglianza o prossima run programmata'),
   "baselineDone": zod.boolean().describe('Linea di partenza fatta (solo sorveglianza)'),
   "dedupHeader": zod.string().nullable(),
+  "cron": zod.string().nullable().describe('Solo schedule, espressione cron nell\'ora italiana'),
   "signingSecretSet": zod.boolean().describe('C\'è un segreto di firma (il valore non si legge mai)'),
   "lastPolledAt": zod.coerce.date().nullable().describe('Ultimo giro o ultimo evento ricevuto'),
   "lastError": zod.string().nullable(),

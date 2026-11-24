@@ -6,10 +6,14 @@
  * OpenAPI spec version: 0.1.0
  */
 
+/**
+ * poll = sorveglianza di un tool, webhook = chiamata in entrata, schedule = run programmata (espressione cron nell'ora italiana)
+ */
 export type TriggerKind = typeof TriggerKind[keyof typeof TriggerKind];
 
 
 export const TriggerKind = {
   poll: 'poll',
   webhook: 'webhook',
+  schedule: 'schedule',
 } as const;

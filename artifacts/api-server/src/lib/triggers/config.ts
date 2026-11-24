@@ -1,3 +1,4 @@
+import { checkCron } from "./cron";
 import { TRIGGER_MESSAGES } from "./messages";
 
 // Validazione di forma della configurazione di un innesco. Le regole sul tool e sui limiti di quantità
@@ -20,8 +21,10 @@ export function parseFieldPath(path: string): string[] | null {
 
 export type TriggerFilter = { field: string; equals: string | number | boolean };
 
+export type TriggerKind = "poll" | "webhook" | "schedule";
+
 export type TriggerConfigInput = {
-  kind: "poll" | "webhook";
+  kind: TriggerKind;
   name: string;
   instructions?: string | null;
   toolId?: number | null;
@@ -34,10 +37,11 @@ export type TriggerConfigInput = {
   filter?: TriggerFilter | null;
   intervalSeconds?: number | null;
   dedupHeader?: string | null;
+  cron?: string | null;
 };
 
 export type NormalizedTriggerConfig = {
-  kind: "poll" | "webhook";
+  kind: TriggerKind;
   name: string;
   instructions: string | null;
   toolId: number | null;
@@ -50,6 +54,7 @@ export type NormalizedTriggerConfig = {
   filter: TriggerFilter | null;
   intervalSeconds: number | null;
   dedupHeader: string | null;
+  cron: string | null;
 };
 
 type Result = { ok: true; value: NormalizedTriggerConfig } | { ok: false; error: string };
@@ -66,6 +71,9 @@ export function validateTriggerConfig(input: TriggerConfigInput): Result {
   if (instructions !== null && instructions.length > MAX_INSTRUCTIONS) {
     return fail(TRIGGER_MESSAGES.instructionsTooLong);
   }
+
+  if (input.kind === "schedule") return validateSchedule(input, name, instructions);
+  if (present(input.cron)) return fail(TRIGGER_MESSAGES.wrongKindFields);
 
   const isPoll = input.kind === "poll";
   // Campi propri di un solo tipo: presenti sull'altro sono un errore.
@@ -152,6 +160,54 @@ export function validateTriggerConfig(input: TriggerConfigInput): Result {
       filter,
       intervalSeconds,
       dedupHeader,
+      cron: null,
+    },
+  };
+}
+
+/**
+ * Run programmata (issue #107): solo nome, istruzioni (obbligatorie: sono tutto l'input della run) ed espressione cron
+ * nell'ora italiana, con almeno un'occorrenza e almeno 5 minuti tra due run.
+ */
+function validateSchedule(input: TriggerConfigInput, name: string, instructions: string | null): Result {
+  const foreign = [
+    input.toolId,
+    input.args,
+    input.itemsPath,
+    input.idField,
+    input.versionField,
+    input.cursorParam,
+    input.cursorField,
+    input.filter,
+    input.intervalSeconds,
+    input.dedupHeader,
+  ];
+  if (foreign.some(present)) return fail(TRIGGER_MESSAGES.wrongKindFields);
+  if (!instructions) return fail(TRIGGER_MESSAGES.instructionsRequired);
+  if (typeof input.cron !== "string") return fail(TRIGGER_MESSAGES.invalidCron);
+  const cron = checkCron(input.cron);
+  if (!cron.ok) {
+    return fail(
+      cron.reason === "never" ? TRIGGER_MESSAGES.cronNever : cron.reason === "tooFrequent" ? TRIGGER_MESSAGES.cronTooFrequent : TRIGGER_MESSAGES.invalidCron,
+    );
+  }
+  return {
+    ok: true,
+    value: {
+      kind: "schedule",
+      name,
+      instructions,
+      toolId: null,
+      args: {},
+      itemsPath: null,
+      idField: null,
+      versionField: null,
+      cursorParam: null,
+      cursorField: null,
+      filter: null,
+      intervalSeconds: null,
+      dedupHeader: null,
+      cron: cron.cron,
     },
   };
 }

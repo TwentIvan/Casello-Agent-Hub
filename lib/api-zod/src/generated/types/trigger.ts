@@ -41,12 +41,20 @@ export interface Trigger {
   filter: TriggerFilter | null;
   /** @nullable */
   intervalSeconds: number | null;
-  /** @nullable */
+  /**
+     * Prossimo giro della sorveglianza o prossima run programmata
+     * @nullable
+     */
   nextPollAt: Date | null;
   /** Linea di partenza fatta (solo sorveglianza) */
   baselineDone: boolean;
   /** @nullable */
   dedupHeader: string | null;
+  /**
+     * Solo schedule, espressione cron nell'ora italiana
+     * @nullable
+     */
+  cron: string | null;
   /** C'è un segreto di firma (il valore non si legge mai) */
   signingSecretSet: boolean;
   /**

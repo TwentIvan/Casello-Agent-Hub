@@ -40,4 +40,9 @@ export const TRIGGER_MESSAGES = {
   invalidSigningSecret: "segreto di firma non valido: da 16 a 200 caratteri",
   itemsSkipped: "elementi scartati senza chiave valida",
   changed: "innesco modificato nel frattempo: ricarica e riprova",
+  // Run programmate (issue #107).
+  invalidCron: "espressione cron non valida: 5 campi (minuto ora giorno mese giorno della settimana)",
+  cronNever: "l'espressione cron non scatta mai",
+  cronTooFrequent: "run programmate troppo frequenti: almeno 5 minuti tra due run",
+  instructionsRequired: "le run programmate vogliono le istruzioni",
 } as const;

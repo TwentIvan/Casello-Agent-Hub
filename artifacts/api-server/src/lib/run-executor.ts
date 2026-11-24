@@ -25,6 +25,7 @@ import {
   DEFAULT_LIMITS,
   QUEUE_FAILED,
   runAgentLoop,
+  type LoopActivity,
   type LoopDeps,
   type LoopLimits,
   type LoopState,
@@ -37,6 +38,7 @@ import { runBudgetBlock } from "./budget";
 import { delegateTurn } from "./node-turns/delegate";
 import { logger } from "./logger";
 import { publishRunChange } from "./live/events";
+import { applyRunActivity, beginRunActivity, endRunActivity } from "./live/run-activity";
 import { loopModelCallError, modelChatDeps, newUsage, stepWriter, type LoopUsage } from "./loop-wiring";
 import { ARCHITECTURE_TOOL_NAME, architecturePromptBlock, architectureTool, handleReadArchitecture } from "./architecture/tool";
 import { ESCALATION_TOOL_NAME, escalationTool, handleEscalation, productLead } from "./escalation";
@@ -474,6 +476,17 @@ function runToolDeps(
   };
 }
 
+/**
+ * Avvisi sull'attività in corso della run (issue #118): aggiornano il registro in memoria e avvisano la console, che
+ * mostra subito cosa sta facendo la run (modello, tool in esecuzione).
+ */
+function runActivitySink(run: Pick<Run, "id" | "agentId">): (activity: LoopActivity) => void {
+  return (activity) => {
+    applyRunActivity(run.id, activity);
+    publishRunChange(run.id, run.agentId);
+  };
+}
+
 /** Strumenti offerti al modello (o a Claude Code): quelli dell'app più gli interni (`proponi`, segnalazione). */
 function runFunctionTools(ctx: RunContext): ChatCompletionTool[] {
   return roleFunctionTools(
@@ -566,6 +579,7 @@ async function driveCloudLoop(
     chat,
     limits: loopLimits,
     signal: abort,
+    onActivity: runActivitySink(ctx.run),
   });
 
   switch (outcome.type) {
@@ -646,7 +660,10 @@ async function driveNodeTurn(
 ): Promise<void> {
   const runId = ctx.run.id;
   const deps = runToolDeps(ctx, resolved.aiModelId, writeStep, abort);
+  const onActivity = runActivitySink(ctx.run);
   const t0 = Date.now();
+  // Mentre Claude Code lavora sul nodo la run «pensa»; le sue chiamate agli strumenti si vedono una per una
+  onActivity({ type: "model_start" });
   const outcome = await delegateTurn({
     resolved,
     userId: resolved.ownerUserId,
@@ -654,12 +671,19 @@ async function driveNodeTurn(
     refId: runId,
     messages: state.messages,
     tools: runFunctionTools(ctx).filter((t): t is ChatCompletionFunctionTool => t.type === "function"),
-    dispatch: (call) => dispatchAgentCall(call, deps),
+    dispatch: async (call) => {
+      onActivity({ type: "tool_start", callId: call.id, toolName: call.name });
+      try {
+        return await dispatchAgentCall(call, deps);
+      } finally {
+        onActivity({ type: "tool_end", callId: call.id });
+      }
+    },
     // Giri del ciclo cloud più la risposta finale
     maxTurns: (runLimitsFor(ctx.agent).maxRounds ?? DEFAULT_LIMITS.maxRounds) + 1,
     timeoutMs: ctx.agent.role === "general" ? PRODUCT_LEAD_NODE_TIMEOUT_MS : RUN_NODE_TIMEOUT_MS,
     signal: abort,
-  });
+  }).finally(() => onActivity({ type: "model_end" }));
   const durationMs = Date.now() - t0;
 
   switch (outcome.kind) {
@@ -783,6 +807,7 @@ export async function startRun(runId: number, opts: RunOptions = {}): Promise<vo
   }
 
   adoptRun(runId, abort);
+  beginRunActivity(runId);
   publishRunChange(runId, run.agentId);
   const segmentStart = Date.now();
   const usage = newUsage();
@@ -812,6 +837,7 @@ export async function startRun(runId: number, opts: RunOptions = {}): Promise<vo
   } catch (err) {
     await failRun(run, err, segmentStart, usage, abort.signal.aborted);
   } finally {
+    endRunActivity(runId);
     untrackRun(runId, abort);
   }
 }

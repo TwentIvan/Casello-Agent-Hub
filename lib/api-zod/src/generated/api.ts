@@ -3386,7 +3386,15 @@ export const ListRunsResponseItem = zod.object({
   "action": zod.string().describe('Azione della definizione del tool (es. navigate)'),
   "args": zod.record(zod.string(), zod.unknown()).describe('Argomenti del modello più quelli fissi della definizione (che vincono)'),
   "requestedAt": zod.coerce.date()
-}),zod.null()]).optional().describe('Azione ui in attesa del client (solo con status awaiting_client), altrimenti null')
+}),zod.null()]).optional().describe('Azione ui in attesa del client (solo con status awaiting_client), altrimenti null'),
+  "activity": zod.union([zod.object({
+  "startedAt": zod.coerce.date().describe('Inizio dell\'esecuzione in questo processo'),
+  "items": zod.array(zod.object({
+  "kind": zod.enum(['model', 'tool']),
+  "toolName": zod.string().nullable().describe('Nome del tool (null per il modello)'),
+  "since": zod.coerce.date()
+})).describe('Attività in corso insieme (al più 20); vuoto tra un passo e l\'altro')
+}),zod.null()]).optional().describe('Cosa sta facendo ora la run (chiamata al modello, tool in esecuzione): solo nel dettaglio (GET \/runs\/{id}), solo mentre la run è running o awaiting_client e la esegue il processo che risponde; altrimenti null')
 })
 export const ListRunsResponse = zod.array(ListRunsResponseItem)
 
@@ -3433,7 +3441,15 @@ export const TriggerRunResponse = zod.object({
   "action": zod.string().describe('Azione della definizione del tool (es. navigate)'),
   "args": zod.record(zod.string(), zod.unknown()).describe('Argomenti del modello più quelli fissi della definizione (che vincono)'),
   "requestedAt": zod.coerce.date()
-}),zod.null()]).optional().describe('Azione ui in attesa del client (solo con status awaiting_client), altrimenti null')
+}),zod.null()]).optional().describe('Azione ui in attesa del client (solo con status awaiting_client), altrimenti null'),
+  "activity": zod.union([zod.object({
+  "startedAt": zod.coerce.date().describe('Inizio dell\'esecuzione in questo processo'),
+  "items": zod.array(zod.object({
+  "kind": zod.enum(['model', 'tool']),
+  "toolName": zod.string().nullable().describe('Nome del tool (null per il modello)'),
+  "since": zod.coerce.date()
+})).describe('Attività in corso insieme (al più 20); vuoto tra un passo e l\'altro')
+}),zod.null()]).optional().describe('Cosa sta facendo ora la run (chiamata al modello, tool in esecuzione): solo nel dettaglio (GET \/runs\/{id}), solo mentre la run è running o awaiting_client e la esegue il processo che risponde; altrimenti null')
 })
 
 
@@ -3469,7 +3485,15 @@ export const GetRunResponse = zod.object({
   "action": zod.string().describe('Azione della definizione del tool (es. navigate)'),
   "args": zod.record(zod.string(), zod.unknown()).describe('Argomenti del modello più quelli fissi della definizione (che vincono)'),
   "requestedAt": zod.coerce.date()
-}),zod.null()]).optional().describe('Azione ui in attesa del client (solo con status awaiting_client), altrimenti null')
+}),zod.null()]).optional().describe('Azione ui in attesa del client (solo con status awaiting_client), altrimenti null'),
+  "activity": zod.union([zod.object({
+  "startedAt": zod.coerce.date().describe('Inizio dell\'esecuzione in questo processo'),
+  "items": zod.array(zod.object({
+  "kind": zod.enum(['model', 'tool']),
+  "toolName": zod.string().nullable().describe('Nome del tool (null per il modello)'),
+  "since": zod.coerce.date()
+})).describe('Attività in corso insieme (al più 20); vuoto tra un passo e l\'altro')
+}),zod.null()]).optional().describe('Cosa sta facendo ora la run (chiamata al modello, tool in esecuzione): solo nel dettaglio (GET \/runs\/{id}), solo mentre la run è running o awaiting_client e la esegue il processo che risponde; altrimenti null')
 })
 
 
@@ -3740,7 +3764,15 @@ export const CancelRunResponse = zod.object({
   "action": zod.string().describe('Azione della definizione del tool (es. navigate)'),
   "args": zod.record(zod.string(), zod.unknown()).describe('Argomenti del modello più quelli fissi della definizione (che vincono)'),
   "requestedAt": zod.coerce.date()
-}),zod.null()]).optional().describe('Azione ui in attesa del client (solo con status awaiting_client), altrimenti null')
+}),zod.null()]).optional().describe('Azione ui in attesa del client (solo con status awaiting_client), altrimenti null'),
+  "activity": zod.union([zod.object({
+  "startedAt": zod.coerce.date().describe('Inizio dell\'esecuzione in questo processo'),
+  "items": zod.array(zod.object({
+  "kind": zod.enum(['model', 'tool']),
+  "toolName": zod.string().nullable().describe('Nome del tool (null per il modello)'),
+  "since": zod.coerce.date()
+})).describe('Attività in corso insieme (al più 20); vuoto tra un passo e l\'altro')
+}),zod.null()]).optional().describe('Cosa sta facendo ora la run (chiamata al modello, tool in esecuzione): solo nel dettaglio (GET \/runs\/{id}), solo mentre la run è running o awaiting_client e la esegue il processo che risponde; altrimenti null')
 })
 
 
@@ -4225,7 +4257,15 @@ export const ListTriggerRunsResponseItem = zod.object({
   "action": zod.string().describe('Azione della definizione del tool (es. navigate)'),
   "args": zod.record(zod.string(), zod.unknown()).describe('Argomenti del modello più quelli fissi della definizione (che vincono)'),
   "requestedAt": zod.coerce.date()
-}),zod.null()]).optional().describe('Azione ui in attesa del client (solo con status awaiting_client), altrimenti null')
+}),zod.null()]).optional().describe('Azione ui in attesa del client (solo con status awaiting_client), altrimenti null'),
+  "activity": zod.union([zod.object({
+  "startedAt": zod.coerce.date().describe('Inizio dell\'esecuzione in questo processo'),
+  "items": zod.array(zod.object({
+  "kind": zod.enum(['model', 'tool']),
+  "toolName": zod.string().nullable().describe('Nome del tool (null per il modello)'),
+  "since": zod.coerce.date()
+})).describe('Attività in corso insieme (al più 20); vuoto tra un passo e l\'altro')
+}),zod.null()]).optional().describe('Cosa sta facendo ora la run (chiamata al modello, tool in esecuzione): solo nel dettaglio (GET \/runs\/{id}), solo mentre la run è running o awaiting_client e la esegue il processo che risponde; altrimenti null')
 })
 export const ListTriggerRunsResponse = zod.array(ListTriggerRunsResponseItem)
 

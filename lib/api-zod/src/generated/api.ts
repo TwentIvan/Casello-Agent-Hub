@@ -405,6 +405,37 @@ export const RevokeApiTokenResponse = zod.void()
 
 
 /**
+ * Eventi delle operazioni sensibili dell'utente (approvazioni, conferme, token, segreti, account AI, nodi, accessi), dal più recente, con azione, oggetto, canale e IP; mai segreti, token né testi. Paginazione con `before` (id dell'ultimo evento della pagina precedente). Conservati 365 giorni. Solo con il login: con un token risponde 403.
+ * @summary Registro delle azioni dell'utente
+ */
+export const listAuditEventsQueryLimitDefault = 50;
+export const listAuditEventsQueryLimitMax = 100;
+
+
+
+
+export const ListAuditEventsQueryParams = zod.object({
+  "limit": zod.coerce.number().min(1).max(listAuditEventsQueryLimitMax).default(listAuditEventsQueryLimitDefault),
+  "before": zod.coerce.number().min(1).optional()
+})
+
+export const ListAuditEventsResponse = zod.object({
+  "events": zod.array(zod.object({
+  "id": zod.number(),
+  "action": zod.string().describe('Codice dell\'azione, es. api_token.create, pending_action.approve, auth.login'),
+  "objectType": zod.string().nullable(),
+  "objectId": zod.string().nullable(),
+  "detail": zod.record(zod.string(), zod.unknown()).nullable().describe('Pochi campi non sensibili scelti dal server (esito, ambiti, segreto cambiato sì\/no)'),
+  "via": zod.string().describe('Canale (session, token, embed, mcp, alfred)'),
+  "tokenId": zod.number().nullable().describe('Token personale usato, se la richiesta è arrivata con un token'),
+  "ip": zod.string().nullable(),
+  "createdAt": zod.coerce.date()
+})),
+  "nextBefore": zod.number().nullable().describe('Valore di `before` per la pagina successiva; null se non ce ne sono altre')
+})
+
+
+/**
  * Collegamenti non revocati dell'utente (app come Claude che usano `/mcp` con OAuth), dal più recente. Solo con il login: con un token risponde 403.
  * @summary Elenca le app collegate (connettore OAuth)
  */

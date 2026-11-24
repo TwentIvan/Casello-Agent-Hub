@@ -74,6 +74,7 @@ import type {
   AppToolUpdate,
   AppUpdate,
   ApproveActionRequest,
+  AuditEventPage,
   AuthProviders,
   BadGatewayResponse,
   BadRequestResponse,
@@ -160,6 +161,7 @@ import type {
   LeadMessageCreate,
   ListAgentsParams,
   ListAppBugsParams,
+  ListAuditEventsParams,
   ListCatalogModelsParams,
   ListCatalogProvidersParams,
   ListCharacterConversationsParams,
@@ -1620,6 +1622,91 @@ export const useRevokeApiToken = <TError = ErrorType<UnauthorizedResponse | NotF
       > => {
       return useMutation(getRevokeApiTokenMutationOptions(options));
     }
+
+export const getListAuditEventsUrl = (params?: ListAuditEventsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/account/audit-events?${stringifiedParams}` : `/api/account/audit-events`
+}
+
+/**
+ * Eventi delle operazioni sensibili dell'utente (approvazioni, conferme, token, segreti, account AI, nodi, accessi), dal più recente, con azione, oggetto, canale e IP; mai segreti, token né testi. Paginazione con `before` (id dell'ultimo evento della pagina precedente). Conservati 365 giorni. Solo con il login: con un token risponde 403.
+ * @summary Registro delle azioni dell'utente
+ */
+export const listAuditEvents = async (params?: ListAuditEventsParams, options?: RequestInit): Promise<AuditEventPage> => {
+
+  return customFetch<AuditEventPage>(getListAuditEventsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAuditEventsQueryKey = (params?: ListAuditEventsParams,) => {
+    return [
+    `/api/account/audit-events`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListAuditEventsQueryOptions = <TData = Awaited<ReturnType<typeof listAuditEvents>>, TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse>>(params?: ListAuditEventsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAuditEvents>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAuditEventsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAuditEvents>>> = ({ signal }) => listAuditEvents(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAuditEvents>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAuditEventsQueryResult = NonNullable<Awaited<ReturnType<typeof listAuditEvents>>>
+export type ListAuditEventsQueryError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse>
+
+
+/**
+ * @summary Registro delle azioni dell'utente
+ */
+
+export function useListAuditEvents<TData = Awaited<ReturnType<typeof listAuditEvents>>, TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse>>(
+ params?: ListAuditEventsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAuditEvents>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAuditEventsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
 
 export const getListOAuthGrantsUrl = () => {
 

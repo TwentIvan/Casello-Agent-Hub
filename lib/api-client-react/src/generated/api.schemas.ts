@@ -3397,6 +3397,46 @@ export interface AiAccountInput {
   fallbackAiModelId?: number | null;
 }
 
+/**
+ * Pochi campi non sensibili scelti dal server (esito, ambiti, segreto cambiato sì/no)
+ * @nullable
+ */
+export type AuditEventDetail = { [key: string]: unknown } | null;
+
+export interface AuditEvent {
+  id: number;
+  /** Codice dell'azione, es. api_token.create, pending_action.approve, auth.login */
+  action: string;
+  /** @nullable */
+  objectType: string | null;
+  /** @nullable */
+  objectId: string | null;
+  /**
+     * Pochi campi non sensibili scelti dal server (esito, ambiti, segreto cambiato sì/no)
+     * @nullable
+     */
+  detail: AuditEventDetail;
+  /** Canale (session, token, embed, mcp, alfred) */
+  via: string;
+  /**
+     * Token personale usato, se la richiesta è arrivata con un token
+     * @nullable
+     */
+  tokenId: number | null;
+  /** @nullable */
+  ip: string | null;
+  createdAt: string;
+}
+
+export interface AuditEventPage {
+  events: AuditEvent[];
+  /**
+     * Valore di `before` per la pagina successiva; null se non ce ne sono altre
+     * @nullable
+     */
+  nextBefore: number | null;
+}
+
 export interface OAuthGrant {
   id: number;
   clientName: string;
@@ -5624,6 +5664,18 @@ app: EmbedBugAppParameter;
  * Origine della pagina ospite
  */
 origin: EmbedBugOriginParameter;
+};
+
+export type ListAuditEventsParams = {
+/**
+ * @minimum 1
+ * @maximum 100
+ */
+limit?: number;
+/**
+ * @minimum 1
+ */
+before?: number;
 };
 
 export type GetAlfredNotificationsParams = {

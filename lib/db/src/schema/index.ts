@@ -50,3 +50,4 @@ export * from "./character-instructions";
 export * from "./bug-reports";
 export * from "./app-bootstraps";
 export * from "./rate-limit-counters";
+export * from "./audit-events";

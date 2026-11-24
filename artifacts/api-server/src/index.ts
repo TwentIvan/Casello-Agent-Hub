@@ -13,6 +13,7 @@ import { failInterruptedRuns } from "./lib/run-executor";
 import { setOnRunSettled, startRunQueue } from "./lib/run-queue";
 import { finalizeTriage } from "./lib/bugs/triage";
 import { startBugSweeper } from "./lib/bugs/sweeper";
+import { startAuditSweeper } from "./lib/audit/record";
 import { startBootstrapHealthChecker } from "./lib/app-bootstrap/health";
 import { startTriggerPoller } from "./lib/triggers/poller";
 import { failInterruptedArchitecture, startArchitectureScheduler } from "./lib/architecture/scheduler";
@@ -237,6 +238,8 @@ try {
 startAlfredSweeper();
 startMemorySweeper();
 startCodeCacheSweeper();
+// Registro delle azioni: eventi più vecchi di un anno cancellati una volta al giorno.
+startAuditSweeper();
 
 app.listen(port, (err) => {
   if (err) {

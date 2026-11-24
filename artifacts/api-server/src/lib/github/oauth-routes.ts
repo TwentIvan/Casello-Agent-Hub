@@ -6,6 +6,7 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { Router, type IRouter, type Request, type Response, type NextFunction } from "express";
 import { currentUserId, requireAuth, safeReturnTo, sessionOnly, sessionUserId, type SessionUser } from "../auth";
 import { logger } from "../logger";
+import { recordAudit } from "../audit/record";
 import { IdentityConflictError, isAllowed, linkIdentity, resolveLogin, unlinkIdentity, type LoginIdentity } from "../users";
 import { exchangeCode, getGithubUser, getVerifiedEmails, GithubError } from "./app";
 import type { GithubConfig } from "./config";
@@ -134,6 +135,7 @@ export function githubAuthRouter(cfg: GithubConfig, opts: { publicAppUrl: string
           }
           req.session.userId = dbUser.id;
           req.session.user = user;
+          void recordAudit({ userId: dbUser.id, action: "auth.login", objectType: null, detail: { provider: "github" }, via: "session", ip: req.ip ?? null });
           req.session.save(() => res.redirect(pending.returnTo));
         });
         return;
@@ -152,6 +154,7 @@ export function githubAuthRouter(cfg: GithubConfig, opts: { publicAppUrl: string
         return;
       }
       await linkIdentity(userId, toIdentity(ghUser, emails.all, primaryEmail));
+      void recordAudit({ userId, action: "github.link", objectType: null, via: "session", ip: req.ip ?? null });
       await syncWithoutBlocking(cfg, userId, token);
       res.redirect(pending.returnTo);
     } catch (err) {
@@ -168,6 +171,7 @@ export function githubAuthRouter(cfg: GithubConfig, opts: { publicAppUrl: string
   router.delete("/auth/github", requireAuth, sessionOnly, async (req, res, next) => {
     try {
       await unlinkIdentity(currentUserId(req), "github");
+      void recordAudit({ userId: currentUserId(req), action: "github.unlink", objectType: null, via: "session", ip: req.ip ?? null });
       res.status(204).end();
     } catch (err) {
       if (err instanceof IdentityConflictError) {

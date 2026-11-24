@@ -4,7 +4,9 @@ import type { ChatResult } from "./ai/chat-types";
 import {
   DEFAULT_LIMITS,
   runAgentLoop,
+  SHARED_RESULT_NOTE,
   TRUNCATED_REPLY_ERROR,
+  type LoopActivity,
   type LoopDeps,
   type LoopState,
   type QueueActionResult,
@@ -445,7 +447,98 @@ describe("runAgentLoop", () => {
       { role: "tool", tool_call_id: "c1", content: "rosa" },
       { role: "tool", tool_call_id: "c2", content: "calendario" },
     ]);
-    expect(steps.map((s) => s.toolName ?? s.type)).toEqual(["model", "leggi_rosa", "leggi_calendario", "model"]);
+    // i passi si scrivono appena una chiamata finisce: prima quella conclusa per prima
+    expect(steps.map((s) => s.toolName ?? s.type)).toEqual(["model", "leggi_calendario", "leggi_rosa", "model"]);
+  });
+
+  it("parallelo readOnly: il passo di una chiamata finita si scrive prima della fine delle altre", async () => {
+    const resolvers: Record<string, (r: ToolResult) => void> = {};
+    const { deps, steps } = makeDeps(
+      [
+        callTools([
+          { id: "c1", name: "leggi_rosa", args: "{}" },
+          { id: "c2", name: "leggi_calendario", args: "{}" },
+        ]),
+        reply("Fine"),
+      ],
+      {
+        executeTool: (tool) =>
+          new Promise<ToolResult>((resolve) => {
+            resolvers[tool.name] = resolve;
+          }),
+      },
+    );
+    const promise = runAgentLoop(initialState(), deps);
+    await vi.waitFor(() => expect(Object.keys(resolvers)).toHaveLength(2));
+    resolvers.leggi_calendario({ ok: true, status: 200, content: "calendario" });
+    await vi.waitFor(() => expect(steps.map((s) => s.toolName ?? s.type)).toEqual(["model", "leggi_calendario"]));
+    resolvers.leggi_rosa({ ok: true, status: 200, content: "rosa" });
+    expect((await promise).type).toBe("finished");
+  });
+
+  it("chiamate identiche nello stesso giro: eseguite una volta, risultato riusato", async () => {
+    const { deps, steps, seen, executeTool } = makeDeps([
+      callTools([
+        { id: "c1", name: "leggi_rosa", args: '{"a":1,"b":2}' },
+        { id: "c2", name: "leggi_rosa", args: '{"b":2,"a":1}' },
+        { id: "c3", name: "leggi_rosa", args: '{"a":2}' },
+      ]),
+      reply("Fine"),
+    ]);
+    const out = await runAgentLoop(initialState(), deps);
+    expect(out.type).toBe("finished");
+    expect(executeTool).toHaveBeenCalledTimes(2);
+    expect(seen[1].slice(2)).toEqual([
+      { role: "tool", tool_call_id: "c1", content: 'leggi_rosa:{"a":1,"b":2}' },
+      { role: "tool", tool_call_id: "c2", content: 'leggi_rosa:{"a":1,"b":2}' },
+      { role: "tool", tool_call_id: "c3", content: 'leggi_rosa:{"a":2}' },
+    ]);
+    const shared = steps.filter((s) => s.note === SHARED_RESULT_NOTE);
+    expect(shared).toHaveLength(1);
+    expect(shared[0]).toMatchObject({ toolName: "leggi_rosa", ok: true, durationMs: 0 });
+    expectValidHistory(seen[1]);
+  });
+
+  it("le chiamate di scrittura identiche non si uniscono", async () => {
+    const { deps, executeTool } = makeDeps([
+      callTools([
+        { id: "c1", name: "scrivi", args: '{"n":1}' },
+        { id: "c2", name: "scrivi", args: '{"n":1}' },
+      ]),
+      reply("ok"),
+    ]);
+    await runAgentLoop(initialState(), deps);
+    expect(executeTool).toHaveBeenCalledTimes(2);
+  });
+
+  it("segnala l'attività in corso: modello e tool, con inizio e fine", async () => {
+    const events: LoopActivity[] = [];
+    const { deps } = makeDeps(
+      [callTools([{ id: "c1", name: "leggi_rosa", args: "{}" }]), reply("Fine")],
+      { onActivity: (a) => events.push(a) },
+    );
+    await runAgentLoop(initialState(), deps);
+    expect(events).toEqual([
+      { type: "model_start" },
+      { type: "model_end" },
+      { type: "tool_start", callId: "c1", toolName: "leggi_rosa" },
+      { type: "tool_end", callId: "c1" },
+      { type: "model_start" },
+      { type: "model_end" },
+    ]);
+  });
+
+  it("un errore in onActivity non ferma il ciclo; model_end anche con il modello in errore", async () => {
+    const events: LoopActivity[] = [];
+    const { deps } = makeDeps([], {
+      onActivity: (a) => {
+        events.push(a);
+        throw new Error("guasto");
+      },
+    });
+    const out = await runAgentLoop(initialState(), deps);
+    expect(out.type).toBe("failed");
+    expect(events).toEqual([{ type: "model_start" }, { type: "model_end" }]);
   });
 
   it("le chiamate non readOnly sono eseguite in sequenza", async () => {

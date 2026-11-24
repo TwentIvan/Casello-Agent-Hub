@@ -60,6 +60,16 @@ export interface StepRecord {
   summary?: string;
 }
 
+/**
+ * Attività in corso del ciclo, per mostrarla mentre la run lavora (issue #118, «streaming» delle azioni): inizio e fine
+ * di ogni chiamata al modello e di ogni tool. Solo nomi e id, mai argomenti né risultati.
+ */
+export type LoopActivity =
+  | { type: "model_start" }
+  | { type: "model_end" }
+  | { type: "tool_start"; callId: string; toolName: string }
+  | { type: "tool_end"; callId: string };
+
 export type QueueActionResult = { ok: true; number: number } | { ok: false; message: string };
 
 export interface LoopDeps {
@@ -79,6 +89,8 @@ export interface LoopDeps {
   now?: () => number;
   /** Annullamento: se scatta, il ciclo non inizia nuovi giri e si chiude come `cancelled` */
   signal?: AbortSignal;
+  /** Avvisi sull'attività in corso; sincrono e senza effetti sul ciclo (un errore si ignora) */
+  onActivity?: (activity: LoopActivity) => void;
 }
 
 export type LoopOutcome =
@@ -99,6 +111,25 @@ function isParallelSafe(p: PreparedCall): p is Extract<PreparedCall, { kind: "re
     p.kind === "ready" && effectiveLevel(p.tool) === "L0" && (p.tool.kind === "http" || p.tool.kind === "mcp")
   );
 }
+
+/** Chiave di una chiamata in sola lettura: stesso tool e stessi argomenti (chiavi ordinate) = stessa chiamata. */
+export function callKey(toolName: string, args: unknown): string {
+  const canonical = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(canonical);
+    if (v && typeof v === "object") {
+      return Object.fromEntries(
+        Object.keys(v as Record<string, unknown>)
+          .sort()
+          .map((k) => [k, canonical((v as Record<string, unknown>)[k])]),
+      );
+    }
+    return v;
+  };
+  return `${toolName}\u0000${JSON.stringify(canonical(args))}`;
+}
+
+/** Nota del passo di una chiamata identica a un'altra dello stesso gruppo, eseguita una volta sola. */
+export const SHARED_RESULT_NOTE = "chiamata identica a una precedente dello stesso giro: risultato riusato";
 
 function toolMessage(toolCallId: string, content: string): ChatCompletionMessageParam {
   return { role: "tool", tool_call_id: toolCallId, content };
@@ -137,6 +168,24 @@ export async function runAgentLoop(initial: LoopState, deps: LoopDeps): Promise<
     await deps.onStep(step);
   };
 
+  const signalActivity = (activity: LoopActivity): void => {
+    try {
+      deps.onActivity?.(activity);
+    } catch {
+      // L'avviso è solo informativo: non ferma il ciclo
+    }
+  };
+
+  // Esegue un tool segnalandone inizio e fine
+  const executeTracked = async (p: Extract<PreparedCall, { kind: "ready" }>) => {
+    signalActivity({ type: "tool_start", callId: p.call.id, toolName: p.tool.name });
+    try {
+      return await execute(p);
+    } finally {
+      signalActivity({ type: "tool_end", callId: p.call.id });
+    }
+  };
+
   const cancelled = (): LoopOutcome | null =>
     deps.signal?.aborted ? finish({ type: "cancelled", state }) : null;
 
@@ -169,19 +218,52 @@ export async function runAgentLoop(initial: LoopState, deps: LoopDeps): Promise<
           group.push(next);
         }
         state.queue.splice(0, group.length);
-        const results = await Promise.all(group.map((p) => execute(p)));
+        // Chiamate identiche nello stesso gruppo (stesso tool, stessi argomenti): si esegue la prima, le altre ne
+        // riusano il risultato. Ogni chiamata ha comunque il suo messaggio `tool` e il suo passo.
+        const firstOf = new Map<string, number>();
+        const sources = group.map((p, i) => {
+          const key = callKey(p.tool.name, p.args);
+          const first = firstOf.get(key);
+          if (first !== undefined) return first;
+          firstOf.set(key, i);
+          return i;
+        });
+        // I passi si scrivono man mano che le chiamate finiscono (la timeline si aggiorna subito), uno alla volta;
+        // i messaggi `tool` restano nell'ordine originale delle chiamate.
         // Con l'annullamento attivo i risultati d'errore vengono dall'interruzione e non si registrano;
         // i tool conclusi con successo hanno agito davvero e il loro passo va scritto
+        let writes: Promise<void> = Promise.resolve();
+        const writeStepFor = (i: number, result: ToolResult, durationMs: number, shared: boolean): void => {
+          if (deps.signal?.aborted && !result.ok) return;
+          const step = toolStep(group[i], result, durationMs);
+          writes = writes.then(() => deps.onStep(shared ? { ...step, durationMs: 0, note: SHARED_RESULT_NOTE } : step));
+        };
+        const results = await Promise.all(
+          group.map(async (p, i) => {
+            if (sources[i] !== i) return null;
+            const out = await executeTracked(p);
+            writeStepFor(i, out.result, out.durationMs, false);
+            return out;
+          }),
+        );
         for (let i = 0; i < group.length; i++) {
-          if (deps.signal?.aborted && !results[i].result.ok) continue;
-          await record(group[i], results[i].result, results[i].durationMs);
+          if (sources[i] !== i) {
+            const out = results[sources[i]]!;
+            writeStepFor(i, out.result, out.durationMs, true);
+          }
+        }
+        await writes;
+        for (let i = 0; i < group.length; i++) {
+          const out = results[sources[i]]!;
+          if (deps.signal?.aborted && !out.result.ok) continue;
+          state.messages.push(toolMessage(group[i].call.id, out.result.content));
         }
         if (deps.signal?.aborted) return finish({ type: "cancelled", state });
         continue;
       }
 
       state.queue.shift();
-      const { result, durationMs } = await execute(prepared);
+      const { result, durationMs } = await executeTracked(prepared);
       if (deps.signal?.aborted && !result.ok) return finish({ type: "cancelled", state });
       await record(prepared, result, durationMs);
       if (deps.signal?.aborted) return finish({ type: "cancelled", state });
@@ -204,15 +286,18 @@ export async function runAgentLoop(initial: LoopState, deps: LoopDeps): Promise<
     // 3. Chiamata al modello
     const t0 = now();
     let reply: ChatResult;
+    signalActivity({ type: "model_start" });
     try {
       reply = await deps.chat(state.messages, { remainingMs: limits.maxActiveMs - state.activeMs });
     } catch (err) {
+      signalActivity({ type: "model_end" });
       // Chiamata interrotta dall'annullamento: non è un errore del modello
       if (deps.signal?.aborted) return finish({ type: "cancelled", state });
       const message = errorMessage(err);
       await deps.onStep({ type: "model", ok: false, durationMs: now() - t0, error: message });
       return finish({ type: "failed", error: `errore nella chiamata al modello: ${message}`, state });
     }
+    signalActivity({ type: "model_end" });
     state.tokens += reply.promptTokens + reply.completionTokens;
     if (deps.signal?.aborted) return finish({ type: "cancelled", state });
     await deps.onStep({ type: "model", ok: true, durationMs: now() - t0 });

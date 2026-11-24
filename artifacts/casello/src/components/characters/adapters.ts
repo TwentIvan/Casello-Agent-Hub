@@ -48,11 +48,21 @@ export interface ConvSummary {
   costUsd: number | null;
 }
 
+/** Allegato mandato con un messaggio (immagine o PDF). */
+export interface ChatMessageAttachment {
+  id: number;
+  name: string;
+  contentType: string;
+  sizeBytes: number;
+}
+
 export interface ChatMessage {
   id: number;
   role: "user" | "assistant";
   content: string;
   error: boolean;
+  /** Allegati del messaggio dell'utente (assente = nessuno). */
+  attachments?: ChatMessageAttachment[];
 }
 
 /** Scheda in forma comune; `raw` è l'oggetto originale del backend (per `renderProposal`). */
@@ -107,8 +117,11 @@ export interface ChatAdapter {
   remove?(id: number): Promise<void>;
   /** Solo Alfred: archivia il filo e ne apre uno nuovo. */
   restart?(): Promise<number>;
-  /** `now` durante un turno: il testo va in coda e il turno si ferma; `queue`: parte a fine turno. */
-  send(id: number, content: string, mode?: SendMode): Promise<void>;
+  /**
+   * `now` durante un turno: il testo va in coda e il turno si ferma; `queue`: parte a fine turno. `attachmentIds`:
+   * allegati caricati (solo a turno fermo, sempre con il modo normale).
+   */
+  send(id: number, content: string, mode?: SendMode, attachmentIds?: number[]): Promise<void>;
   /** Ferma il turno in corso. Assente dove il backend non ha «Ferma» né la coda (Responsabile di Botcave). */
   stop?(id: number): Promise<void>;
   /** Toglie il messaggio in coda. Assente insieme a `stop`. */
@@ -122,6 +135,8 @@ export interface ChatAdapter {
   bestPractice?: { get(conv: ConvDetail): boolean; set(id: number, value: boolean): Promise<void> };
   /** Tipo di conversazione per le schede delle istruzioni personali; assente (Responsabile di Botcave) = nessuna scheda. */
   instructionProposalsKind?: InstructionConversationKind;
+  /** Tipo di conversazione per gli allegati (immagini e PDF); assente (Responsabile di Botcave) = niente allegati. */
+  attachmentsKind?: InstructionConversationKind;
   /** Testo quando la conversazione è vuota. */
   emptyHint: string;
   /** Cosa resta dopo l'eliminazione, per il dialogo di conferma. */

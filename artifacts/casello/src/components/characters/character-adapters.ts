@@ -17,6 +17,7 @@ import {
   useUpdateCharacterConversation,
 } from "@workspace/api-client-react";
 import type { SendMode } from "./chat-send";
+import { messageBody } from "@/lib/chat-attachments";
 import {
   chatPollInterval,
   forgetConversation,
@@ -72,7 +73,7 @@ function mapCharacterDetail(d: CharacterConversationDetail): ConvDetail {
     bestPractice: d.bestPractice,
     readOnlyReason: readOnlyReasonOf(d),
     subjectId: d.subjectId,
-    messages: d.messages.map((m) => ({ id: m.id, role: m.role, content: m.content, error: m.error })),
+    messages: d.messages.map((m) => ({ id: m.id, role: m.role, content: m.content, error: m.error, attachments: m.attachments })),
     proposals: d.proposals.map((p) => ({
       id: p.id,
       messageId: p.messageId,
@@ -94,11 +95,11 @@ function useCharacterMutations(queryClient: QueryClient) {
   const refresh = () => void queryClient.invalidateQueries({ predicate: isCharacterConversationQuery });
   return {
     refresh,
-    async send(id: number, content: string, mode?: SendMode, pageContext?: PageContext) {
+    async send(id: number, content: string, mode?: SendMode, pageContext?: PageContext, attachmentIds?: number[]) {
       try {
         await send.mutateAsync({
           id,
-          data: { content, ...(pageContext ? { pageContext } : {}), ...(mode && mode !== "normal" ? { mode } : {}) },
+          data: { ...messageBody(content, mode, attachmentIds), ...(pageContext ? { pageContext } : {}) },
         });
       } finally {
         refresh();
@@ -147,6 +148,7 @@ export function useAlfredAdapter(page: PageContext): ChatAdapter {
   return {
     character: "alfred",
     instructionProposalsKind: "character",
+    attachmentsKind: "character",
     subjectLabel: "Il filo di Alfred",
     emptyHint: "Chiedi ad Alfred delle squadre, della coda da confermare o delle run.",
     useConversations: () => null,
@@ -176,9 +178,9 @@ export function useAlfredAdapter(page: PageContext): ChatAdapter {
       queryClient.setQueryData(threadKey, detail);
       return detail.id;
     },
-    send: async (id, content, mode) => {
+    send: async (id, content, mode, attachmentIds) => {
       try {
-        await common.send(id, content, mode, page);
+        await common.send(id, content, mode, page, attachmentIds);
       } finally {
         refreshThread();
       }
@@ -242,6 +244,7 @@ export function useLuciusSubjectAdapter(target: Extract<ChatTarget, { kind: "cha
   return {
     character: "lucius",
     instructionProposalsKind: "character",
+    attachmentsKind: "character",
     subjectLabel,
     emptyHint: "Chiedi a Lucius di scrivere o rivedere: cambia solo quello che accetti.",
     deleteNote: "I messaggi e le schede non decise vanno persi; quelle già accettate restano.",
@@ -282,7 +285,7 @@ export function useLuciusSubjectAdapter(target: Extract<ChatTarget, { kind: "cha
         common.refresh();
       }
     },
-    send: (id, content, mode) => common.send(id, content, mode),
+    send: (id, content, mode, attachmentIds) => common.send(id, content, mode, undefined, attachmentIds),
     stop: common.stop,
     cancelQueued: common.cancelQueued,
     setModel: common.setModel,

@@ -22,6 +22,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
 import { RunStatusBadge } from "@/components/run-status-badge";
 import { RunSteps } from "@/components/runs/run-steps";
+import { RunActivityView } from "@/components/runs/run-activity-view";
 import { isRunActive } from "@/components/runs/run-queries";
 import { useLiveConnected } from "@/components/live/live-updates";
 import { livePollInterval } from "@/lib/live-updates";
@@ -243,8 +244,14 @@ export default function RunDetailPage() {
       {active ? (
         <Card>
           <CardContent className="flex items-center gap-3 py-8 text-sm text-muted-foreground">
-            <Spinner className="size-5" />
-            {r.status === "pending" ? "In coda: parte appena c'è posto…" : "L'agente sta lavorando…"}
+            {r.status === "pending" ? (
+              <>
+                <Spinner className="size-5" />
+                In coda: parte appena c'è posto…
+              </>
+            ) : (
+              <RunActivityView activity={r.activity} />
+            )}
           </CardContent>
         </Card>
       ) : r.status === "cancelled" ? (

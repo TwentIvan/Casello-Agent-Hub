@@ -21,6 +21,7 @@ import { buildTriggerInput } from "./input";
 import { TRIGGER_MESSAGES } from "./messages";
 import { isActive, lockActive, NotActive, QueueFull, queueTriggerRun } from "./queue-run";
 import { fireSchedule } from "./schedule";
+import { fleetPaused } from "../fleet/policy";
 
 // Sorveglianza (spec §4.3): un giro chiama il tool dell'innesco, estrae gli elementi e crea una run per
 // ogni elemento nuovo. La chiave dell'elemento e la run stanno nella stessa transazione: una chiave vista
@@ -373,6 +374,9 @@ async function createRunForItem(tx: Tx, trigger: AgentTrigger, agent: Agent, ite
 
 /** Inneschi scaduti (sorveglianza e run programmate), fino a 20, eseguiti con al più 4 giri in parallelo. */
 async function pollDueTriggers(): Promise<void> {
+  // Flotta in pausa (issue #117): sorveglianza e run programmate non scattano; restano scaduti e ripartono alla
+  // ripresa (una sola run per una scadenza programmata persa, come dopo un fermo del server)
+  if (await fleetPaused()) return;
   const due = await db
     .select({ id: agentTriggersTable.id, kind: agentTriggersTable.kind })
     .from(agentTriggersTable)

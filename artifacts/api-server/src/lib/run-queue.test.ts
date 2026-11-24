@@ -13,6 +13,7 @@ import {
   runsTable,
   runStepsTable,
   usersTable,
+  fleetPolicyTable,
   type Agent,
 } from "@workspace/db";
 import { cancelRun } from "./run-executor";
@@ -26,6 +27,7 @@ import {
   startRunQueue,
 } from "./run-queue";
 import { getUserToken } from "./user-tokens";
+import { pauseFleet, resumeFleet, saveFleetLimits } from "./fleet/policy";
 import { logger } from "./logger";
 import { encryptSecret } from "./secrets";
 import { allowTestLoopback } from "../../test/fake-provider";
@@ -99,6 +101,8 @@ afterEach(async () => {
   await scheduleRuns();
   stopQueue?.();
   stopQueue = null;
+  // La politica della flotta è comune a tutti i test: torna ai valori predefiniti
+  await db.delete(fleetPolicyTable);
   vi.restoreAllMocks();
   llm.closeAllConnections();
   await new Promise((r) => llm.close(r));
@@ -262,6 +266,37 @@ describe("coda delle run", () => {
     await waitFor(() => held.length === 2);
     release();
     await waitFor(async () => (await countByStatus("succeeded")) === 8);
+  });
+
+  it("politica della flotta: i limiti salvati valgono al giro dopo (1 per agente, 3 in tutto)", async () => {
+    const agents = await seedAgents(3);
+    const [owner] = await db.select().from(usersTable);
+    await saveFleetLimits(owner!.id, { maxRunningRuns: 3, maxRunningPerAgent: 1 });
+    for (const agent of agents) await insertPending(agent, 2);
+    await scheduleRuns();
+    await waitFor(() => held.length === 3);
+    await pause(100);
+    expect(held).toHaveLength(3);
+    const running = await db.select({ agentId: runsTable.agentId }).from(runsTable).where(eq(runsTable.status, "running"));
+    expect(new Set(running.map((r) => r.agentId)).size).toBe(3);
+  });
+
+  it("flotta in pausa: nessuna run parte; alla ripresa partono nei limiti", async () => {
+    const [agent] = await seedAgents(1);
+    const [owner] = await db.select().from(usersTable);
+    expect(await pauseFleet(owner!.id, "manutenzione")).toBe(true);
+    expect(await pauseFleet(owner!.id, null)).toBe(false);
+    await insertPending(agent!, 3);
+    await scheduleRuns();
+    await pause(150);
+    expect(held).toHaveLength(0);
+    expect(await countByStatus("pending")).toBe(3);
+
+    expect(await resumeFleet(owner!.id)).toBe(true);
+    expect(await resumeFleet(owner!.id)).toBe(false);
+    await scheduleRuns();
+    await waitFor(() => held.length === 2);
+    expect(await countByStatus("pending")).toBe(1);
   });
 
   it("scheduleRuns chiamata due volte insieme non supera i limiti e non avvia due volte la stessa run", async () => {

@@ -34,6 +34,8 @@ tags:
     description: Account AI dell'utente (provider, chiave, modelli e prezzi) e stima dei costi
   - name: catalog
     description: Catalogo dei modelli per provider e suo aggiornamento
+  - name: fleet
+    description: Flotta degli agenti (salute, attività e politica di coordinamento comune)
   - name: evolution
     description: Ciclo di evoluzione automatica di un'App (impostazioni, consenso, giri)
   - name: architect
@@ -2858,6 +2860,104 @@ paths:
                 type: array
                 items:
                   $ref: "#/components/schemas/AgentActivity"
+
+  /fleet:
+    get:
+      operationId: getFleet
+      tags: [fleet]
+      summary: Salute e attività della flotta degli agenti
+      description: >-
+        Ogni agente con salute (`failing` senza modello, con un innesco in errore o con meno della metà delle run
+        riuscite su almeno 3; `degraded` con qualche errore, una run in corso da oltre 15 minuti o almeno 20 run in coda;
+        `off` se non attivo), problemi, attività, run in corso e in coda e numeri delle ultime 24 ore; poi il riepilogo
+        e la politica di coordinamento. Dal più grave. Solo letture.
+      responses:
+        "200":
+          description: Vista della flotta
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FleetView"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /fleet/policy:
+    put:
+      operationId: updateFleetPolicy
+      tags: [fleet]
+      summary: Limiti di concorrenza delle run di tutta la flotta
+      description: >-
+        Run in corso al più `maxRunningRuns` (1..20) in tutto e `maxRunningPerAgent` (1..10, non oltre il totale) per
+        agente; valgono dal giro successivo dello scheduler, le run già partite non si fermano. Solo con il login.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FleetLimitsUpdate"
+      responses:
+        "200":
+          description: Politica aggiornata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FleetPolicy"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /fleet/pause:
+    post:
+      operationId: pauseFleet
+      tags: [fleet]
+      summary: Mette in pausa la flotta
+      description: >-
+        Nessuna run nuova parte (restano in coda) e sorveglianza e run programmate non scattano finché la flotta non
+        riprende; le run in corso arrivano in fondo, i webhook accodano le run. Già in pausa → 409. Solo con il login.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FleetPauseRequest"
+      responses:
+        "200":
+          description: Flotta in pausa
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FleetPolicy"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /fleet/resume:
+    post:
+      operationId: resumeFleet
+      tags: [fleet]
+      summary: Riprende la flotta
+      description: Toglie la pausa e avvia subito le run in coda nei limiti. Non in pausa → 409. Solo con il login.
+      responses:
+        "200":
+          description: Flotta ripresa
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FleetPolicy"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
 
   /runs/{id}/cancel:
     post:
@@ -8249,6 +8349,164 @@ components:
         pendingActions:
           type: integer
           description: Voci pending di «Da confermare» dell'utente nate da run dell'agente
+
+    FleetPolicy:
+      type: object
+      required: [paused, pausedAt, pausedBy, pausedByName, pauseReason, maxRunningRuns, maxRunningPerAgent, updatedAt]
+      properties:
+        paused:
+          type: boolean
+        pausedAt:
+          type: string
+          format: date-time
+          nullable: true
+        pausedBy:
+          type: integer
+          nullable: true
+        pausedByName:
+          type: string
+          nullable: true
+        pauseReason:
+          type: string
+          nullable: true
+        maxRunningRuns:
+          type: integer
+        maxRunningPerAgent:
+          type: integer
+        updatedAt:
+          type: string
+          format: date-time
+          nullable: true
+          description: Null finché la politica non è mai stata cambiata (valori predefiniti)
+    FleetLimitsUpdate:
+      type: object
+      required: [maxRunningRuns, maxRunningPerAgent]
+      properties:
+        maxRunningRuns:
+          type: integer
+          minimum: 1
+          maximum: 20
+        maxRunningPerAgent:
+          type: integer
+          minimum: 1
+          maximum: 10
+    FleetPauseRequest:
+      type: object
+      properties:
+        reason:
+          type: string
+          maxLength: 300
+          nullable: true
+    FleetHealth:
+      type: string
+      enum: [healthy, degraded, failing, "off"]
+    FleetIssue:
+      type: string
+      enum: [no_model, trigger_error, high_failure, some_failures, backlog, stuck_run]
+    FleetAgent:
+      type: object
+      required: [agentId, name, appId, appName, role, status, health, issues, activity, runningRuns, pendingRuns, pendingActions,
+        triggersInError, succeeded24h, failed24h, cancelled24h, successRate, avgDurationMs, cost24hUsd, unpriced24h, lastRunAt, lastError]
+      properties:
+        agentId:
+          type: integer
+        name:
+          type: string
+        appId:
+          type: integer
+        appName:
+          type: string
+        role:
+          type: string
+          enum: [general, area]
+        status:
+          type: string
+          enum: [draft, active, inactive]
+        health:
+          $ref: "#/components/schemas/FleetHealth"
+        issues:
+          type: array
+          items:
+            $ref: "#/components/schemas/FleetIssue"
+        activity:
+          type: string
+          enum: [working, waiting_user, idle]
+        runningRuns:
+          type: integer
+        pendingRuns:
+          type: integer
+        pendingActions:
+          type: integer
+          description: Voci pending di «Da confermare» dell'utente nate da run dell'agente
+        triggersInError:
+          type: integer
+        succeeded24h:
+          type: integer
+        failed24h:
+          type: integer
+        cancelled24h:
+          type: integer
+        successRate:
+          type: number
+          nullable: true
+          description: Run riuscite su riuscite + fallite nelle ultime 24 ore (null senza run concluse)
+        avgDurationMs:
+          type: integer
+          nullable: true
+        cost24hUsd:
+          type: number
+          nullable: true
+          description: Costo delle run concluse nelle ultime 24 ore (null se nessuna ha un prezzo)
+        unpriced24h:
+          type: integer
+        lastRunAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastError:
+          type: string
+          nullable: true
+          description: Errore dell'ultima run fallita nelle ultime 24 ore, su una riga (≤ 200 caratteri)
+    FleetSummary:
+      type: object
+      required: [agents, healthy, degraded, failing, "off", working, waitingUser, runningRuns, pendingRuns, succeeded24h, failed24h, cost24hUsd]
+      properties:
+        agents:
+          type: integer
+        healthy:
+          type: integer
+        degraded:
+          type: integer
+        failing:
+          type: integer
+        "off":
+          type: integer
+        working:
+          type: integer
+        waitingUser:
+          type: integer
+        runningRuns:
+          type: integer
+        pendingRuns:
+          type: integer
+        succeeded24h:
+          type: integer
+        failed24h:
+          type: integer
+        cost24hUsd:
+          type: number
+    FleetView:
+      type: object
+      required: [policy, summary, agents]
+      properties:
+        policy:
+          $ref: "#/components/schemas/FleetPolicy"
+        summary:
+          $ref: "#/components/schemas/FleetSummary"
+        agents:
+          type: array
+          items:
+            $ref: "#/components/schemas/FleetAgent"
 
     RunStatus:
       type: string

@@ -132,6 +132,32 @@ export const AUDIT_ROUTES: AuditRoute[] = [
   { method: "DELETE", pattern: re(`/ai/accounts/${n}`), action: "ai_account.delete", objectType: "ai_account" },
   { method: "PATCH", pattern: re(`/ai/models/${n}`), action: "ai_model.update", objectType: "ai_model" },
   { method: "PUT", pattern: re("/budget"), action: "budget.update", objectType: null },
+  // Politica della flotta degli agenti (issue #117): vale per tutte le run
+  {
+    method: "PUT",
+    pattern: re("/fleet/policy"),
+    action: "fleet.policy.update",
+    objectType: null,
+    extract: ({ body }) => {
+      const total = field(body, "maxRunningRuns");
+      const perAgent = field(body, "maxRunningPerAgent");
+      return {
+        detail: {
+          maxRunningRuns: typeof total === "number" && Number.isInteger(total) ? total : null,
+          maxRunningPerAgent: typeof perAgent === "number" && Number.isInteger(perAgent) ? perAgent : null,
+        },
+      };
+    },
+  },
+  {
+    method: "POST",
+    pattern: re("/fleet/pause"),
+    action: "fleet.pause",
+    objectType: null,
+    // Il motivo è testo dell'utente: non entra, solo se c'era
+    extract: ({ body }) => ({ detail: { reasonGiven: typeof field(body, "reason") === "string" && String(field(body, "reason")).trim() !== "" } }),
+  },
+  { method: "POST", pattern: re("/fleet/resume"), action: "fleet.resume", objectType: null },
   // App: configurazione, segreti di servizio e d'identità
   {
     method: "POST",

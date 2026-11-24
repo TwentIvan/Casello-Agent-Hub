@@ -36,6 +36,7 @@ import { createNodePairingAccountRouter, createNodePairingPublicRouter } from ".
 import { createOAuthGrantsRouter } from "./oauth-grants";
 import { createAlfredRouter } from "./alfred";
 import { createTriggersRouter } from "./triggers";
+import { createFleetRouter } from "./fleet";
 import { requireNodeToken } from "../lib/nodes/auth";
 import { authRouter, requireAuth } from "../lib/auth";
 import { auditRoutes } from "../lib/audit/record";
@@ -95,5 +96,6 @@ router.use(createNodePairingAccountRouter());
 router.use(createOAuthGrantsRouter());
 router.use(createAlfredRouter());
 router.use(createTriggersRouter());
+router.use(createFleetRouter());
 
 export default router;

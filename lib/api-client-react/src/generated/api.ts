@@ -137,6 +137,10 @@ import type {
   EvolutionCycleView,
   EvolutionRoundView,
   ExportAnalysisIssuesParams,
+  FleetLimitsUpdate,
+  FleetPauseRequest,
+  FleetPolicy,
+  FleetView,
   ForbiddenResponse,
   GetAlfredNotificationsParams,
   GetAppBootstrapConfig200,
@@ -8687,6 +8691,297 @@ export function useListAgentActivity<TData = Awaited<ReturnType<typeof listAgent
 
 
 
+
+export const getGetFleetUrl = () => {
+
+
+
+
+  return `/api/fleet`
+}
+
+/**
+ * Ogni agente con salute (`failing` senza modello, con un innesco in errore o con meno della metà delle run riuscite su almeno 3; `degraded` con qualche errore, una run in corso da oltre 15 minuti o almeno 20 run in coda; `off` se non attivo), problemi, attività, run in corso e in coda e numeri delle ultime 24 ore; poi il riepilogo e la politica di coordinamento. Dal più grave. Solo letture.
+ * @summary Salute e attività della flotta degli agenti
+ */
+export const getFleet = async ( options?: RequestInit): Promise<FleetView> => {
+
+  return customFetch<FleetView>(getGetFleetUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetFleetQueryKey = () => {
+    return [
+    `/api/fleet`
+    ] as const;
+    }
+
+
+export const getGetFleetQueryOptions = <TData = Awaited<ReturnType<typeof getFleet>>, TError = ErrorType<UnauthorizedResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getFleet>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetFleetQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getFleet>>> = ({ signal }) => getFleet({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getFleet>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetFleetQueryResult = NonNullable<Awaited<ReturnType<typeof getFleet>>>
+export type GetFleetQueryError = ErrorType<UnauthorizedResponse>
+
+
+/**
+ * @summary Salute e attività della flotta degli agenti
+ */
+
+export function useGetFleet<TData = Awaited<ReturnType<typeof getFleet>>, TError = ErrorType<UnauthorizedResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getFleet>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetFleetQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateFleetPolicyUrl = () => {
+
+
+
+
+  return `/api/fleet/policy`
+}
+
+/**
+ * Run in corso al più `maxRunningRuns` (1..20) in tutto e `maxRunningPerAgent` (1..10, non oltre il totale) per agente; valgono dal giro successivo dello scheduler, le run già partite non si fermano. Solo con il login.
+ * @summary Limiti di concorrenza delle run di tutta la flotta
+ */
+export const updateFleetPolicy = async (fleetLimitsUpdate: FleetLimitsUpdate, options?: RequestInit): Promise<FleetPolicy> => {
+
+  return customFetch<FleetPolicy>(getUpdateFleetPolicyUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(fleetLimitsUpdate)
+  }
+);}
+
+
+
+
+export const getUpdateFleetPolicyMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateFleetPolicy>>, TError,{data: BodyType<FleetLimitsUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateFleetPolicy>>, TError,{data: BodyType<FleetLimitsUpdate>}, TContext> => {
+
+const mutationKey = ['updateFleetPolicy'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateFleetPolicy>>, {data: BodyType<FleetLimitsUpdate>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  updateFleetPolicy(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateFleetPolicyMutationResult = NonNullable<Awaited<ReturnType<typeof updateFleetPolicy>>>
+    export type UpdateFleetPolicyMutationBody = BodyType<FleetLimitsUpdate>
+    export type UpdateFleetPolicyMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse>
+
+    /**
+ * @summary Limiti di concorrenza delle run di tutta la flotta
+ */
+export const useUpdateFleetPolicy = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateFleetPolicy>>, TError,{data: BodyType<FleetLimitsUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateFleetPolicy>>,
+        TError,
+        {data: BodyType<FleetLimitsUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateFleetPolicyMutationOptions(options));
+    }
+
+export const getPauseFleetUrl = () => {
+
+
+
+
+  return `/api/fleet/pause`
+}
+
+/**
+ * Nessuna run nuova parte (restano in coda) e sorveglianza e run programmate non scattano finché la flotta non riprende; le run in corso arrivano in fondo, i webhook accodano le run. Già in pausa → 409. Solo con il login.
+ * @summary Mette in pausa la flotta
+ */
+export const pauseFleet = async (fleetPauseRequest?: FleetPauseRequest, options?: RequestInit): Promise<FleetPolicy> => {
+
+  return customFetch<FleetPolicy>(getPauseFleetUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(fleetPauseRequest)
+  }
+);}
+
+
+
+
+export const getPauseFleetMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof pauseFleet>>, TError,{data?: BodyType<FleetPauseRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof pauseFleet>>, TError,{data?: BodyType<FleetPauseRequest>}, TContext> => {
+
+const mutationKey = ['pauseFleet'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof pauseFleet>>, {data?: BodyType<FleetPauseRequest>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  pauseFleet(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type PauseFleetMutationResult = NonNullable<Awaited<ReturnType<typeof pauseFleet>>>
+    export type PauseFleetMutationBody = BodyType<FleetPauseRequest> | undefined
+    export type PauseFleetMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | ConflictResponse>
+
+    /**
+ * @summary Mette in pausa la flotta
+ */
+export const usePauseFleet = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof pauseFleet>>, TError,{data?: BodyType<FleetPauseRequest>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof pauseFleet>>,
+        TError,
+        {data?: BodyType<FleetPauseRequest>},
+        TContext
+      > => {
+      return useMutation(getPauseFleetMutationOptions(options));
+    }
+
+export const getResumeFleetUrl = () => {
+
+
+
+
+  return `/api/fleet/resume`
+}
+
+/**
+ * Toglie la pausa e avvia subito le run in coda nei limiti. Non in pausa → 409. Solo con il login.
+ * @summary Riprende la flotta
+ */
+export const resumeFleet = async ( options?: RequestInit): Promise<FleetPolicy> => {
+
+  return customFetch<FleetPolicy>(getResumeFleetUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getResumeFleetMutationOptions = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resumeFleet>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof resumeFleet>>, TError,void, TContext> => {
+
+const mutationKey = ['resumeFleet'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof resumeFleet>>, void> = () => {
+
+
+          return  resumeFleet(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ResumeFleetMutationResult = NonNullable<Awaited<ReturnType<typeof resumeFleet>>>
+
+    export type ResumeFleetMutationError = ErrorType<UnauthorizedResponse | ForbiddenResponse | ConflictResponse>
+
+    /**
+ * @summary Riprende la flotta
+ */
+export const useResumeFleet = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof resumeFleet>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof resumeFleet>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getResumeFleetMutationOptions(options));
+    }
 
 export const getCancelRunUrl = (id: number,) => {
 

@@ -3585,6 +3585,129 @@ export const ListAgentActivityResponse = zod.array(ListAgentActivityResponseItem
 
 
 /**
+ * Ogni agente con salute (`failing` senza modello, con un innesco in errore o con meno della metà delle run riuscite su almeno 3; `degraded` con qualche errore, una run in corso da oltre 15 minuti o almeno 20 run in coda; `off` se non attivo), problemi, attività, run in corso e in coda e numeri delle ultime 24 ore; poi il riepilogo e la politica di coordinamento. Dal più grave. Solo letture.
+ * @summary Salute e attività della flotta degli agenti
+ */
+export const GetFleetResponse = zod.object({
+  "policy": zod.object({
+  "paused": zod.boolean(),
+  "pausedAt": zod.coerce.date().nullable(),
+  "pausedBy": zod.number().nullable(),
+  "pausedByName": zod.string().nullable(),
+  "pauseReason": zod.string().nullable(),
+  "maxRunningRuns": zod.number(),
+  "maxRunningPerAgent": zod.number(),
+  "updatedAt": zod.coerce.date().nullable().describe('Null finché la politica non è mai stata cambiata (valori predefiniti)')
+}),
+  "summary": zod.object({
+  "agents": zod.number(),
+  "healthy": zod.number(),
+  "degraded": zod.number(),
+  "failing": zod.number(),
+  "off": zod.number(),
+  "working": zod.number(),
+  "waitingUser": zod.number(),
+  "runningRuns": zod.number(),
+  "pendingRuns": zod.number(),
+  "succeeded24h": zod.number(),
+  "failed24h": zod.number(),
+  "cost24hUsd": zod.number()
+}),
+  "agents": zod.array(zod.object({
+  "agentId": zod.number(),
+  "name": zod.string(),
+  "appId": zod.number(),
+  "appName": zod.string(),
+  "role": zod.enum(['general', 'area']),
+  "status": zod.enum(['draft', 'active', 'inactive']),
+  "health": zod.enum(['healthy', 'degraded', 'failing', 'off']),
+  "issues": zod.array(zod.enum(['no_model', 'trigger_error', 'high_failure', 'some_failures', 'backlog', 'stuck_run'])),
+  "activity": zod.enum(['working', 'waiting_user', 'idle']),
+  "runningRuns": zod.number(),
+  "pendingRuns": zod.number(),
+  "pendingActions": zod.number().describe('Voci pending di «Da confermare» dell\'utente nate da run dell\'agente'),
+  "triggersInError": zod.number(),
+  "succeeded24h": zod.number(),
+  "failed24h": zod.number(),
+  "cancelled24h": zod.number(),
+  "successRate": zod.number().nullable().describe('Run riuscite su riuscite + fallite nelle ultime 24 ore (null senza run concluse)'),
+  "avgDurationMs": zod.number().nullable(),
+  "cost24hUsd": zod.number().nullable().describe('Costo delle run concluse nelle ultime 24 ore (null se nessuna ha un prezzo)'),
+  "unpriced24h": zod.number(),
+  "lastRunAt": zod.coerce.date().nullable(),
+  "lastError": zod.string().nullable().describe('Errore dell\'ultima run fallita nelle ultime 24 ore, su una riga (≤ 200 caratteri)')
+}))
+})
+
+
+/**
+ * Run in corso al più `maxRunningRuns` (1..20) in tutto e `maxRunningPerAgent` (1..10, non oltre il totale) per agente; valgono dal giro successivo dello scheduler, le run già partite non si fermano. Solo con il login.
+ * @summary Limiti di concorrenza delle run di tutta la flotta
+ */
+export const updateFleetPolicyBodyMaxRunningRunsMax = 20;
+
+export const updateFleetPolicyBodyMaxRunningPerAgentMax = 10;
+
+
+
+export const UpdateFleetPolicyBody = zod.object({
+  "maxRunningRuns": zod.number().min(1).max(updateFleetPolicyBodyMaxRunningRunsMax),
+  "maxRunningPerAgent": zod.number().min(1).max(updateFleetPolicyBodyMaxRunningPerAgentMax)
+})
+
+export const UpdateFleetPolicyResponse = zod.object({
+  "paused": zod.boolean(),
+  "pausedAt": zod.coerce.date().nullable(),
+  "pausedBy": zod.number().nullable(),
+  "pausedByName": zod.string().nullable(),
+  "pauseReason": zod.string().nullable(),
+  "maxRunningRuns": zod.number(),
+  "maxRunningPerAgent": zod.number(),
+  "updatedAt": zod.coerce.date().nullable().describe('Null finché la politica non è mai stata cambiata (valori predefiniti)')
+})
+
+
+/**
+ * Nessuna run nuova parte (restano in coda) e sorveglianza e run programmate non scattano finché la flotta non riprende; le run in corso arrivano in fondo, i webhook accodano le run. Già in pausa → 409. Solo con il login.
+ * @summary Mette in pausa la flotta
+ */
+export const pauseFleetBodyReasonMax = 300;
+
+
+
+export const PauseFleetBody = zod.object({
+  "reason": zod.string().max(pauseFleetBodyReasonMax).nullish()
+})
+
+export const PauseFleetResponse = zod.object({
+  "paused": zod.boolean(),
+  "pausedAt": zod.coerce.date().nullable(),
+  "pausedBy": zod.number().nullable(),
+  "pausedByName": zod.string().nullable(),
+  "pauseReason": zod.string().nullable(),
+  "maxRunningRuns": zod.number(),
+  "maxRunningPerAgent": zod.number(),
+  "updatedAt": zod.coerce.date().nullable().describe('Null finché la politica non è mai stata cambiata (valori predefiniti)')
+})
+
+
+/**
+ * Toglie la pausa e avvia subito le run in coda nei limiti. Non in pausa → 409. Solo con il login.
+ * @summary Riprende la flotta
+ */
+export const ResumeFleetResponse = zod.object({
+  "paused": zod.boolean(),
+  "pausedAt": zod.coerce.date().nullable(),
+  "pausedBy": zod.number().nullable(),
+  "pausedByName": zod.string().nullable(),
+  "pauseReason": zod.string().nullable(),
+  "maxRunningRuns": zod.number(),
+  "maxRunningPerAgent": zod.number(),
+  "updatedAt": zod.coerce.date().nullable().describe('Null finché la politica non è mai stata cambiata (valori predefiniti)')
+})
+
+
+/**
  * Porta a cancelled una run pending, running o awaiting_client, interrompe le chiamate in corso (modello e tool) e non avvia altri passi. Durata, token e costo già registrati restano. Risponde 409 se la run è già conclusa (succeeded, failed, cancelled).
  * @summary Annulla un'esecuzione non ancora conclusa
  */

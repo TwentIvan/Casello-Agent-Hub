@@ -1331,6 +1331,134 @@ export interface AgentActivity {
   pendingActions: number;
 }
 
+export interface FleetPolicy {
+  paused: boolean;
+  pausedAt: string | null;
+  pausedBy: number | null;
+  pausedByName: string | null;
+  pauseReason: string | null;
+  maxRunningRuns: number;
+  maxRunningPerAgent: number;
+  /** Null finché la politica non è mai stata cambiata (valori predefiniti) */
+  updatedAt: string | null;
+}
+
+export interface FleetLimitsUpdate {
+  /**
+     * @minimum 1
+     * @maximum 20
+     */
+  maxRunningRuns: number;
+  /**
+     * @minimum 1
+     * @maximum 10
+     */
+  maxRunningPerAgent: number;
+}
+
+export interface FleetPauseRequest {
+  /** @maxLength 300 */
+  reason?: string | null;
+}
+
+export type FleetHealth = typeof FleetHealth[keyof typeof FleetHealth];
+
+
+export const FleetHealth = {
+  healthy: 'healthy',
+  degraded: 'degraded',
+  failing: 'failing',
+  off: 'off',
+} as const;
+
+export type FleetIssue = typeof FleetIssue[keyof typeof FleetIssue];
+
+
+export const FleetIssue = {
+  no_model: 'no_model',
+  trigger_error: 'trigger_error',
+  high_failure: 'high_failure',
+  some_failures: 'some_failures',
+  backlog: 'backlog',
+  stuck_run: 'stuck_run',
+} as const;
+
+export type FleetAgentRole = typeof FleetAgentRole[keyof typeof FleetAgentRole];
+
+
+export const FleetAgentRole = {
+  general: 'general',
+  area: 'area',
+} as const;
+
+export type FleetAgentStatus = typeof FleetAgentStatus[keyof typeof FleetAgentStatus];
+
+
+export const FleetAgentStatus = {
+  draft: 'draft',
+  active: 'active',
+  inactive: 'inactive',
+} as const;
+
+export type FleetAgentActivity = typeof FleetAgentActivity[keyof typeof FleetAgentActivity];
+
+
+export const FleetAgentActivity = {
+  working: 'working',
+  waiting_user: 'waiting_user',
+  idle: 'idle',
+} as const;
+
+export interface FleetAgent {
+  agentId: number;
+  name: string;
+  appId: number;
+  appName: string;
+  role: FleetAgentRole;
+  status: FleetAgentStatus;
+  health: FleetHealth;
+  issues: FleetIssue[];
+  activity: FleetAgentActivity;
+  runningRuns: number;
+  pendingRuns: number;
+  /** Voci pending di «Da confermare» dell'utente nate da run dell'agente */
+  pendingActions: number;
+  triggersInError: number;
+  succeeded24h: number;
+  failed24h: number;
+  cancelled24h: number;
+  /** Run riuscite su riuscite + fallite nelle ultime 24 ore (null senza run concluse) */
+  successRate: number | null;
+  avgDurationMs: number | null;
+  /** Costo delle run concluse nelle ultime 24 ore (null se nessuna ha un prezzo) */
+  cost24hUsd: number | null;
+  unpriced24h: number;
+  lastRunAt: string | null;
+  /** Errore dell'ultima run fallita nelle ultime 24 ore, su una riga (≤ 200 caratteri) */
+  lastError: string | null;
+}
+
+export interface FleetSummary {
+  agents: number;
+  healthy: number;
+  degraded: number;
+  failing: number;
+  off: number;
+  working: number;
+  waitingUser: number;
+  runningRuns: number;
+  pendingRuns: number;
+  succeeded24h: number;
+  failed24h: number;
+  cost24hUsd: number;
+}
+
+export interface FleetView {
+  policy: FleetPolicy;
+  summary: FleetSummary;
+  agents: FleetAgent[];
+}
+
 /**
  * awaiting_client: la run aspetta l'esito di un'azione ui dal client (`clientAction`, vedi POST /runs/{id}/client-result). All'avvio del server le run in attesa diventano failed; quelle rimaste nella vecchia pausa per conferma (senza azione) diventano cancelled.
  */

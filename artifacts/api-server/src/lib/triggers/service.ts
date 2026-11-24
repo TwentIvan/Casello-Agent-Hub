@@ -13,6 +13,7 @@ import { isUniqueViolation } from "../pg-errors";
 import { toCatalogTool } from "../tools/catalog";
 import { validateArgs } from "../tools/definition";
 import type { CatalogTool } from "../tools/types";
+import { parseCron, nextCronTime } from "./cron";
 import { validateTriggerConfig, type NormalizedTriggerConfig, type TriggerConfigInput, type TriggerFilter } from "./config";
 import { toolUsableByTrigger } from "./eligibility";
 import { extractItems } from "./extract";
@@ -122,7 +123,14 @@ function configColumns(cfg: NormalizedTriggerConfig) {
     filter: cfg.filter,
     intervalSeconds: cfg.intervalSeconds,
     dedupHeader: cfg.dedupHeader,
+    cron: cfg.cron,
   };
+}
+
+/** Prossima run di un'espressione cron già validata; null se non è valida o non scatta più. */
+export function nextScheduledRun(cron: string | null, after: Date = new Date()): Date | null {
+  const spec = cron === null ? null : parseCron(cron);
+  return spec ? nextCronTime(spec, after) : null;
 }
 
 class TooMany extends Error {}
@@ -167,7 +175,7 @@ export async function createTrigger(
           status: "paused",
           createdBy: userId,
           ...configColumns(cfg),
-          nextPollAt: cfg.kind === "poll" ? new Date() : null,
+          nextPollAt: cfg.kind === "poll" ? new Date() : cfg.kind === "schedule" ? nextScheduledRun(cfg.cron) : null,
           secretHash: secret?.hash ?? null,
         })
         .returning();
@@ -194,6 +202,7 @@ function currentConfig(row: AgentTrigger): TriggerConfigInput {
     filter: isPlainObject(row.filter) ? (row.filter as TriggerFilter) : null,
   };
   if (row.kind === "webhook") return { ...common, dedupHeader: row.dedupHeader };
+  if (row.kind === "schedule") return { kind: row.kind, name: row.name, instructions: row.instructions, cron: row.cron };
   return {
     ...common,
     toolId: row.toolId,
@@ -217,6 +226,7 @@ const PATCH_KEYS = [
   "filter",
   "intervalSeconds",
   "dedupHeader",
+  "cron",
 ] as const;
 
 /** JSON con le chiavi ordinate: jsonb non conserva l'ordine delle chiavi, che non deve contare nel confronto. */
@@ -279,6 +289,8 @@ export async function updateTrigger(id: number, patch: TriggerPatchInput): Promi
           .set({
             ...configColumns(cfg),
             ...(reset ? { baselineDone: false, cursorValue: null } : {}),
+            // Run programmata: un orario nuovo vale dalla prossima occorrenza.
+            ...(cfg.kind === "schedule" && cfg.cron !== locked.cron ? { nextPollAt: nextScheduledRun(cfg.cron) } : {}),
             updatedAt: new Date(),
           })
           .where(eq(agentTriggersTable.id, id))
@@ -310,15 +322,23 @@ export async function pauseTrigger(id: number): Promise<AgentTrigger | null> {
   return row ?? null;
 }
 
-/** Attiva o riprende: errori azzerati e, per la sorveglianza, giro subito. */
+/**
+ * Attiva o riprende: errori azzerati; per la sorveglianza giro subito, per la run programmata la prossima occorrenza
+ * da adesso (le occorrenze passate durante la pausa non si recuperano).
+ */
 export async function resumeTrigger(id: number): Promise<AgentTrigger | null> {
+  const current = await loadTrigger(id);
+  if (!current) return null;
+  const scheduled = current.kind === "schedule" ? nextScheduledRun(current.cron) : null;
   const [row] = await db
     .update(agentTriggersTable)
     .set({
       status: "active",
       consecutiveErrors: 0,
       lastError: null,
-      nextPollAt: sql`case when ${agentTriggersTable.kind} = 'poll' then now() else ${agentTriggersTable.nextPollAt} end`,
+      nextPollAt: scheduled
+        ? sql`case when ${agentTriggersTable.kind} = 'schedule' and ${agentTriggersTable.cron} = ${current.cron} then ${scheduled.toISOString()}::timestamptz else ${agentTriggersTable.nextPollAt} end`
+        : sql`case when ${agentTriggersTable.kind} = 'poll' then now() else ${agentTriggersTable.nextPollAt} end`,
       updatedAt: new Date(),
     })
     .where(eq(agentTriggersTable.id, id))

@@ -199,6 +199,22 @@ describe("creazione e lettura", () => {
     expect(got.json).not.toHaveProperty("secretHash");
   });
 
+  it("run programmata → 201 in pausa con cron e prossima run; resume la fissa alla prossima occorrenza", async () => {
+    const { agentId } = await seed();
+    const res = await api("POST", `/agents/${agentId}/triggers`, {
+      body: { kind: "schedule", name: "Report", instructions: "Prepara il report", cron: "0 8 * * 1-5" },
+    });
+    expect(res.status).toBe(201);
+    expect(res.json).toMatchObject({ kind: "schedule", status: "paused", cron: "0 8 * * 1-5", toolId: null, webhookUrl: null });
+    const resumed = await api("POST", `/triggers/${res.json.id}/resume`);
+    expect(resumed.status).toBe(200);
+    expect(new Date(resumed.json.nextPollAt).getTime()).toBeGreaterThan(Date.now());
+    const bad = await api("POST", `/agents/${agentId}/triggers`, { body: { kind: "schedule", name: "Spesso", instructions: "x", cron: "* * * * *" } });
+    expect(bad.status).toBe(400);
+    expect(bad.json.error).toBe(TRIGGER_MESSAGES.cronTooFrequent);
+    expect((await api("POST", `/triggers/${res.json.id}/test`)).status).toBe(400);
+  });
+
   it("agente inesistente → 404; innesco inesistente → 404", async () => {
     await seed();
     expect((await api("POST", `/agents/999999/triggers`, { body: { kind: "webhook", name: "X" } })).status).toBe(404);

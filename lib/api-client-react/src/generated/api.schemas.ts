@@ -1340,12 +1340,16 @@ export interface RunTrigger {
   clientTools?: boolean;
 }
 
+/**
+ * poll = sorveglianza di un tool, webhook = chiamata in entrata, schedule = run programmata (espressione cron nell'ora italiana)
+ */
 export type TriggerKind = typeof TriggerKind[keyof typeof TriggerKind];
 
 
 export const TriggerKind = {
   poll: 'poll',
   webhook: 'webhook',
+  schedule: 'schedule',
 } as const;
 
 export type TriggerStatus = typeof TriggerStatus[keyof typeof TriggerStatus];
@@ -1371,7 +1375,7 @@ export interface TriggerFilter {
 export type TriggerInputArgs = { [key: string]: unknown } | null;
 
 /**
- * Configurazione di un innesco. Solo `poll`: `toolId`, `args`, `cursorParam`, `cursorField`, `intervalSeconds`. Solo `webhook`: `dedupHeader`. Percorsi da 1 a 5 segmenti `[A-Za-z0-9_-]` separati da punto.
+ * Configurazione di un innesco. Solo `poll`: `toolId`, `args`, `cursorParam`, `cursorField`, `intervalSeconds`. Solo `webhook`: `dedupHeader`. Solo `schedule`: `cron` (obbligatorio) e `instructions` obbligatorie, nessun altro campo. Percorsi da 1 a 5 segmenti `[A-Za-z0-9_-]` separati da punto.
  */
 export interface TriggerInput {
   kind: TriggerKind;
@@ -1410,6 +1414,11 @@ export interface TriggerInput {
   intervalSeconds?: number | null;
   /** @nullable */
   dedupHeader?: string | null;
+  /**
+     * Solo schedule: espressione cron a 5 campi (minuto ora giorno mese giorno-della-settimana) nell'ora italiana, almeno 5 minuti tra due run
+     * @nullable
+     */
+  cron?: string | null;
 }
 
 /**
@@ -1443,6 +1452,11 @@ export interface TriggerPatch {
   intervalSeconds?: number | null;
   /** @nullable */
   dedupHeader?: string | null;
+  /**
+     * Solo schedule: espressione cron a 5 campi (minuto ora giorno mese giorno-della-settimana) nell'ora italiana, almeno 5 minuti tra due run
+     * @nullable
+     */
+  cron?: string | null;
 }
 
 export type TriggerArgs = { [key: string]: unknown };
@@ -1478,12 +1492,20 @@ export interface Trigger {
   filter: TriggerFilter | null;
   /** @nullable */
   intervalSeconds: number | null;
-  /** @nullable */
+  /**
+     * Prossimo giro della sorveglianza o prossima run programmata
+     * @nullable
+     */
   nextPollAt: string | null;
   /** Linea di partenza fatta (solo sorveglianza) */
   baselineDone: boolean;
   /** @nullable */
   dedupHeader: string | null;
+  /**
+     * Solo schedule, espressione cron nell'ora italiana
+     * @nullable
+     */
+  cron: string | null;
   /** C'è un segreto di firma (il valore non si legge mai) */
   signingSecretSet: boolean;
   /**

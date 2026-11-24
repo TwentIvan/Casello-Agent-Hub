@@ -1079,7 +1079,7 @@ CREATE INDEX IF NOT EXISTS "runs_parent_run_id_idx" ON "runs" USING btree ("pare
 
 -- Inneschi (docs/migrations/2026-11-inneschi.sql)
 DO $$ BEGIN
-  CREATE TYPE "public"."trigger_kind" AS ENUM('poll', 'webhook');
+  CREATE TYPE "public"."trigger_kind" AS ENUM('poll', 'webhook', 'schedule');
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 
@@ -1106,6 +1106,7 @@ CREATE TABLE IF NOT EXISTS "agent_triggers" (
 	"cursor_value" text,
 	"filter" jsonb,
 	"interval_seconds" integer DEFAULT 300,
+	"cron" text,
 	"next_poll_at" timestamp with time zone,
 	"baseline_done" boolean DEFAULT false NOT NULL,
 	"dedup_header" text,
@@ -1118,6 +1119,7 @@ CREATE TABLE IF NOT EXISTS "agent_triggers" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "agent_triggers_agent_name_key" UNIQUE ("agent_id", "name"),
+	CONSTRAINT "agent_triggers_schedule_check" CHECK ("kind"::text <> 'schedule' OR ("cron" IS NOT NULL AND "next_poll_at" IS NOT NULL)),
 	CONSTRAINT "agent_triggers_poll_check" CHECK ("kind" <> 'poll' OR ("tool_id" IS NOT NULL AND "interval_seconds" IS NOT NULL AND "next_poll_at" IS NOT NULL)),
 	CONSTRAINT "agent_triggers_webhook_check" CHECK ("kind" <> 'webhook' OR "secret_hash" IS NOT NULL),
 	CONSTRAINT "agent_triggers_cursor_check" CHECK ("cursor_param" IS NULL OR "cursor_field" IS NOT NULL),

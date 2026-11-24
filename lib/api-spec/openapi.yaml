@@ -8133,7 +8133,10 @@ components:
 
     TriggerKind:
       type: string
-      enum: [poll, webhook]
+      enum: [poll, webhook, schedule]
+      description: >-
+        poll = sorveglianza di un tool, webhook = chiamata in entrata, schedule = run programmata (espressione cron
+        nell'ora italiana)
 
     TriggerStatus:
       type: string
@@ -8158,7 +8161,8 @@ components:
       required: [kind, name]
       description: >-
         Configurazione di un innesco. Solo `poll`: `toolId`, `args`, `cursorParam`, `cursorField`, `intervalSeconds`.
-        Solo `webhook`: `dedupHeader`. Percorsi da 1 a 5 segmenti `[A-Za-z0-9_-]` separati da punto.
+        Solo `webhook`: `dedupHeader`. Solo `schedule`: `cron` (obbligatorio) e `instructions` obbligatorie, nessun
+        altro campo. Percorsi da 1 a 5 segmenti `[A-Za-z0-9_-]` separati da punto.
       properties:
         kind:
           $ref: "#/components/schemas/TriggerKind"
@@ -8194,6 +8198,11 @@ components:
           description: Da 60 a 86400 secondi (default 300)
         dedupHeader:
           type: ["string", "null"]
+        cron:
+          type: ["string", "null"]
+          description: >-
+            Solo schedule: espressione cron a 5 campi (minuto ora giorno mese giorno-della-settimana) nell'ora
+            italiana, almeno 5 minuti tra due run
 
     TriggerPatch:
       type: object
@@ -8226,6 +8235,11 @@ components:
           type: ["integer", "null"]
         dedupHeader:
           type: ["string", "null"]
+        cron:
+          type: ["string", "null"]
+          description: >-
+            Solo schedule: espressione cron a 5 campi (minuto ora giorno mese giorno-della-settimana) nell'ora
+            italiana, almeno 5 minuti tra due run
 
     Trigger:
       type: object
@@ -8250,6 +8264,7 @@ components:
         - nextPollAt
         - baselineDone
         - dedupHeader
+        - cron
         - signingSecretSet
         - lastPolledAt
         - lastError
@@ -8299,11 +8314,15 @@ components:
         nextPollAt:
           type: ["string", "null"]
           format: date-time
+          description: Prossimo giro della sorveglianza o prossima run programmata
         baselineDone:
           type: boolean
           description: Linea di partenza fatta (solo sorveglianza)
         dedupHeader:
           type: ["string", "null"]
+        cron:
+          type: ["string", "null"]
+          description: Solo schedule, espressione cron nell'ora italiana
         signingSecretSet:
           type: boolean
           description: C'è un segreto di firma (il valore non si legge mai)

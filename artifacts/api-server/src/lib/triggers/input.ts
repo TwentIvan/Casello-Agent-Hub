@@ -31,3 +31,11 @@ export function buildTriggerInput(input: {
   const body = `${header}\n<${tag}>\n${content}\n</${tag}>`;
   return input.instructions ? `${input.instructions}\n\n${body}` : body;
 }
+
+/**
+ * Input della run programmata (issue #107): le istruzioni dell'utente (testo fidato) e una riga con nome e orario
+ * previsto, così l'agente sa a quale scadenza risponde.
+ */
+export function buildScheduleInput(input: { name: string; instructions: string; scheduledFor: string }): string {
+  return `${input.instructions}\n\nRun programmata «${input.name}» del ${input.scheduledFor} (ora italiana).`;
+}

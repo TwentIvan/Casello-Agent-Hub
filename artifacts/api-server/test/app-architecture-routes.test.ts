@@ -263,6 +263,14 @@ describe("PATCH /apps/:id architectureRefresh", () => {
     expect((await api("PATCH", `/apps/${appId}`, { body: { architectureRefresh: "ogni-tanto" } })).status).toBe(400);
   });
 
+  it("rianalisi automatica: spenta di default, si accende e l'App la espone", async () => {
+    expect((await api("GET", `/apps/${appId}`)).json).toMatchObject({ autoReanalysis: false, reanalysisSeenSha: null, reanalysisCheckedAt: null });
+    const r = await api("PATCH", `/apps/${appId}`, { body: { autoReanalysis: true } });
+    expect(r.status, r.text).toBe(200);
+    expect(r.json.autoReanalysis).toBe(true);
+    expect((await api("PATCH", `/apps/${appId}`, { body: { autoReanalysis: "sì" } })).status).toBe(400);
+  });
+
   it("token d'ambito agent: «Aggiorna ora» 403 (generazione a pagamento)", async () => {
     const r = await api("POST", `/apps/${appId}/architecture/refresh`, { token: await tokenWith(["agent"]) });
     expect(r.status).toBe(403);

@@ -1,6 +1,7 @@
 import { db, analysesTable, type App } from "@workspace/db";
 import type { ModelChoice } from "../ai/choice";
 import { isUniqueViolation } from "../pg-errors";
+import { LOCAL_MODEL } from "./local-executor";
 import { ANALYSIS_DEFAULT_MAX_TOKENS, startAnalysis } from "./run-analysis";
 
 /** L'app ha già un'analisi `queued`/`running` (indice unico parziale `analyses_one_active_per_app`). */
@@ -39,4 +40,22 @@ export async function createAndStartAnalysis(
   });
   void startAnalysis(row.id, zip ? { zip } : undefined);
   return row;
+}
+
+/**
+ * Crea l'analisi `queued` per l'agente locale: il codice lo legge l'agente sul proprio clone, nessun modello di Botcave.
+ * `triggerCommit` = SHA del branch base che ha avviato la rianalisi automatica (assente = avviata a mano).
+ * Un'altra analisi aperta per l'app → AnalysisBusyError.
+ */
+export function insertLocalAnalysis(app: App, opts: { maxTokens?: number; bestPractice: boolean; triggerCommit?: string }) {
+  return insertAnalysis({
+    appId: app.id,
+    model: LOCAL_MODEL,
+    aiModelId: null,
+    executor: "local",
+    maxTokens: opts.maxTokens ?? ANALYSIS_DEFAULT_MAX_TOKENS,
+    bestPractice: opts.bestPractice,
+    triggerCommit: opts.triggerCommit ?? null,
+    sources: { code: app.sourceType, openapi: false, mcp: false, description: !!app.functionalDescription?.trim() },
+  });
 }

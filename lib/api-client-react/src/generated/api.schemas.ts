@@ -537,6 +537,18 @@ export interface App {
      */
   functionalDescription: string | null;
   architectureRefresh: ArchitectureRefresh;
+  /** Rianalisi automatica, a ogni nuovo commit del branch base un'analisi in coda per l'agente locale */
+  autoReanalysis: boolean;
+  /**
+     * Ultimo SHA del branch base già gestito dalla rianalisi automatica
+     * @nullable
+     */
+  reanalysisSeenSha: string | null;
+  /**
+     * Ultimo controllo della rianalisi automatica
+     * @nullable
+     */
+  reanalysisCheckedAt: string | null;
   /**
      * Branch di prova dell'App, riscritto da Botcave a ogni lavoro delle squadre (null = nessuna versione di prova)
      * @nullable
@@ -935,6 +947,8 @@ export interface AppUpdate {
   /** @nullable */
   functionalDescription?: string | null;
   architectureRefresh?: ArchitectureRefresh;
+  /** Accende o spegne la rianalisi automatica (serve il codice da GitHub tramite installazione per avere effetto) */
+  autoReanalysis?: boolean;
   /**
      * Branch di prova (non il base, non main/master, non botcave/…); null lo toglie
      * @nullable
@@ -2192,6 +2206,16 @@ export interface AnalysisSources {
 export interface Analysis {
   id: number;
   appId: number;
+  /**
+     * Commit del clone su cui ha lavorato l'agente locale (null se non riferito)
+     * @nullable
+     */
+  sourceCommit: string | null;
+  /**
+     * SHA del branch base che ha avviato la rianalisi automatica (null = avviata a mano)
+     * @nullable
+     */
+  triggerCommit: string | null;
   model: string;
   /** @nullable */
   aiModelId: number | null;

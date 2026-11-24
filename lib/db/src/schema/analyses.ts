@@ -57,6 +57,8 @@ export const analysesTable = pgTable(
     leaseLabel: text("lease_label"),
     // Commit del clone locale su cui l'agente ha lavorato
     sourceCommit: text("source_commit"),
+    // SHA del branch base che ha avviato la rianalisi automatica (null = avviata a mano)
+    triggerCommit: text("trigger_commit"),
     mode: analysisModeEnum("mode").notNull().default("full"),
     // Giro del ciclo di evoluzione che l'ha avviata (collegamento senza FK nello schema per evitare l'import circolare: la FK sta nel DB)
     evolutionRoundId: integer("evolution_round_id"),

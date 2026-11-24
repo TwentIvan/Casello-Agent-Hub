@@ -1060,8 +1060,9 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   audio nativo, trascrizione…) non rispondono alle chiamate di chat (400 del provider): non sono mai selezionabili né consigliati
   (`isAudioOnlyModel` in `lib/ai/model-status.ts`, stessa regola in console `lib/audio-models.ts`) e non compaiono nemmeno in
   "Altri modelli"; il modello vocale di Alfred si sceglie a parte. Un ruolo o un agente che ne ha già uno lo mantiene finché non si cambia. "Prova" (5/minuto, solo sui propri account, 1 token, 20 s) riporta un modello a disponibile.
-- Limiti noti: l'enum Postgres `ai_provider` resta nel DB inutilizzato fino alla migrazione
-  `2026-10-pulizia-gateway-post.sql`, che lo elimina insieme al vecchio gateway.
+- Limiti noti: l'enum Postgres `ai_provider` resta nel DB inutilizzato finché non si applica su Neon, dopo il deploy,
+  `2026-11-24-drop-ai-provider-post.sql` (solo l'enum, si ferma se una colonna lo usa ancora) o `2026-10-pulizia-gateway-post.sql`
+  (insieme al vecchio gateway).
 
 ## Agenti operativi (fase 1)
 

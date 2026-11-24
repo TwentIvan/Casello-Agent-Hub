@@ -33,6 +33,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { ModelDeprecationBadge } from "@/components/ai/model-deprecation-badge";
 import { ModelPicker } from "@/components/ai/model-picker";
 import { AgentRoleBadge } from "@/components/agents/agent-role-badge";
+import { AgentActivityLed } from "@/components/agents/agent-activity-led";
+import { useAgentActivity } from "@/components/live/live-updates";
 import { AgentToolsSection } from "@/components/agents/agent-tools-section";
 import { AgentTriggersSection } from "@/components/agents/agent-triggers-section";
 import { AgentSkillsSection } from "@/components/agents/agent-skills-section";
@@ -313,6 +315,7 @@ export default function AgentDetailPage() {
   const agent = useGetAgent(agentId, {
     query: { queryKey: getGetAgentQueryKey(agentId), enabled: Number.isInteger(agentId) },
   });
+  const { byAgent: activityByAgent } = useAgentActivity();
   const appId = agent.data?.appId ?? 0;
   usePanelSubject({
     lucius: agent.data
@@ -380,6 +383,7 @@ export default function AgentDetailPage() {
               <h2 className="text-h2">{agent.data.name}</h2>
               <StatusBadge kind="agent" status={agent.data.status} />
               <AgentRoleBadge agent={agent.data} />
+              <AgentActivityLed activity={activityByAgent.get(agent.data.id)} />
             </div>
             <p className="text-sm text-muted-foreground">
               App:{" "}

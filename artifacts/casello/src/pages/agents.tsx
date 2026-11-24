@@ -18,6 +18,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { AgentCreateDialog } from "@/components/agents/agent-create-dialog";
 import { ModelDeprecationBadge } from "@/components/ai/model-deprecation-badge";
 import { AgentRoleBadge } from "@/components/agents/agent-role-badge";
+import { AgentActivityLed } from "@/components/agents/agent-activity-led";
+import { useAgentActivity } from "@/components/live/live-updates";
 import { AGENT_STATUS_LABELS, StatusBadge } from "@/components/status-badge";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { formatRelative } from "@/lib/format";
@@ -35,6 +37,7 @@ export default function AgentsPage() {
   const params = appId ? { appId } : undefined;
   const agents = useListAgents(params, { query: { queryKey: getListAgentsQueryKey(params) } });
   const apps = useListApps({ query: { queryKey: getListAppsQueryKey() } });
+  const activity = useAgentActivity();
 
   const sortedApps = useMemo(
     () => [...(apps.data ?? [])].sort((a, b) => a.name.localeCompare(b.name, "it")),
@@ -139,6 +142,7 @@ export default function AgentsPage() {
                   <TableHead>App</TableHead>
                   <TableHead>Ruolo</TableHead>
                   <TableHead className="hidden md:table-cell">Modello</TableHead>
+                  <TableHead>Attività</TableHead>
                   <TableHead>Stato</TableHead>
                   <TableHead className="hidden pr-4 text-right lg:table-cell">Aggiornato</TableHead>
                 </TableRow>
@@ -167,6 +171,9 @@ export default function AgentsPage() {
                         )}
                         <ModelDeprecationBadge aiModelId={agent.aiModelId} href={`/agents/${agent.id}`} />
                       </div>
+                    </TableCell>
+                    <TableCell className="whitespace-nowrap">
+                      <AgentActivityLed activity={activity.byAgent.get(agent.id)} />
                     </TableCell>
                     <TableCell>
                       <StatusBadge kind="agent" status={agent.status} />

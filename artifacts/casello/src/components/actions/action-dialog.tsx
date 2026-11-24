@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   type QueuedAction,
   getGetDashboardStatsQueryKey,
+  getListAgentActivityQueryKey,
   getGetPendingActionQueryKey,
   useApprovePendingAction,
   useRejectPendingAction,
@@ -60,6 +61,8 @@ export function ActionDialog({
   const afterDecision = (saved: QueuedAction | null) => {
     if (saved) queryClient.setQueryData(getGetPendingActionQueryKey(saved.number), saved);
     void queryClient.invalidateQueries({ queryKey: getGetDashboardStatsQueryKey() });
+    // La voce decisa cambia lo stato dell'agente che l'ha proposta («Aspetta te»)
+    void queryClient.invalidateQueries({ queryKey: getListAgentActivityQueryKey() });
     onDecided();
   };
   const approve = useApprovePendingAction({

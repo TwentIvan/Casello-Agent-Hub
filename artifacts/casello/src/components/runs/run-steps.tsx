@@ -15,6 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { formatDuration } from "@/lib/format";
+import { useLivePollInterval } from "@/components/live/live-updates";
 import { isRunActive } from "./run-queries";
 
 const POLL_MS = 1500;
@@ -116,10 +117,12 @@ export function StepList({ steps }: { steps: StepView[] }) {
 /** Timeline dei passi di una run (chiamate al modello e ai tool), ricaricata finché la run è attiva. */
 export function RunSteps({ run }: { run: Run }) {
   const active = isRunActive(run);
+  // Con il flusso in tempo reale i passi arrivano dagli avvisi: il polling resta lento, come rete di sicurezza
+  const poll = useLivePollInterval(active ? POLL_MS : false);
   const steps = useListRunSteps(run.id, {
     query: {
       queryKey: getListRunStepsQueryKey(run.id),
-      refetchInterval: active ? POLL_MS : false,
+      refetchInterval: poll,
     },
   });
   // Quando lo stato della run cambia (pausa, ripresa, fine) si ricaricano subito anche i passi.

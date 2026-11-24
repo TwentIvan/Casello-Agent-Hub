@@ -19,6 +19,8 @@ import { RunStatusBadge } from "@/components/run-status-badge";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { formatDuration, formatRelative } from "@/lib/format";
+import { useLiveConnected } from "@/components/live/live-updates";
+import { livePollInterval } from "@/lib/live-updates";
 import { listRefetchInterval } from "./run-queries";
 
 const RECENT_RUNS = 5;
@@ -32,11 +34,12 @@ export function RunPanel({ agent }: { agent: Agent }) {
   // Token di prova dell'utente dell'app: vive solo nello stato della pagina, mai in storage.
   const [testToken, setTestToken] = useState("");
 
+  const live = useLiveConnected();
   const params = { agentId: agent.id, limit: 20 };
   const runs = useListRuns(params, {
     query: {
       queryKey: getListRunsQueryKey(params),
-      refetchInterval: (query) => listRefetchInterval(query.state.data),
+      refetchInterval: (query) => livePollInterval(listRefetchInterval(query.state.data), live),
     },
   });
 

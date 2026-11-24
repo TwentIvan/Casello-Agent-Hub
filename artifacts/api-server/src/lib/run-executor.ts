@@ -36,6 +36,7 @@ import { aiModelOwner } from "./ai/model-owner";
 import { runBudgetBlock } from "./budget";
 import { delegateTurn } from "./node-turns/delegate";
 import { logger } from "./logger";
+import { publishRunChange } from "./live/events";
 import { loopModelCallError, modelChatDeps, newUsage, stepWriter, type LoopUsage } from "./loop-wiring";
 import { ARCHITECTURE_TOOL_NAME, architecturePromptBlock, architectureTool, handleReadArchitecture } from "./architecture/tool";
 import { ESCALATION_TOOL_NAME, escalationTool, handleEscalation, productLead } from "./escalation";
@@ -139,6 +140,7 @@ export async function cancelRun(runId: number): Promise<CancelRunResult> {
   }
   activeRuns.get(runId)?.abort();
   clearUserToken(runId);
+  publishRunChange(run.id, run.agentId);
   return { kind: "cancelled", run };
 }
 
@@ -318,9 +320,20 @@ export function maskProposeArgs(args: unknown, tools: CatalogTool[]): unknown {
 }
 
 /** Scrive i passi della run con posizioni crescenti, oscurando gli argomenti sensibili. */
-function runStepWriter(runId: number, appId: number, startPosition: number, tools: CatalogTool[], baseTools: CatalogTool[]) {
+function runStepWriter(
+  run: Pick<Run, "id" | "agentId">,
+  appId: number,
+  startPosition: number,
+  tools: CatalogTool[],
+  baseTools: CatalogTool[],
+) {
+  const runId = run.id;
   const write = stepWriter(
-    (row) => db.insert(runStepsTable).values({ runId, ...row }),
+    async (row) => {
+      await db.insert(runStepsTable).values({ runId, ...row });
+      // Un passo nuovo: la timeline della console si aggiorna subito (issue #108)
+      publishRunChange(runId, run.agentId);
+    },
     (toolName) => stepSchema(appId, tools, toolName),
     startPosition,
   );
@@ -489,6 +502,7 @@ async function finishRun(ctx: RunContext, segmentStart: number, usage: SegmentUs
     )
     .where(and(eq(runsTable.id, ctx.run.id), eq(runsTable.status, "running")));
   clearUserToken(ctx.run.id);
+  publishRunChange(ctx.run.id, ctx.run.agentId);
 }
 
 /** Modello risolto per scegliere l'esecutore; null se non si risolve (l'errore lo dà il ciclo cloud come passo `model`). */
@@ -735,6 +749,7 @@ async function failRun(
   } catch (dbErr) {
     logger.error({ runId, error: errorMessage(dbErr) }, "Impossibile chiudere la run fallita");
   }
+  publishRunChange(runId, run.agentId);
 }
 
 /**
@@ -768,6 +783,7 @@ export async function startRun(runId: number, opts: RunOptions = {}): Promise<vo
   }
 
   adoptRun(runId, abort);
+  publishRunChange(runId, run.agentId);
   const segmentStart = Date.now();
   const usage = newUsage();
   try {
@@ -791,7 +807,7 @@ export async function startRun(runId: number, opts: RunOptions = {}): Promise<vo
       tokens: 0,
       activeMs: 0,
     };
-    const writeStep = runStepWriter(runId, ctx.app.id, await nextPosition(runId), ctx.tools, ctx.baseTools);
+    const writeStep = runStepWriter(run, ctx.app.id, await nextPosition(runId), ctx.tools, ctx.baseTools);
     await driveLoop(ctx, initial, segmentStart, writeStep, usage, abort.signal, opts.limits);
   } catch (err) {
     await failRun(run, err, segmentStart, usage, abort.signal.aborted);

@@ -1199,6 +1199,27 @@ export interface AppToolUpdate {
   needsVerification?: boolean;
 }
 
+export type AgentActivityState = typeof AgentActivityState[keyof typeof AgentActivityState];
+
+
+export const AgentActivityState = {
+  working: 'working',
+  waiting_user: 'waiting_user',
+  idle: 'idle',
+} as const;
+
+export interface AgentActivity {
+  agentId: number;
+  state: AgentActivityState;
+  runningRuns: number;
+  pendingRuns: number;
+  awaitingClientRuns: number;
+  /** Run figlie ancora aperte nate da run dell'agente */
+  activeChildRuns: number;
+  /** Voci pending di «Da confermare» dell'utente nate da run dell'agente */
+  pendingActions: number;
+}
+
 /**
  * awaiting_client: la run aspetta l'esito di un'azione ui dal client (`clientAction`, vedi POST /runs/{id}/client-result). All'avvio del server le run in attesa diventano failed; quelle rimaste nella vecchia pausa per conferma (senza azione) diventano cancelled.
  */

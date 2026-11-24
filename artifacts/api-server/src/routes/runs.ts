@@ -17,6 +17,7 @@ import {
 import { cancelRateLimit } from "../middlewares/rate-limit";
 import { cancelRun } from "../lib/run-executor";
 import { CLIENT_ACTION_MESSAGES, CLIENT_RESULT_MAX_CHARS, submitClientResult } from "../lib/client-actions";
+import { readRunActivity } from "../lib/live/run-activity";
 import { toPublicRun, toPublicRuns, triggerNamesFor } from "./serializers";
 import { parseRequest } from "../middlewares/error-handler";
 
@@ -58,7 +59,11 @@ router.get("/runs/:id", async (req, res) => {
     .orderBy(asc(runsTable.id));
   const names = await triggerNamesFor([run]);
   const triggerName = run.triggerId !== null ? (names.get(run.triggerId) ?? null) : null;
-  res.json(GetRunResponse.parse(toPublicRun(run, { childRunIds: children.map((c) => c.id), triggerName })));
+  // Attività in corso (issue #118): solo mentre la run lavora e la esegue questo processo
+  const activity = run.status === "running" || run.status === "awaiting_client" ? readRunActivity(run.id) : null;
+  res.json(
+    GetRunResponse.parse({ ...toPublicRun(run, { childRunIds: children.map((c) => c.id), triggerName }), activity }),
+  );
 });
 
 router.get("/runs/:id/steps", async (req, res) => {

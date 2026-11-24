@@ -8613,6 +8613,41 @@ components:
           oneOf:
             - $ref: "#/components/schemas/RunClientAction"
             - type: "null"
+        activity:
+          description: >-
+            Cosa sta facendo ora la run (chiamata al modello, tool in esecuzione): solo nel dettaglio (GET /runs/{id}),
+            solo mentre la run è running o awaiting_client e la esegue il processo che risponde; altrimenti null
+          oneOf:
+            - $ref: "#/components/schemas/RunActivity"
+            - type: "null"
+
+    RunActivity:
+      type: object
+      required: [startedAt, items]
+      properties:
+        startedAt:
+          type: string
+          format: date-time
+          description: Inizio dell'esecuzione in questo processo
+        items:
+          type: array
+          description: Attività in corso insieme (al più 20); vuoto tra un passo e l'altro
+          items:
+            $ref: "#/components/schemas/RunActivityItem"
+
+    RunActivityItem:
+      type: object
+      required: [kind, toolName, since]
+      properties:
+        kind:
+          type: string
+          enum: [model, tool]
+        toolName:
+          type: ["string", "null"]
+          description: Nome del tool (null per il modello)
+        since:
+          type: string
+          format: date-time
 
     RunStep:
       type: object

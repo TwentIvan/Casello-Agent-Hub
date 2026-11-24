@@ -1507,6 +1507,31 @@ export interface RunClientResult {
   result?: string | null;
 }
 
+export type RunActivityItemKind = typeof RunActivityItemKind[keyof typeof RunActivityItemKind];
+
+
+export const RunActivityItemKind = {
+  model: 'model',
+  tool: 'tool',
+} as const;
+
+export interface RunActivityItem {
+  kind: RunActivityItemKind;
+  /**
+     * Nome del tool (null per il modello)
+     * @nullable
+     */
+  toolName: string | null;
+  since: string;
+}
+
+export interface RunActivity {
+  /** Inizio dell'esecuzione in questo processo */
+  startedAt: string;
+  /** Attività in corso insieme (al più 20); vuoto tra un passo e l'altro */
+  items: RunActivityItem[];
+}
+
 export interface Run {
   id: number;
   agentId: number;
@@ -1560,6 +1585,8 @@ export interface Run {
   clientTools?: boolean;
   /** Azione ui in attesa del client (solo con status awaiting_client), altrimenti null */
   clientAction?: RunClientAction | null;
+  /** Cosa sta facendo ora la run (chiamata al modello, tool in esecuzione): solo nel dettaglio (GET /runs/{id}), solo mentre la run è running o awaiting_client e la esegue il processo che risponde; altrimenti null */
+  activity?: RunActivity | null;
 }
 
 /**

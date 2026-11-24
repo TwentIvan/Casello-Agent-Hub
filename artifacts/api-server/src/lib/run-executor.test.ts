@@ -30,6 +30,7 @@ import {
   startRun,
   type RunOptions,
 } from "./run-executor";
+import { readRunActivity } from "./live/run-activity";
 import { clearUserToken, getUserToken, setUserToken } from "./user-tokens";
 import { CLIENT_ACTION_MESSAGES, CLIENT_RESULT_HEADER, requestClientAction, submitClientResult } from "./client-actions";
 import { toCatalogTool } from "./tools/catalog";
@@ -941,6 +942,29 @@ describe("annullamento delle run", () => {
     expect(run.status).toBe("cancelled");
     expect(run.errorMessage).toBe(RUN_CANCELLED_MESSAGE);
     expect(llmRequests).toHaveLength(1);
+  });
+});
+
+describe("attività in corso delle run (issue #118)", () => {
+  async function waitFor(cond: () => boolean, ms = 3_000) {
+    const t0 = Date.now();
+    while (!cond()) {
+      if (Date.now() - t0 > ms) throw new Error("timeout nell'attesa");
+      await new Promise((r) => setTimeout(r, 10));
+    }
+  }
+
+  it("mostra il modello e poi il tool in esecuzione; finita la run non c'è più attività", async () => {
+    const id = await seedRun(GET_ITEM);
+    llmReplies = [toolCallReply("get_item", { id: "1" }), textReply("Fatto.")];
+    appDelayMs = 300;
+    const running = startWithToken(id, "t");
+    await waitFor(() => appRequests.length === 1);
+    const activity = readRunActivity(id);
+    expect(activity?.items).toEqual([expect.objectContaining({ kind: "tool", toolName: "get_item" })]);
+    await running;
+    expect((await getRun(id)).status).toBe("succeeded");
+    expect(readRunActivity(id)).toBeNull();
   });
 });
 

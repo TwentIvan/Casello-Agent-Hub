@@ -17,6 +17,7 @@ import { keepFailedOfferFields, mergeUniversal, type DiscoveredProvider, type Mo
 import { ensureProviderRegistry } from "./provider-registry";
 import { PROVIDER_REGISTRY } from "./provider-registry-data";
 import { summarizeOffers, type OfferSummary } from "./summary";
+import { findDeprecatingAgents } from "./agent-deprecations";
 
 // Aggiornamento del catalogo: scarica le fonti, aggiorna `models`, `model_offers` e i provider scoperti,
 // riverifica gli account degli utenti, arricchisce i loro modelli e registra il riepilogo in `catalog_runs`.
@@ -265,10 +266,16 @@ async function executeRefresh(runId: number, fetchImpl: typeof fetch): Promise<v
   const { newProviders, versions } = await writeCatalog({ ...merged, offers }, failed.length > 0, now);
   const accounts = await reverifyAccounts();
   await enrichFromCatalog(db, {});
+  // Un errore qui non fa perdere il resto del riepilogo
+  const agents = await findDeprecatingAgents({ now }).catch((err: unknown) => {
+    logger.warn({ catalogRunId: runId, errName: err instanceof Error ? err.name : "unknown" }, "Agenti con il modello in dismissione non letti");
+    return [];
+  });
   const summary: OfferSummary = {
     ...summarizeOffers(before, offers, (o) => versions.get(o.canonicalKey) ?? ""),
     newProviders,
     accounts,
+    agents,
   };
   await finishRun(runId, {
     status: failures.length ? "partial" : "completed",

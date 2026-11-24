@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 import express, { type RequestHandler } from "express";
 import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { db, pool, aiAccountsTable, aiModelsTable, catalogRunsTable, modelOffersTable, modelsTable, providersTable, usersTable } from "@workspace/db";
+import { db, pool, agentsTable, aiAccountsTable, aiModelsTable, appsTable, catalogRunsTable, modelOffersTable, modelsTable, providersTable, usersTable } from "@workspace/db";
 import { fakeSourcesFetch } from "../../test/fake-sources";
 import { encryptSecret } from "../lib/secrets";
 import { ensureProviderRegistry } from "../lib/catalog/provider-registry";
@@ -82,6 +82,7 @@ afterAll(async () => {
   await waitIdle();
   await close(server);
   await close(fullServer);
+  await pool.query("DELETE FROM apps");
   await pool.query("TRUNCATE users, ai_accounts, catalog_runs, models RESTART IDENTITY CASCADE");
   // L'aggiornamento aggiunge i provider del registro e quelli scoperti: restano solo quelli di oggi
   await pool.query("DELETE FROM providers WHERE slug <> ALL($1)", [TODAY]);
@@ -561,5 +562,87 @@ describe("riepilogo con i provider nuovi", () => {
     const res = await api("GET", "/catalog/status");
     expect(res.status, res.text).toBe(200);
     expect(res.json.latest.summary.accounts).toEqual([]);
+  });
+});
+
+describe("agenti con il modello in dismissione", () => {
+  /** Due utenti, un agente per ciascuno con un modello in dismissione e un modello economico ciascuno. */
+  async function seedDeprecations() {
+    await api("GET", "/catalog/status");
+    const me = await devUserId();
+    const [other] = await db.insert(usersTable).values({ email: "altro@example.com", name: "Altro" }).returning();
+    const [mine, theirs] = await db
+      .insert(aiAccountsTable)
+      .values([
+        { userId: me, name: "Mio", provider: "deepseek", baseUrl: "https://api.deepseek.com/v1", apiKeyEnc: encryptSecret("sk-x"), status: "ok" },
+        { userId: other!.id, name: "Dell'altro", provider: "deepseek", baseUrl: "https://api.deepseek.com/v1", apiKeyEnc: encryptSecret("sk-y"), status: "ok" },
+      ])
+      .returning();
+    const [m] = await db.insert(modelsTable).values({ canonicalKey: "vecchio", author: "A", family: "F", version: "1" }).returning();
+    const [dep, ok] = await db
+      .insert(modelOffersTable)
+      .values([
+        { modelId: m!.id, provider: "deepseek", providerModelId: "vecchio", supportsTools: true, status: "deprecated", deprecationDate: new Date(Date.now() + 5 * 86_400_000) },
+        { modelId: m!.id, provider: "deepseek", providerModelId: "nuovo", supportsTools: true },
+      ])
+      .returning();
+    const [myOld, , theirOld] = await db
+      .insert(aiModelsTable)
+      .values([
+        { accountId: mine!.id, modelId: "vecchio", displayName: "Vecchio mio", offerId: dep!.id, priceInputPerMtok: "1", priceOutputPerMtok: "1" },
+        { accountId: mine!.id, modelId: "nuovo", displayName: "Nuovo mio", offerId: ok!.id, priceInputPerMtok: "0.1", priceOutputPerMtok: "0.2" },
+        { accountId: theirs!.id, modelId: "vecchio", displayName: "Vecchio altrui", offerId: dep!.id, priceInputPerMtok: "1", priceOutputPerMtok: "1" },
+        { accountId: theirs!.id, modelId: "nuovo", displayName: "Nuovo altrui", offerId: ok!.id, priceInputPerMtok: "0.1", priceOutputPerMtok: "0.2" },
+      ])
+      .returning();
+    const [app] = await db.insert(appsTable).values({ name: "App", slug: "app-dep", description: "x", baseUrl: "http://app.example" }).returning();
+    const [a1, a2] = await db
+      .insert(agentsTable)
+      .values([
+        { appId: app!.id, name: "Mio agente", aiModelId: myOld!.id },
+        { appId: app!.id, name: "Agente altrui", aiModelId: theirOld!.id },
+      ])
+      .returning();
+    return { me, myAgent: a1!, theirAgent: a2! };
+  }
+
+  beforeEach(async () => {
+    await pool.query("DELETE FROM apps");
+  });
+
+  it("l'aggiornamento elenca nel riepilogo solo gli agenti con il modello dell'utente, con il sostituto", async () => {
+    const s = await seedDeprecations();
+    await api("POST", "/catalog/refresh");
+    await waitIdle();
+    const res = await api("GET", "/catalog/status");
+    expect(res.status, res.text).toBe(200);
+    expect(res.json.latest.summary.agents).toEqual([
+      expect.objectContaining({
+        agentId: s.myAgent.id,
+        agentName: "Mio agente",
+        modelName: "Vecchio mio",
+        retired: false,
+        replacement: expect.objectContaining({ name: "Nuovo mio", accountName: "Mio", priceInput: 0.1, priceOutput: 0.2 }),
+      }),
+    ]);
+    expect(res.text).not.toContain("ownerUserId");
+    expect(res.text).not.toContain("Agente altrui");
+  });
+
+  it("un riepilogo vecchio senza agents dà una lista vuota", async () => {
+    const base = { firstRun: false, added: [], retired: [], deprecating: [], priceChanged: [], newProviders: [], accounts: [] };
+    await db.insert(catalogRunsTable).values({ trigger: "scheduled", status: "completed", finishedAt: new Date(), summary: base });
+    const res = await api("GET", "/catalog/status");
+    expect(res.json.latest.summary.agents).toEqual([]);
+  });
+
+  it("GET /catalog/agent-deprecations: tutti gli agenti, sostituto tra i modelli dell'utente", async () => {
+    const s = await seedDeprecations();
+    const res = await api("GET", "/catalog/agent-deprecations");
+    expect(res.status, res.text).toBe(200);
+    const items = res.json.items as { agentId: number; replacement: { name: string } | null }[];
+    expect(items.map((i) => i.agentId).sort()).toEqual([s.myAgent.id, s.theirAgent.id].sort());
+    expect(items.map((i) => i.replacement?.name)).toEqual(["Nuovo mio", "Nuovo mio"]);
+    expect(res.text).not.toContain("ownerUserId");
   });
 });

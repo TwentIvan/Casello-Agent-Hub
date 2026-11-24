@@ -1,3 +1,4 @@
+import type { AgentDeprecation } from "./agent-deprecations";
 import type { DiscoveredProvider, OfferRecord } from "./merge";
 
 /** Una novità su un'offerta: `modelId` è l'id presso il provider, `version` quella del modello. */
@@ -22,6 +23,8 @@ export interface OfferSummary {
   newProviders: DiscoveredProvider[];
   /** Modelli scoperti prima e non più elencati, per account verificato. */
   accounts: { accountId: number; userId: number; accountName: string; missing: string[] }[];
+  /** Agenti con il modello ritirato o in dismissione entro 30 giorni, con il sostituto proposto (per proprietario del modello). */
+  agents: AgentDeprecation[];
 }
 
 /**
@@ -33,10 +36,10 @@ export function summarizeOffers(
   before: OfferRecord[],
   after: OfferRecord[],
   versionOf: (offer: OfferRecord) => string,
-): Omit<OfferSummary, "accounts" | "newProviders"> {
+): Omit<OfferSummary, "accounts" | "newProviders" | "agents"> {
   const key = (r: OfferRecord) => `${r.provider}\u0000${r.providerModelId}`;
   const ch = (r: OfferRecord): OfferChange => ({ provider: r.provider, modelId: r.providerModelId, version: versionOf(r) });
-  const out: Omit<OfferSummary, "accounts" | "newProviders"> = { firstRun: before.length === 0, added: [], retired: [], deprecating: [], priceChanged: [] };
+  const out: Omit<OfferSummary, "accounts" | "newProviders" | "agents"> = { firstRun: before.length === 0, added: [], retired: [], deprecating: [], priceChanged: [] };
   if (out.firstRun) return out;
 
   const prev = new Map(before.map((r) => [key(r), r]));

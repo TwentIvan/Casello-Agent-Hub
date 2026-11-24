@@ -28,6 +28,7 @@ import type {
   AgentActivity,
   AgentInput,
   AgentModelAssignments,
+  AgentModelDeprecationList,
   AgentModelEvaluation,
   AgentSkill,
   AgentToolsInput,
@@ -15072,6 +15073,84 @@ export function useGetCatalogStatus<TData = Awaited<ReturnType<typeof getCatalog
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getGetCatalogStatusQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListAgentModelDeprecationsUrl = () => {
+
+
+
+
+  return `/api/catalog/agent-deprecations`
+}
+
+/**
+ * Agenti il cui modello è ritirato o ha la data di dismissione entro 30 giorni, con il sostituto più economico con strumenti tra i modelli degli account dell'utente corrente (null se non ce n'è uno). Solo letture.
+ * @summary Agenti con il modello in dismissione
+ */
+export const listAgentModelDeprecations = async ( options?: RequestInit): Promise<AgentModelDeprecationList> => {
+
+  return customFetch<AgentModelDeprecationList>(getListAgentModelDeprecationsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAgentModelDeprecationsQueryKey = () => {
+    return [
+    `/api/catalog/agent-deprecations`
+    ] as const;
+    }
+
+
+export const getListAgentModelDeprecationsQueryOptions = <TData = Awaited<ReturnType<typeof listAgentModelDeprecations>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAgentModelDeprecations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAgentModelDeprecationsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAgentModelDeprecations>>> = ({ signal }) => listAgentModelDeprecations({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAgentModelDeprecations>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAgentModelDeprecationsQueryResult = NonNullable<Awaited<ReturnType<typeof listAgentModelDeprecations>>>
+export type ListAgentModelDeprecationsQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Agenti con il modello in dismissione
+ */
+
+export function useListAgentModelDeprecations<TData = Awaited<ReturnType<typeof listAgentModelDeprecations>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAgentModelDeprecations>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAgentModelDeprecationsQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

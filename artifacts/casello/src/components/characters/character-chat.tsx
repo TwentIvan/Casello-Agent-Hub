@@ -23,6 +23,8 @@ import { sendActions, sendModeOf, type SendAction } from "./chat-send";
 import { ChatToolbar } from "./chat-toolbar";
 import { TurnProgressView } from "./turn-progress-view";
 import { NewConversationDialog } from "./new-conversation-dialog";
+import { AttachButton, PendingAttachments, usePendingAttachments } from "./chat-attachments";
+import { attachmentsBlockSend } from "@/lib/chat-attachments";
 
 interface CharacterChatProps {
   target: ChatTarget;
@@ -130,6 +132,9 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
   // consegne con la domanda già scritta): se ne crea una nuova solo quando l'elenco è vuoto
   const sendTargetId = list ? effectiveId : (data?.id ?? null);
   const trimmed = text.trim();
+  // Allegati (immagini e PDF) del prossimo messaggio: solo dove l'adattatore li ammette, mandati a turno fermo
+  const attachments = usePendingAttachments(adapter.attachmentsKind, sendTargetId);
+  const attachmentIds = attachments.pending.map((a) => a.id);
   // Pulsanti mostrati (a testo pieno) e quelli attivi adesso: durante il turno «Invia subito» e «Accoda»
   const interruptible = adapter.stop !== undefined;
   // Senza «Ferma» (Responsabile di Botcave) durante il turno resta visibile l'invio, disattivato
@@ -140,8 +145,17 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
     awaitingRead === null &&
     !(list?.isLoading ?? false) &&
     text.length <= maxChars &&
+    !attachments.uploading &&
+    !attachmentsBlockSend(attachmentIds.length, running) &&
     (sendTargetId !== null || list !== null);
   const canSend = (action: SendAction) => sendReady && activeActions.includes(action);
+  // Senza conversazioni la prima si crea con il primo messaggio o il primo allegato (modello del personaggio)
+  const ensureConversation = async (): Promise<number> => {
+    if (sendTargetId !== null) return sendTargetId;
+    const id = await adapter.create(null);
+    setSelectedId(id);
+    return id;
+  };
   const submit = (action: SendAction) => {
     if (!canSend(action)) return;
     const mode = sendModeOf(action);
@@ -154,7 +168,9 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
         setSelectedId(id);
       }
       const before = id === data?.id ? data.messages.length : 0;
-      await adapter.send(id, trimmed, mode);
+      const sentAttachments = attachmentIds;
+      await adapter.send(id, trimmed, mode, sentAttachments.length > 0 ? sentAttachments : undefined);
+      if (sentAttachments.length > 0) attachments.clear();
       // Durante un turno il testo va in coda: lo mostra la conversazione riletta, l'invio resta libero
       if (mode === "normal") setAwaitingRead({ messages: before });
       // La casella resta attiva durante l'invio: si svuota solo se nel frattempo non si è scritto altro
@@ -331,6 +347,7 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
               onHandoff={(p) => void openHandoff(p)}
               instructionProposals={instructionGroups}
               onInstructionDecided={instructions.refresh}
+              attachmentsDownloadable={env.surface !== "embed"}
             />
           )}
           {running && (
@@ -387,9 +404,23 @@ function CharacterChatInner({ target, draft, hasUnsavedChanges, layout = "sheet"
               placeholder={texts.placeholder}
               aria-label={`Messaggio per ${name}`}
             />
+            {attachments.enabled && (
+              <PendingAttachments items={attachments.pending} onRemove={attachments.remove} disabled={busy === "send"} />
+            )}
+            {attachmentsBlockSend(attachmentIds.length, running) && (
+              <p className="text-xs text-ink-muted">Gli allegati partono a risposta finita: aspetta la fine del turno.</p>
+            )}
             <div className="flex items-center justify-between gap-2">
-              <span className={cn("font-mono text-xs tabular-nums text-ink-muted", text.length > maxChars && "text-destructive")}>
-                {text.length.toLocaleString("it-IT")} / {maxChars.toLocaleString("it-IT")}
+              <span className="flex items-center gap-2">
+                {attachments.enabled && (
+                  <AttachButton
+                    disabled={busy !== null || attachments.uploading}
+                    onFiles={(files) => void attachments.add(files, ensureConversation)}
+                  />
+                )}
+                <span className={cn("font-mono text-xs tabular-nums text-ink-muted", text.length > maxChars && "text-destructive")}>
+                  {text.length.toLocaleString("it-IT")} / {maxChars.toLocaleString("it-IT")}
+                </span>
               </span>
               <div className="flex flex-wrap items-center justify-end gap-2">
                 {shownActions.includes("queue") && (

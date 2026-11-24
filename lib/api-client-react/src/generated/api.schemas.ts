@@ -2564,6 +2564,30 @@ export const PlanMessageRole = {
   assistant: 'assistant',
 } as const;
 
+export type ChatAttachmentContentType = typeof ChatAttachmentContentType[keyof typeof ChatAttachmentContentType];
+
+
+export const ChatAttachmentContentType = {
+  'image/png': 'image/png',
+  'image/jpeg': 'image/jpeg',
+  'image/webp': 'image/webp',
+  'application/pdf': 'application/pdf',
+} as const;
+
+export interface ChatAttachment {
+  id: number;
+  name: string;
+  contentType: ChatAttachmentContentType;
+  sizeBytes: number;
+  sha256: string;
+  /**
+     * Messaggio dell'utente con cui è partito; null = non ancora mandato
+     * @nullable
+     */
+  messageId: number | null;
+  createdAt: string;
+}
+
 export interface PlanMessage {
   id: number;
   role: PlanMessageRole;
@@ -2572,6 +2596,8 @@ export interface PlanMessage {
   /** Messaggio del bot che riporta un errore */
   error: boolean;
   createdAt: string;
+  /** Allegati mandati con il messaggio (solo messaggi dell'utente; assente = nessuno) */
+  attachments?: ChatAttachment[];
 }
 
 export type PlanProposalKind = typeof PlanProposalKind[keyof typeof PlanProposalKind];
@@ -2752,6 +2778,11 @@ export interface PlanMessageCreate {
      */
   content: string;
   mode?: ChatSendMode;
+  /**
+     * Allegati caricati con `POST /chat-attachments` e non ancora mandati (immagini e PDF). Il modello della conversazione deve leggerli: Claude Code (nodo) → 409, immagini senza visione → 409, PDF fuori da OpenAI e OpenRouter → 409. Con un turno in corso → 409 (niente coda con gli allegati).
+     * @maxItems 5
+     */
+  attachmentIds?: number[];
 }
 
 export interface PlanIssuesRequest {
@@ -2834,6 +2865,8 @@ export interface TeamChatMessage {
   content: string;
   error: boolean;
   createdAt: string;
+  /** Allegati mandati con il messaggio (solo messaggi dell'utente; assente = nessuno) */
+  attachments?: ChatAttachment[];
 }
 
 export type TeamChatProposalKind = typeof TeamChatProposalKind[keyof typeof TeamChatProposalKind];
@@ -2909,6 +2942,11 @@ export interface TeamChatMessageCreate {
      */
   content: string;
   mode?: ChatSendMode;
+  /**
+     * Allegati caricati con `POST /chat-attachments` e non ancora mandati (immagini e PDF). Il modello della conversazione deve leggerli: Claude Code (nodo) → 409, immagini senza visione → 409, PDF fuori da OpenAI e OpenRouter → 409. Con un turno in corso → 409 (niente coda con gli allegati).
+     * @maxItems 5
+     */
+  attachmentIds?: number[];
 }
 
 export type TeamChatProposalDecisionAction = typeof TeamChatProposalDecisionAction[keyof typeof TeamChatProposalDecisionAction];
@@ -3218,6 +3256,8 @@ export interface CharacterMessage {
   error: boolean;
   pageContext: CharacterPageContext | null;
   createdAt: string;
+  /** Allegati mandati con il messaggio (solo messaggi dell'utente; assente = nessuno) */
+  attachments?: ChatAttachment[];
 }
 
 /**
@@ -3305,6 +3345,11 @@ export interface CharacterMessageCreate {
   content: string;
   mode?: ChatSendMode;
   pageContext?: CharacterPageContext;
+  /**
+     * Allegati caricati con `POST /chat-attachments` e non ancora mandati (immagini e PDF). Il modello della conversazione deve leggerli: Claude Code (nodo) → 409, immagini senza visione → 409, PDF fuori da OpenAI e OpenRouter → 409. Con un turno in corso → 409 (niente coda con gli allegati).
+     * @maxItems 5
+     */
+  attachmentIds?: number[];
 }
 
 export type CharacterProposalDecisionAction = typeof CharacterProposalDecisionAction[keyof typeof CharacterProposalDecisionAction];
@@ -5080,6 +5125,18 @@ export interface TeamInstanceSave {
   bugTeam?: boolean;
 }
 
+/**
+ * Chat dell'allegato (conversazioni dei personaggi, chat del piano, chat di squadra)
+ */
+export type ChatAttachmentKind = typeof ChatAttachmentKind[keyof typeof ChatAttachmentKind];
+
+
+export const ChatAttachmentKind = {
+  character: 'character',
+  plan_chat: 'plan_chat',
+  team_chat: 'team_chat',
+} as const;
+
 export interface TeamAttachment {
   id: number;
   name: string;
@@ -6125,6 +6182,14 @@ export type ListCatalogProvidersParams = {
  */
 q?: string;
 status?: AiProviderStatus;
+};
+
+export type UploadChatAttachmentParams = {
+conversationKind: ChatAttachmentKind;
+/**
+ * @minimum 1
+ */
+conversationId: number;
 };
 
 export type ListCharacterInstructionProposalsParams = {

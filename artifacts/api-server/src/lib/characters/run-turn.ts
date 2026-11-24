@@ -29,6 +29,8 @@ import { personalInstructionsBlock, withPersonalInstructions } from "./personal-
 import { MEMORY_TOOLS, MEMORY_TOOL_NAMES, runMemoryTool } from "../memory/tools";
 import { EMPTY_REPLY_MESSAGE, INTERRUPTED_TURN_MESSAGE, TurnBusyError } from "../plan-chat/run-turn";
 import { runChatTurn } from "../node-turns/chat-turn";
+import { attachmentNamesByMessage, bindChatAttachments, turnAttachments } from "../chat-attachments/service";
+import { historyNote, withAttachmentMessage } from "../chat-attachments/formats";
 import { CODE_INSTRUCTIONS_GENERAL, CODE_TOOLS, CODE_TOOL_NAMES, CodeToolRunner } from "../code-reader/tools";
 import { CODE_TURN_LIMITS, STOPPED_TURN_MESSAGE } from "../plan-chat/turn";
 import { drainQueued, isTurnOpen } from "../chat-turns/control";
@@ -200,7 +202,12 @@ export function buildCharacterMessages(input: CharacterContextInput): ChatComple
  * volta per conversazione (`TurnBusyError`). Conversazione inesistente → 404; messaggio vuoto o troppo lungo → 400;
  * argomento che non si risolve più → 409 «argomento eliminato». Il limite per minuto lo applica la route.
  */
-export async function startCharacterTurn(conversationId: number, content: string, page: PageContext | null): Promise<CharacterMessage> {
+export async function startCharacterTurn(
+  conversationId: number,
+  content: string,
+  page: PageContext | null,
+  attachmentIds: number[] = [],
+): Promise<CharacterMessage> {
   if (content.trim() === "") throw new CharacterError(400, CHARACTER_MESSAGES.empty);
   if (content.length > CHARACTER_MESSAGE_MAX_CHARS) throw new CharacterError(400, CHARACTER_MESSAGES.tooLong);
   // `host` solo con `page: "host"` e viceversa
@@ -228,14 +235,19 @@ export async function startCharacterTurn(conversationId: number, content: string
     const pageContext: PageContext | null = page
       ? { page: page.page, ...(page.id !== undefined ? { id: page.id } : {}), ...(page.host !== undefined ? { host: page.host } : {}) }
       : null;
-    const [userMessage] = await db.insert(characterMessagesTable).values({ conversationId, role: "user", content, pageContext }).returning();
+    // Messaggio e legame con gli allegati insieme: un allegato non più libero annulla entrambi
+    const userMessage = await db.transaction(async (tx) => {
+      const [row] = await tx.insert(characterMessagesTable).values({ conversationId, role: "user", content, pageContext }).returning();
+      await bindChatAttachments(tx, "character", conversationId, row!.id, attachmentIds);
+      return row!;
+    });
     if (n === 0) {
       const title = sliceChars(content.replace(/\s+/g, " ").trim(), TITLE_MAX_CHARS);
       await db.update(characterConversationsTable).set({ title }).where(eq(characterConversationsTable.id, conversationId));
     }
     const [assistant] = await db.insert(characterMessagesTable).values({ conversationId, role: "assistant", content: "" }).returning();
     void executeCharacterTurn(conversationId, assistant!.id);
-    return userMessage!;
+    return userMessage;
   } catch (err) {
     // Il turno non è partito: la conversazione non deve restare bloccata
     await db
@@ -280,12 +292,13 @@ async function loadHistory(
     .where(eq(characterProposalsTable.conversationId, conversationId))
     .orderBy(asc(characterProposalsTable.id));
   const instructionStatuses = await loadInstructionProposalStatuses("character", conversationId);
+  const attachmentNames = await attachmentNamesByMessage("character", conversationId);
   const kept = messages.filter((m) => m.id < assistantMessageId && !(m.role === "assistant" && m.content === ""));
   const last = kept.at(-1);
   if (last?.role !== "user") throw new Error("messaggio dell'utente mancante");
   const history: CharacterHistoryMessage[] = kept.slice(0, -1).map((m) => ({
     role: m.role,
-    content: m.content,
+    content: m.content + historyNote(attachmentNames.get(m.id) ?? []),
     proposals: proposals.filter((p) => p.messageId === m.id).map((p) => ({ kind: p.kind, status: p.status })),
     instructionProposals: instructionStatuses.get(m.id) ?? [],
   }));
@@ -434,7 +447,7 @@ async function executeCharacterTurnInner(conversationId: number, assistantMessag
         // Nome del personaggio per l'App: Alfred dall'App della pagina ospite (`host.app`, per l'embed verificata dalla route
         // sul token), Lucius dall'App dell'argomento; senza App resta il nome canonico
         const displayName = await botNameFor(character, page, architectureApp);
-        const messages = buildCharacterMessages({
+        const contextMessages = buildCharacterMessages({
           character,
           ...(displayName !== undefined ? { displayName } : {}),
           subjectData,
@@ -446,6 +459,11 @@ async function executeCharacterTurnInner(conversationId: number, assistantMessag
           ...(extraInstructions ? { extraInstructions } : {}),
           ...(bestPractice ? { bestPracticeData: await bestPracticeData(conv.userId, architectureApp?.id ?? null) } : {}),
         });
+        // Allegati dell'ultimo messaggio dell'utente: solo in questo turno (issue #120)
+        const messages = withAttachmentMessage(
+          contextMessages,
+          await turnAttachments("character", conversationId, assistantMessageId, "character_messages"),
+        );
         const resolved = await resolveModel(conv.aiModelId, { userId: conv.userId, mustOwn: true });
         const ctx = createTurnContext({ userId: conv.userId, conversationId, messageId: assistantMessageId, subjectId: conv.subjectId, page });
         // Una proposta di istruzioni personali per turno (Alfred scritto e Lucius)

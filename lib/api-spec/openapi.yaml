@@ -5912,6 +5912,91 @@ paths:
         "429":
           $ref: "#/components/responses/TooManyRequests"
 
+  /chat-attachments:
+    post:
+      operationId: uploadChatAttachment
+      tags: [characters]
+      summary: Carica un allegato in una chat (immagine o PDF)
+      description: >-
+        Allegato per il prossimo messaggio di una conversazione dell'utente (personaggi, piano o squadra; quella di un altro
+        utente è 404, una conversazione archiviata 409). Il corpo è il file grezzo, il nome nell'header `X-Attachment-Name`
+        (anche codificato con encodeURIComponent; senza `/`, `\`, `..`, max 200 caratteri). Formati riconosciuti dai primi
+        byte: PNG, JPEG, WebP e PDF (altro → 400). Al massimo 10 MB a file e 50 MB per conversazione (413). Si manda con
+        `attachmentIds` nel messaggio; un allegato non mandato si cancella dopo un giorno. 20 caricamenti al minuto per utente.
+      parameters:
+        - name: conversationKind
+          in: query
+          required: true
+          schema:
+            $ref: "#/components/schemas/ChatAttachmentKind"
+        - name: conversationId
+          in: query
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+        - name: X-Attachment-Name
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "201":
+          description: Allegato salvato, non ancora mandato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChatAttachment"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+
+  /chat-attachments/{id}:
+    get:
+      operationId: getChatAttachment
+      tags: [characters]
+      summary: Scarica un allegato di una chat dell'utente
+      description: >-
+        Risponde con `Content-Disposition: attachment` e `X-Content-Type-Options: nosniff`. Allegato di un altro utente → 404.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Contenuto dell'allegato
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteChatAttachment
+      tags: [characters]
+      summary: Elimina un allegato non ancora mandato
+      description: Un allegato già mandato resta con il suo messaggio (409); sparisce con la conversazione.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Allegato eliminato
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
   /character-instruction-proposals:
     get:
       operationId: listCharacterInstructionProposals
@@ -9818,6 +9903,11 @@ components:
         createdAt:
           type: string
           format: date-time
+        attachments:
+          type: array
+          description: Allegati mandati con il messaggio (solo messaggi dell'utente; assente = nessuno)
+          items:
+            $ref: "#/components/schemas/ChatAttachment"
 
     PlanProposal:
       type: object
@@ -10025,6 +10115,15 @@ components:
           maxLength: 8000
         mode:
           $ref: "#/components/schemas/ChatSendMode"
+        attachmentIds:
+          type: array
+          maxItems: 5
+          description: >-
+            Allegati caricati con `POST /chat-attachments` e non ancora mandati (immagini e PDF). Il modello della conversazione
+            deve leggerli: Claude Code (nodo) → 409, immagini senza visione → 409, PDF fuori da OpenAI e OpenRouter → 409. Con un
+            turno in corso → 409 (niente coda con gli allegati).
+          items:
+            type: integer
 
     PlanIssuesRequest:
       type: object
@@ -10137,6 +10236,11 @@ components:
         createdAt:
           type: string
           format: date-time
+        attachments:
+          type: array
+          description: Allegati mandati con il messaggio (solo messaggi dell'utente; assente = nessuno)
+          items:
+            $ref: "#/components/schemas/ChatAttachment"
 
     TeamChatProposal:
       type: object
@@ -10222,6 +10326,15 @@ components:
           maxLength: 8000
         mode:
           $ref: "#/components/schemas/ChatSendMode"
+        attachmentIds:
+          type: array
+          maxItems: 5
+          description: >-
+            Allegati caricati con `POST /chat-attachments` e non ancora mandati (immagini e PDF). Il modello della conversazione
+            deve leggerli: Claude Code (nodo) → 409, immagini senza visione → 409, PDF fuori da OpenAI e OpenRouter → 409. Con un
+            turno in corso → 409 (niente coda con gli allegati).
+          items:
+            type: integer
 
     TeamChatProposalDecision:
       type: object
@@ -10530,6 +10643,11 @@ components:
         createdAt:
           type: string
           format: date-time
+        attachments:
+          type: array
+          description: Allegati mandati con il messaggio (solo messaggi dell'utente; assente = nessuno)
+          items:
+            $ref: "#/components/schemas/ChatAttachment"
 
     CharacterProposal:
       type: object
@@ -10624,6 +10742,15 @@ components:
           $ref: "#/components/schemas/ChatSendMode"
         pageContext:
           $ref: "#/components/schemas/CharacterPageContext"
+        attachmentIds:
+          type: array
+          maxItems: 5
+          description: >-
+            Allegati caricati con `POST /chat-attachments` e non ancora mandati (immagini e PDF). Il modello della conversazione
+            deve leggerli: Claude Code (nodo) → 409, immagini senza visione → 409, PDF fuori da OpenAI e OpenRouter → 409. Con un
+            turno in corso → 409 (niente coda con gli allegati).
+          items:
+            type: integer
 
     CharacterProposalDecision:
       type: object
@@ -12667,6 +12794,33 @@ components:
           description: >-
             Squadra per i bug dell'App di riferimento: omesso = invariato. Un'altra squadra non chiusa già designata per la
             stessa App → 409 «l'App ha già una squadra per i bug: <nome>».
+
+    ChatAttachmentKind:
+      type: string
+      enum: [character, plan_chat, team_chat]
+      description: Chat dell'allegato (conversazioni dei personaggi, chat del piano, chat di squadra)
+
+    ChatAttachment:
+      type: object
+      required: [id, name, contentType, sizeBytes, sha256, messageId, createdAt]
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        contentType:
+          type: string
+          enum: [image/png, image/jpeg, image/webp, application/pdf]
+        sizeBytes:
+          type: integer
+        sha256:
+          type: string
+        messageId:
+          type: ["integer", "null"]
+          description: Messaggio dell'utente con cui è partito; null = non ancora mandato
+        createdAt:
+          type: string
+          format: date-time
 
     TeamAttachment:
       type: object

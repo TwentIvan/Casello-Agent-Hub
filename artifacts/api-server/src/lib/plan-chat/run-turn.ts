@@ -57,6 +57,8 @@ import { ARCHITECTURE_CHAT_TOOL, isArchitectureTool, runArchitectureChatTool } f
 import { BEST_PRACTICE_TOOLS, BestPracticeSearcher, isBestPracticeTool } from "../best-practice/tool";
 import { bestPracticeData, parseToolArgs } from "../best-practice/context";
 import { resolveBotNames } from "../apps/bot-names";
+import { attachmentNamesByMessage, bindChatAttachments, turnAttachments } from "../chat-attachments/service";
+import { historyNote, withAttachmentMessage } from "../chat-attachments/formats";
 
 export const PLAN_MESSAGE_MAX_CHARS = 8_000;
 export const INTERRUPTED_TURN_MESSAGE = "Turno interrotto dal riavvio di Botcave: riscrivi il messaggio.";
@@ -73,8 +75,11 @@ export class TurnBusyError extends Error {
   }
 }
 
-/** Salva il messaggio dell'utente e avvia il turno in background. Un solo turno alla volta per conversazione. */
-export async function startPlanTurn(conversationId: number, content: string): Promise<PlanMessage> {
+/**
+ * Salva il messaggio dell'utente (con i suoi allegati, già controllati dalla route) e avvia il turno in background. Un
+ * solo turno alla volta per conversazione.
+ */
+export async function startPlanTurn(conversationId: number, content: string, attachmentIds: number[] = []): Promise<PlanMessage> {
   const [conv] = await db
     .update(planConversationsTable)
     .set({ turnStatus: "running", updatedAt: new Date() })
@@ -87,10 +92,12 @@ export async function startPlanTurn(conversationId: number, content: string): Pr
       .select({ n: sql<number>`count(*)::int` })
       .from(planMessagesTable)
       .where(and(eq(planMessagesTable.conversationId, conversationId), isNull(planMessagesTable.queuedAt)));
-    const [userMessage] = await db
-      .insert(planMessagesTable)
-      .values({ conversationId, role: "user", content })
-      .returning();
+    // Messaggio e legame con gli allegati insieme: un allegato non più libero annulla entrambi
+    const userMessage = await db.transaction(async (tx) => {
+      const [row] = await tx.insert(planMessagesTable).values({ conversationId, role: "user", content }).returning();
+      await bindChatAttachments(tx, "plan_chat", conversationId, row!.id, attachmentIds);
+      return row!;
+    });
     if (n === 0) {
       const title = sliceChars(content.replace(/\s+/g, " ").trim(), TITLE_MAX_CHARS);
       await db.update(planConversationsTable).set({ title }).where(eq(planConversationsTable.id, conversationId));
@@ -100,7 +107,7 @@ export async function startPlanTurn(conversationId: number, content: string): Pr
       .values({ conversationId, role: "assistant", content: "" })
       .returning();
     void executePlanTurn(conversationId, assistant!.id);
-    return userMessage!;
+    return userMessage;
   } catch (err) {
     // Il turno non è partito: la conversazione non deve restare bloccata
     await db
@@ -168,6 +175,7 @@ async function loadHistory(conversationId: number, assistantMessageId: number): 
     .where(eq(planProposalsTable.conversationId, conversationId))
     .orderBy(asc(planProposalsTable.id));
   const instructionStatuses = await loadInstructionProposalStatuses("plan_chat", conversationId);
+  const attachmentNames = await attachmentNamesByMessage("plan_chat", conversationId);
   const targetIds = proposals.filter((p) => p.payload === null && p.targetItemId !== null).map((p) => p.targetItemId!);
   const targets = targetIds.length > 0 ? await db.select().from(analysisItemsTable).where(inArray(analysisItemsTable.id, targetIds)) : [];
   const targetById = new Map(targets.map((t) => [t.id, t]));
@@ -187,7 +195,7 @@ async function loadHistory(conversationId: number, assistantMessageId: number): 
     .filter((m) => m.id !== assistantMessageId && !(m.role === "assistant" && m.content === ""))
     .map((m) => ({
       role: m.role,
-      content: m.content,
+      content: m.content + historyNote(attachmentNames.get(m.id) ?? []),
       proposals: proposals
         .filter((p) => p.messageId === m.id)
         .map((p): HistoryProposal => ({ kind: p.kind as HistoryProposal["kind"], title: titleOf(p), status: p.status })),
@@ -269,7 +277,7 @@ async function executePlanTurnInner(conversationId: number, assistantMessageId: 
         });
       }
       const codeInfo = await codeAvailability(conv.userId, app);
-      const messages = buildPlanMessages({
+      const contextMessages = buildPlanMessages({
         app: {
           name: app.name,
           slug: app.slug,
@@ -289,6 +297,11 @@ async function executePlanTurnInner(conversationId: number, assistantMessageId: 
         // Il valore dell'interruttore si legge all'inizio del turno
         ...(conv.bestPractice ? { bestPractice: { data: await bestPracticeData(conv.userId, app.id) } } : {}),
       });
+      // Allegati dell'ultimo messaggio dell'utente: solo in questo turno (issue #120)
+      const messages = withAttachmentMessage(
+        contextMessages,
+        await turnAttachments("plan_chat", conversationId, assistantMessageId, "plan_messages"),
+      );
 
       const resolved = await resolveModel(conv.aiModelId, { userId: conv.userId, mustOwn: true });
       const runner = new PlanToolRunner(

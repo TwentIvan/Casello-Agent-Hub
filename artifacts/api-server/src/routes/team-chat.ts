@@ -46,6 +46,8 @@ import { loadTeamSnapshot } from "../lib/team-chat/snapshot";
 import { INSTANCE_MESSAGES, InstanceError, getInstance } from "../lib/teams/instances";
 import { TeamRuleError } from "../lib/teams/rules";
 import { consumeTeamChatMessage, consumeTurnStop } from "../middlewares/rate-limit";
+import { attachmentDecorator, sendChatMessageWithAttachments } from "../lib/chat-attachments/send";
+import { ChatAttachmentError, checkAttachmentsForSend } from "../lib/chat-attachments/service";
 import { parseRequest } from "../middlewares/error-handler";
 import { toNumberOrNull } from "./serializers";
 
@@ -94,7 +96,7 @@ async function guarded(res: Response, run: () => Promise<void>): Promise<void> {
   try {
     await run();
   } catch (err) {
-    if (!(err instanceof TeamRuleError) && !(err instanceof InstanceError) && !(err instanceof TeamChatError)) throw err;
+    if (!(err instanceof TeamRuleError) && !(err instanceof InstanceError) && !(err instanceof TeamChatError) && !(err instanceof ChatAttachmentError)) throw err;
     res.status(err.status).json({ error: err.message });
   }
 }
@@ -168,10 +170,11 @@ export function createTeamChatRouter(): IRouter {
     const proposals = await db.select().from(teamChatProposalsTable).where(eq(teamChatProposalsTable.conversationId, id)).orderBy(asc(teamChatProposalsTable.id));
     await guarded(res, async () => {
       const team = proposals.length > 0 ? await loadTeamSnapshot(conv.teamInstanceId) : { roles: [], localSkills: [] };
+      const withAttachments = await attachmentDecorator("team_chat", id, messages.map((m) => m.id));
       res.json(
         GetTeamChatConversationResponse.parse({
           ...toPublicConversation(conv),
-          messages: messages.map(toPublicMessage),
+          messages: messages.map((m) => withAttachments(toPublicMessage(m))),
           progress: conv.turnStatus === "running" ? readTurnProgress("team_chat", id) : null,
           queuedMessage,
           proposals: proposals.map((p) => {
@@ -242,10 +245,17 @@ export function createTeamChatRouter(): IRouter {
       // Squadra chiusa: 409 anche per un messaggio che andrebbe in coda
       const instance = await getInstance(conv.teamInstanceId);
       if (instance.status === "closed") throw new InstanceError(409, INSTANCE_MESSAGES.closed);
+      const attachmentIds = body.attachmentIds ?? [];
+      // Allegati: della conversazione, non ancora mandati e leggibili dal modello della conversazione (issue #120)
+      await checkAttachmentsForSend(userId, "team_chat", id, attachmentIds, conv.aiModelId);
       try {
-        const outcome = await sendChatMessage(TEAM_CHAT_SPEC, id, content, null, body.mode ?? "normal", () => startTeamChatTurn(id, content));
+        const outcome = await sendChatMessageWithAttachments(TEAM_CHAT_SPEC, id, content, null, body.mode ?? "normal", attachmentIds, (ids) =>
+          startTeamChatTurn(id, content, ids),
+        );
         const message =
-          outcome.kind === "started" ? toPublicMessage(outcome.message) : { ...outcome.queued, role: "user" as const, error: false };
+          outcome.kind === "started"
+            ? (await attachmentDecorator("team_chat", id, [outcome.message.id]))(toPublicMessage(outcome.message))
+            : { ...outcome.queued, role: "user" as const, error: false };
         res.status(202).json(SendTeamChatMessageResponse.parse(message));
       } catch (err) {
         if (!(err instanceof TurnBusyError)) throw err;

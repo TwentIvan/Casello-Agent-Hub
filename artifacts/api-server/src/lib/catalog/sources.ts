@@ -45,6 +45,8 @@ export interface SourceEntry {
   mode: ModelMode;
   supportsVision: boolean | null;
   supportsReasoning: boolean | null;
+  /** Accetta PDF in ingresso (OpenRouter: modalità `file`; LiteLLM: `supports_pdf_input`); assente o null = non noto. */
+  supportsPdf?: boolean | null;
 }
 
 const SOURCE_LABELS: Record<SourceName, string> = { openrouter: "OpenRouter", litellm: "LiteLLM" };
@@ -119,6 +121,7 @@ export async function fetchOpenRouterSource(fetchImpl: typeof fetch = fetch): Pr
       mode: "chat",
       supportsVision: Array.isArray(inputs) ? inputs.includes("image") : null,
       supportsReasoning: Array.isArray(params) ? params.includes("reasoning") : null,
+      supportsPdf: Array.isArray(inputs) ? inputs.includes("file") : null,
     });
   }
   return entries;
@@ -148,6 +151,7 @@ export async function fetchLiteLlmSource(fetchImpl: typeof fetch = fetch): Promi
     const supportsTools = item["supports_function_calling"];
     const vision = item["supports_vision"];
     const reasoning = item["supports_reasoning"];
+    const pdf = item["supports_pdf_input"];
     entries.push({
       source: "litellm",
       key,
@@ -163,6 +167,7 @@ export async function fetchLiteLlmSource(fetchImpl: typeof fetch = fetch): Promi
       mode: modeFrom(item["mode"]),
       supportsVision: typeof vision === "boolean" ? vision : null,
       supportsReasoning: typeof reasoning === "boolean" ? reasoning : null,
+      supportsPdf: typeof pdf === "boolean" ? pdf : null,
     });
   }
   return entries;

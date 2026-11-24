@@ -48,6 +48,9 @@ import { PLAN_CHAT_SPEC, TurnBusyError, latestCompletedAnalysisId, loadPlanItems
 import { cancelQueued, getQueued, sendChatMessage, stopChatTurn } from "../lib/chat-turns/control";
 import { planIssuesSummary } from "../lib/plan-issues/service";
 import { consumeTurnStop, rateLimit } from "../middlewares/rate-limit";
+import { attachmentDecorator, sendChatMessageWithAttachments } from "../lib/chat-attachments/send";
+import { checkAttachmentsForSend } from "../lib/chat-attachments/service";
+import { guardedAttachments } from "./chat-attachments";
 import { parseRequest } from "../middlewares/error-handler";
 import {
   toPublicItem,
@@ -234,10 +237,11 @@ export function createPlanChatRouter(opts: { messageLimit?: number } = {}): IRou
       .where(and(eq(analysesTable.appId, conv.appId), eq(analysesTable.status, "completed"), gt(analysesTable.id, conv.analysisId)))
       .orderBy(desc(analysesTable.id))
       .limit(1);
+    const withAttachments = await attachmentDecorator("plan_chat", id, messages.map((m) => m.id));
     res.json(
       GetPlanConversationResponse.parse({
         ...toPublicPlanConversation(conv),
-        messages: messages.map(toPublicPlanMessage),
+        messages: messages.map((m) => withAttachments(toPublicPlanMessage(m))),
         proposals: await publicProposals(proposals),
         newerAnalysisId: newer?.id ?? null,
         progress: conv.turnStatus === "running" ? readTurnProgress("plan_chat", id) : null,
@@ -339,15 +343,24 @@ export function createPlanChatRouter(opts: { messageLimit?: number } = {}): IRou
       res.status(409).json({ error: blocked });
       return;
     }
-    try {
-      const outcome = await sendChatMessage(PLAN_CHAT_SPEC, id, content, null, body.mode ?? "normal", () => startPlanTurn(id, content));
-      const message =
-        outcome.kind === "started" ? toPublicPlanMessage(outcome.message) : { ...outcome.queued, role: "user" as const, error: false };
-      res.status(202).json(SendPlanMessageResponse.parse(message));
-    } catch (err) {
-      if (!(err instanceof TurnBusyError)) throw err;
-      res.status(409).json({ error: TURN_RUNNING });
-    }
+    const attachmentIds = body.attachmentIds ?? [];
+    await guardedAttachments(res, async () => {
+      // Allegati: della conversazione, non ancora mandati e leggibili dal modello della conversazione (issue #120)
+      await checkAttachmentsForSend(currentUserId(req), "plan_chat", id, attachmentIds, conv.aiModelId);
+      try {
+        const outcome = await sendChatMessageWithAttachments(PLAN_CHAT_SPEC, id, content, null, body.mode ?? "normal", attachmentIds, (ids) =>
+          startPlanTurn(id, content, ids),
+        );
+        const message =
+          outcome.kind === "started"
+            ? (await attachmentDecorator("plan_chat", id, [outcome.message.id]))(toPublicPlanMessage(outcome.message))
+            : { ...outcome.queued, role: "user" as const, error: false };
+        res.status(202).json(SendPlanMessageResponse.parse(message));
+      } catch (err) {
+        if (!(err instanceof TurnBusyError)) throw err;
+        res.status(409).json({ error: TURN_RUNNING });
+      }
+    });
   });
 
   router.post("/plan-conversations/:id/stop", async (req, res) => {

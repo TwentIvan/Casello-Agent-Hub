@@ -7805,7 +7805,16 @@ export const GetPlanConversationResponse = zod.object({
   "role": zod.enum(['user', 'assistant']),
   "content": zod.string().describe('Markdown'),
   "error": zod.boolean().describe('Messaggio del bot che riporta un errore'),
+  "createdAt": zod.coerce.date(),
+  "attachments": zod.array(zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "contentType": zod.enum(['image/png', 'image/jpeg', 'image/webp', 'application/pdf']),
+  "sizeBytes": zod.number(),
+  "sha256": zod.string(),
+  "messageId": zod.number().nullable().describe('Messaggio dell\'utente con cui è partito; null = non ancora mandato'),
   "createdAt": zod.coerce.date()
+})).optional().describe('Allegati mandati con il messaggio (solo messaggi dell\'utente; assente = nessuno)')
 })),
   "proposals": zod.array(zod.object({
   "id": zod.number(),
@@ -7886,11 +7895,14 @@ export const SendPlanMessageParams = zod.object({
 
 export const sendPlanMessageBodyContentMax = 8000;
 
+export const sendPlanMessageBodyAttachmentIdsMax = 5;
+
 
 
 export const SendPlanMessageBody = zod.object({
   "content": zod.string().min(1).max(sendPlanMessageBodyContentMax),
-  "mode": zod.enum(['normal', 'now', 'queue']).optional().describe('normal (default) avvia il turno (409 se uno è in corso); queue mette il messaggio in coda se un turno è in corso; now lo mette in coda e ferma il turno in corso.')
+  "mode": zod.enum(['normal', 'now', 'queue']).optional().describe('normal (default) avvia il turno (409 se uno è in corso); queue mette il messaggio in coda se un turno è in corso; now lo mette in coda e ferma il turno in corso.'),
+  "attachmentIds": zod.array(zod.number()).max(sendPlanMessageBodyAttachmentIdsMax).optional().describe('Allegati caricati con `POST \/chat-attachments` e non ancora mandati (immagini e PDF). Il modello della conversazione deve leggerli: Claude Code (nodo) → 409, immagini senza visione → 409, PDF fuori da OpenAI e OpenRouter → 409. Con un turno in corso → 409 (niente coda con gli allegati).')
 })
 
 export const SendPlanMessageResponse = zod.object({
@@ -7898,7 +7910,16 @@ export const SendPlanMessageResponse = zod.object({
   "role": zod.enum(['user', 'assistant']),
   "content": zod.string().describe('Markdown'),
   "error": zod.boolean().describe('Messaggio del bot che riporta un errore'),
+  "createdAt": zod.coerce.date(),
+  "attachments": zod.array(zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "contentType": zod.enum(['image/png', 'image/jpeg', 'image/webp', 'application/pdf']),
+  "sizeBytes": zod.number(),
+  "sha256": zod.string(),
+  "messageId": zod.number().nullable().describe('Messaggio dell\'utente con cui è partito; null = non ancora mandato'),
   "createdAt": zod.coerce.date()
+})).optional().describe('Allegati mandati con il messaggio (solo messaggi dell\'utente; assente = nessuno)')
 })
 
 
@@ -8056,7 +8077,16 @@ export const GetTeamChatConversationResponse = zod.object({
   "role": zod.enum(['user', 'assistant']),
   "content": zod.string().describe('Markdown'),
   "error": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "attachments": zod.array(zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "contentType": zod.enum(['image/png', 'image/jpeg', 'image/webp', 'application/pdf']),
+  "sizeBytes": zod.number(),
+  "sha256": zod.string(),
+  "messageId": zod.number().nullable().describe('Messaggio dell\'utente con cui è partito; null = non ancora mandato'),
   "createdAt": zod.coerce.date()
+})).optional().describe('Allegati mandati con il messaggio (solo messaggi dell\'utente; assente = nessuno)')
 })),
   "proposals": zod.array(zod.object({
   "id": zod.number(),
@@ -8131,11 +8161,14 @@ export const SendTeamChatMessageParams = zod.object({
 
 export const sendTeamChatMessageBodyContentMax = 8000;
 
+export const sendTeamChatMessageBodyAttachmentIdsMax = 5;
+
 
 
 export const SendTeamChatMessageBody = zod.object({
   "content": zod.string().min(1).max(sendTeamChatMessageBodyContentMax),
-  "mode": zod.enum(['normal', 'now', 'queue']).optional().describe('normal (default) avvia il turno (409 se uno è in corso); queue mette il messaggio in coda se un turno è in corso; now lo mette in coda e ferma il turno in corso.')
+  "mode": zod.enum(['normal', 'now', 'queue']).optional().describe('normal (default) avvia il turno (409 se uno è in corso); queue mette il messaggio in coda se un turno è in corso; now lo mette in coda e ferma il turno in corso.'),
+  "attachmentIds": zod.array(zod.number()).max(sendTeamChatMessageBodyAttachmentIdsMax).optional().describe('Allegati caricati con `POST \/chat-attachments` e non ancora mandati (immagini e PDF). Il modello della conversazione deve leggerli: Claude Code (nodo) → 409, immagini senza visione → 409, PDF fuori da OpenAI e OpenRouter → 409. Con un turno in corso → 409 (niente coda con gli allegati).')
 })
 
 export const SendTeamChatMessageResponse = zod.object({
@@ -8143,7 +8176,16 @@ export const SendTeamChatMessageResponse = zod.object({
   "role": zod.enum(['user', 'assistant']),
   "content": zod.string().describe('Markdown'),
   "error": zod.boolean(),
+  "createdAt": zod.coerce.date(),
+  "attachments": zod.array(zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "contentType": zod.enum(['image/png', 'image/jpeg', 'image/webp', 'application/pdf']),
+  "sizeBytes": zod.number(),
+  "sha256": zod.string(),
+  "messageId": zod.number().nullable().describe('Messaggio dell\'utente con cui è partito; null = non ancora mandato'),
   "createdAt": zod.coerce.date()
+})).optional().describe('Allegati mandati con il messaggio (solo messaggi dell\'utente; assente = nessuno)')
 })
 
 
@@ -8323,6 +8365,55 @@ export const RestoreCharacterInstructionsResponse = zod.object({
 
 
 /**
+ * Allegato per il prossimo messaggio di una conversazione dell'utente (personaggi, piano o squadra; quella di un altro utente è 404, una conversazione archiviata 409). Il corpo è il file grezzo, il nome nell'header `X-Attachment-Name` (anche codificato con encodeURIComponent; senza `/`, `\`, `..`, max 200 caratteri). Formati riconosciuti dai primi byte: PNG, JPEG, WebP e PDF (altro → 400). Al massimo 10 MB a file e 50 MB per conversazione (413). Si manda con `attachmentIds` nel messaggio; un allegato non mandato si cancella dopo un giorno. 20 caricamenti al minuto per utente.
+ * @summary Carica un allegato in una chat (immagine o PDF)
+ */
+
+
+
+export const UploadChatAttachmentQueryParams = zod.object({
+  "conversationKind": zod.enum(['character', 'plan_chat', 'team_chat']),
+  "conversationId": zod.coerce.number().min(1)
+})
+
+export const UploadChatAttachmentHeader = zod.object({
+  "X-Attachment-Name": zod.string()
+})
+
+export const UploadChatAttachmentResponse = zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "contentType": zod.enum(['image/png', 'image/jpeg', 'image/webp', 'application/pdf']),
+  "sizeBytes": zod.number(),
+  "sha256": zod.string(),
+  "messageId": zod.number().nullable().describe('Messaggio dell\'utente con cui è partito; null = non ancora mandato'),
+  "createdAt": zod.coerce.date()
+})
+
+
+/**
+ * Risponde con `Content-Disposition: attachment` e `X-Content-Type-Options: nosniff`. Allegato di un altro utente → 404.
+ * @summary Scarica un allegato di una chat dell'utente
+ */
+export const GetChatAttachmentParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetChatAttachmentResponse = zod.unknown()
+
+
+/**
+ * Un allegato già mandato resta con il suo messaggio (409); sparisce con la conversazione.
+ * @summary Elimina un allegato non ancora mandato
+ */
+export const DeleteChatAttachmentParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const DeleteChatAttachmentResponse = zod.void()
+
+
+/**
  * Le schede che Alfred o Lucius hanno proposto in una conversazione dell'utente (la conversazione di un altro utente è 404). Valida con il login e con il pannello incorporato.
  * @summary Schede di istruzioni personali di una conversazione
  */
@@ -8433,7 +8524,16 @@ export const GetAlfredThreadResponse = zod.object({
   "title": zod.string().min(1).max(getAlfredThreadResponseTwoMessagesItemPageContextOneHostTitleMax).regex(getAlfredThreadResponseTwoMessagesItemPageContextOneHostTitleRegExp).optional()
 }).optional().describe('Pagina dell\'app ospite (pannello incorporato); ammesso solo con page \"host\"')
 }),zod.null()]),
+  "createdAt": zod.coerce.date(),
+  "attachments": zod.array(zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "contentType": zod.enum(['image/png', 'image/jpeg', 'image/webp', 'application/pdf']),
+  "sizeBytes": zod.number(),
+  "sha256": zod.string(),
+  "messageId": zod.number().nullable().describe('Messaggio dell\'utente con cui è partito; null = non ancora mandato'),
   "createdAt": zod.coerce.date()
+})).optional().describe('Allegati mandati con il messaggio (solo messaggi dell\'utente; assente = nessuno)')
 })),
   "proposals": zod.array(zod.object({
   "id": zod.number(),
@@ -8517,7 +8617,16 @@ export const RestartAlfredThreadResponse = zod.object({
   "title": zod.string().min(1).max(restartAlfredThreadResponseTwoMessagesItemPageContextOneHostTitleMax).regex(restartAlfredThreadResponseTwoMessagesItemPageContextOneHostTitleRegExp).optional()
 }).optional().describe('Pagina dell\'app ospite (pannello incorporato); ammesso solo con page \"host\"')
 }),zod.null()]),
+  "createdAt": zod.coerce.date(),
+  "attachments": zod.array(zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "contentType": zod.enum(['image/png', 'image/jpeg', 'image/webp', 'application/pdf']),
+  "sizeBytes": zod.number(),
+  "sha256": zod.string(),
+  "messageId": zod.number().nullable().describe('Messaggio dell\'utente con cui è partito; null = non ancora mandato'),
   "createdAt": zod.coerce.date()
+})).optional().describe('Allegati mandati con il messaggio (solo messaggi dell\'utente; assente = nessuno)')
 })),
   "proposals": zod.array(zod.object({
   "id": zod.number(),
@@ -8673,7 +8782,16 @@ export const GetCharacterConversationResponse = zod.object({
   "title": zod.string().min(1).max(getCharacterConversationResponseTwoMessagesItemPageContextOneHostTitleMax).regex(getCharacterConversationResponseTwoMessagesItemPageContextOneHostTitleRegExp).optional()
 }).optional().describe('Pagina dell\'app ospite (pannello incorporato); ammesso solo con page \"host\"')
 }),zod.null()]),
+  "createdAt": zod.coerce.date(),
+  "attachments": zod.array(zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "contentType": zod.enum(['image/png', 'image/jpeg', 'image/webp', 'application/pdf']),
+  "sizeBytes": zod.number(),
+  "sha256": zod.string(),
+  "messageId": zod.number().nullable().describe('Messaggio dell\'utente con cui è partito; null = non ancora mandato'),
   "createdAt": zod.coerce.date()
+})).optional().describe('Allegati mandati con il messaggio (solo messaggi dell\'utente; assente = nessuno)')
 })),
   "proposals": zod.array(zod.object({
   "id": zod.number(),
@@ -8777,6 +8895,8 @@ export const sendCharacterMessageBodyPageContextHostTitleMax = 200;
 
 
 export const sendCharacterMessageBodyPageContextHostTitleRegExp = new RegExp('^[^\\r\\n]+$');
+export const sendCharacterMessageBodyAttachmentIdsMax = 5;
+
 
 
 export const SendCharacterMessageBody = zod.object({
@@ -8791,7 +8911,8 @@ export const SendCharacterMessageBody = zod.object({
   "id": zod.string().min(1).max(sendCharacterMessageBodyPageContextHostIdMax).regex(sendCharacterMessageBodyPageContextHostIdRegExp).optional(),
   "title": zod.string().min(1).max(sendCharacterMessageBodyPageContextHostTitleMax).regex(sendCharacterMessageBodyPageContextHostTitleRegExp).optional()
 }).optional().describe('Pagina dell\'app ospite (pannello incorporato); ammesso solo con page \"host\"')
-}).optional()
+}).optional(),
+  "attachmentIds": zod.array(zod.number()).max(sendCharacterMessageBodyAttachmentIdsMax).optional().describe('Allegati caricati con `POST \/chat-attachments` e non ancora mandati (immagini e PDF). Il modello della conversazione deve leggerli: Claude Code (nodo) → 409, immagini senza visione → 409, PDF fuori da OpenAI e OpenRouter → 409. Con un turno in corso → 409 (niente coda con gli allegati).')
 })
 
 export const sendCharacterMessageResponsePageContextOnePageMax = 40;
@@ -8830,7 +8951,16 @@ export const SendCharacterMessageResponse = zod.object({
   "title": zod.string().min(1).max(sendCharacterMessageResponsePageContextOneHostTitleMax).regex(sendCharacterMessageResponsePageContextOneHostTitleRegExp).optional()
 }).optional().describe('Pagina dell\'app ospite (pannello incorporato); ammesso solo con page \"host\"')
 }),zod.null()]),
+  "createdAt": zod.coerce.date(),
+  "attachments": zod.array(zod.object({
+  "id": zod.number(),
+  "name": zod.string(),
+  "contentType": zod.enum(['image/png', 'image/jpeg', 'image/webp', 'application/pdf']),
+  "sizeBytes": zod.number(),
+  "sha256": zod.string(),
+  "messageId": zod.number().nullable().describe('Messaggio dell\'utente con cui è partito; null = non ancora mandato'),
   "createdAt": zod.coerce.date()
+})).optional().describe('Allegati mandati con il messaggio (solo messaggi dell\'utente; assente = nessuno)')
 })
 
 

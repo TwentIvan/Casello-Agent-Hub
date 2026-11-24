@@ -109,6 +109,7 @@ import type {
   CharacterProposalDecision,
   CharacterSettings,
   CharacterSettingsView,
+  ChatAttachment,
   ChatTurnStopResult,
   ConflictResponse,
   CostEstimate,
@@ -280,7 +281,8 @@ import type {
   TriggerTestResult,
   TriggerWebhookUrl,
   UnauthorizedResponse,
-  UpdateMemoryNoteParams
+  UpdateMemoryNoteParams,
+  UploadChatAttachmentParams
 } from './api.schemas';
 
 import { customFetch } from '../custom-fetch';
@@ -17836,6 +17838,234 @@ export const useRestoreCharacterInstructions = <TError = ErrorType<BadRequestRes
         TContext
       > => {
       return useMutation(getRestoreCharacterInstructionsMutationOptions(options));
+    }
+
+export const getUploadChatAttachmentUrl = (params: UploadChatAttachmentParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/chat-attachments?${stringifiedParams}` : `/api/chat-attachments`
+}
+
+/**
+ * Allegato per il prossimo messaggio di una conversazione dell'utente (personaggi, piano o squadra; quella di un altro utente è 404, una conversazione archiviata 409). Il corpo è il file grezzo, il nome nell'header `X-Attachment-Name` (anche codificato con encodeURIComponent; senza `/`, `\`, `..`, max 200 caratteri). Formati riconosciuti dai primi byte: PNG, JPEG, WebP e PDF (altro → 400). Al massimo 10 MB a file e 50 MB per conversazione (413). Si manda con `attachmentIds` nel messaggio; un allegato non mandato si cancella dopo un giorno. 20 caricamenti al minuto per utente.
+ * @summary Carica un allegato in una chat (immagine o PDF)
+ */
+export const uploadChatAttachment = async (uploadChatAttachmentBody: Blob,
+    params: UploadChatAttachmentParams, options?: RequestInit): Promise<ChatAttachment> => {
+
+  return customFetch<ChatAttachment>(getUploadChatAttachmentUrl(params),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/octet-stream', ...options?.headers },
+    body: uploadChatAttachmentBody
+  }
+);}
+
+
+
+
+export const getUploadChatAttachmentMutationOptions = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | PayloadTooLargeResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof uploadChatAttachment>>, TError,{data: BodyType<Blob>;params: UploadChatAttachmentParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof uploadChatAttachment>>, TError,{data: BodyType<Blob>;params: UploadChatAttachmentParams}, TContext> => {
+
+const mutationKey = ['uploadChatAttachment'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof uploadChatAttachment>>, {data: BodyType<Blob>;params: UploadChatAttachmentParams}> = (props) => {
+          const {data,params} = props ?? {};
+
+          return  uploadChatAttachment(data,params,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UploadChatAttachmentMutationResult = NonNullable<Awaited<ReturnType<typeof uploadChatAttachment>>>
+    export type UploadChatAttachmentMutationBody = BodyType<Blob>
+    export type UploadChatAttachmentMutationError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | PayloadTooLargeResponse>
+
+    /**
+ * @summary Carica un allegato in una chat (immagine o PDF)
+ */
+export const useUploadChatAttachment = <TError = ErrorType<BadRequestResponse | NotFoundResponse | ConflictResponse | PayloadTooLargeResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof uploadChatAttachment>>, TError,{data: BodyType<Blob>;params: UploadChatAttachmentParams}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof uploadChatAttachment>>,
+        TError,
+        {data: BodyType<Blob>;params: UploadChatAttachmentParams},
+        TContext
+      > => {
+      return useMutation(getUploadChatAttachmentMutationOptions(options));
+    }
+
+export const getGetChatAttachmentUrl = (id: number,) => {
+
+
+
+
+  return `/api/chat-attachments/${id}`
+}
+
+/**
+ * Risponde con `Content-Disposition: attachment` e `X-Content-Type-Options: nosniff`. Allegato di un altro utente → 404.
+ * @summary Scarica un allegato di una chat dell'utente
+ */
+export const getChatAttachment = async (id: number, options?: RequestInit): Promise<Blob> => {
+
+  return customFetch<Blob>(getGetChatAttachmentUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetChatAttachmentQueryKey = (id: number,) => {
+    return [
+    `/api/chat-attachments/${id}`
+    ] as const;
+    }
+
+
+export const getGetChatAttachmentQueryOptions = <TData = Awaited<ReturnType<typeof getChatAttachment>>, TError = ErrorType<NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getChatAttachment>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetChatAttachmentQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getChatAttachment>>> = ({ signal }) => getChatAttachment(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getChatAttachment>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetChatAttachmentQueryResult = NonNullable<Awaited<ReturnType<typeof getChatAttachment>>>
+export type GetChatAttachmentQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Scarica un allegato di una chat dell'utente
+ */
+
+export function useGetChatAttachment<TData = Awaited<ReturnType<typeof getChatAttachment>>, TError = ErrorType<NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getChatAttachment>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetChatAttachmentQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getDeleteChatAttachmentUrl = (id: number,) => {
+
+
+
+
+  return `/api/chat-attachments/${id}`
+}
+
+/**
+ * Un allegato già mandato resta con il suo messaggio (409); sparisce con la conversazione.
+ * @summary Elimina un allegato non ancora mandato
+ */
+export const deleteChatAttachment = async (id: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getDeleteChatAttachmentUrl(id),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+export const getDeleteChatAttachmentMutationOptions = <TError = ErrorType<NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteChatAttachment>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteChatAttachment>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['deleteChatAttachment'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteChatAttachment>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  deleteChatAttachment(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteChatAttachmentMutationResult = NonNullable<Awaited<ReturnType<typeof deleteChatAttachment>>>
+
+    export type DeleteChatAttachmentMutationError = ErrorType<NotFoundResponse | ConflictResponse>
+
+    /**
+ * @summary Elimina un allegato non ancora mandato
+ */
+export const useDeleteChatAttachment = <TError = ErrorType<NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteChatAttachment>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof deleteChatAttachment>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getDeleteChatAttachmentMutationOptions(options));
     }
 
 export const getListCharacterInstructionProposalsUrl = (params: ListCharacterInstructionProposalsParams,) => {

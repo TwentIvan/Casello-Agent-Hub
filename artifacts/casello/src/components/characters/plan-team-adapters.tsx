@@ -35,6 +35,7 @@ import {
   useUpdateTeamChatConversation,
 } from "@workspace/api-client-react";
 import { ProposalCard } from "@/components/plan/proposal-card";
+import { messageBody } from "@/lib/chat-attachments";
 import { RoleInstructionsCard } from "@/components/teams/role-instructions-card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { chatPollInterval, forgetConversation, useInvalidateOnTurnEnd, type ChatAdapter, type ConvDetail, type ProposalLike } from "./adapters";
@@ -56,7 +57,7 @@ function mapCommon(d: AnyDetail, readOnlyReason: string | null): Omit<ConvDetail
     bestPractice: d.bestPractice,
     readOnlyReason,
     subjectId: null,
-    messages: d.messages.map((m) => ({ id: m.id, role: m.role, content: m.content, error: m.error })),
+    messages: d.messages.map((m) => ({ id: m.id, role: m.role, content: m.content, error: m.error, attachments: m.attachments })),
   };
 }
 
@@ -86,6 +87,7 @@ export function usePlanChatAdapter(appId: number): ChatAdapter {
   return {
     character: "lucius",
     instructionProposalsKind: "plan_chat",
+    attachmentsKind: "plan_chat",
     subjectLabel: app.data ? `Piano · ${app.data.name}` : "Piano dell'app",
     emptyHint: "Scrivi a Lucius per chiedere integrazioni, correzioni o nuove idee per il piano.",
     deleteNote: "I messaggi e le proposte non decise vanno persi; le voci già accettate restano nel piano.",
@@ -142,9 +144,9 @@ export function usePlanChatAdapter(appId: number): ChatAdapter {
         refreshList();
       }
     },
-    send: async (id, content, mode) => {
+    send: async (id, content, mode, attachmentIds) => {
       try {
-        await send.mutateAsync({ id, data: mode && mode !== "normal" ? { content, mode } : { content } });
+        await send.mutateAsync({ id, data: messageBody(content, mode, attachmentIds) });
       } finally {
         refreshConv(id);
       }
@@ -230,6 +232,7 @@ export function useTeamChatAdapter(instanceId: number, closed: boolean): ChatAda
   return {
     character: "lucius",
     instructionProposalsKind: "team_chat",
+    attachmentsKind: "team_chat",
     subjectLabel: team.data ? `Squadra · ${team.data.name}` : "Squadra",
     closedReason,
     emptyHint: "Scrivi a Lucius per chiedere un'identità o istruzioni migliori per un ruolo.",
@@ -267,9 +270,9 @@ export function useTeamChatAdapter(instanceId: number, closed: boolean): ChatAda
         refreshList();
       }
     },
-    send: async (id, content, mode) => {
+    send: async (id, content, mode, attachmentIds) => {
       try {
-        await send.mutateAsync({ id, data: mode && mode !== "normal" ? { content, mode } : { content } });
+        await send.mutateAsync({ id, data: messageBody(content, mode, attachmentIds) });
       } finally {
         refreshConv(id);
       }

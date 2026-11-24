@@ -7,6 +7,7 @@ import type { CharacterInstructionProposal } from "@workspace/api-client-react";
 import { InstructionProposalCard } from "./instruction-proposal-card";
 import { CharacterProposalCard } from "./proposal-cards";
 import { CHARACTER_TEXT } from "./targets";
+import { MessageAttachments } from "./chat-attachments";
 
 interface ChatMessagesProps {
   data: ConvDetail;
@@ -22,6 +23,8 @@ interface ChatMessagesProps {
   onInstructionDecided?: () => void;
   /** Nome del bot scelto dall'App (pannello incorporato); senza, quello di sempre. */
   name?: string;
+  /** Gli allegati si scaricano (console, con il cookie); nel pannello incorporato solo il nome. */
+  attachmentsDownloadable?: boolean;
 }
 
 /** Messaggi della conversazione con le schede legate a ciascuna risposta. */
@@ -32,6 +35,7 @@ export function ChatMessages({
   instructionProposals,
   onInstructionDecided,
   name: displayName,
+  attachmentsDownloadable = true,
 }: ChatMessagesProps) {
   const name = displayName ?? CHARACTER_TEXT[character].name;
   const renderInstruction = (p: CharacterInstructionProposal) => (
@@ -58,7 +62,10 @@ export function ChatMessages({
                 )}
               >
                 {m.role === "user" ? (
-                  <p className="whitespace-pre-wrap break-words text-sm">{m.content}</p>
+                  <>
+                    <p className="whitespace-pre-wrap break-words text-sm">{m.content}</p>
+                    {m.attachments && <MessageAttachments items={m.attachments} downloadable={attachmentsDownloadable} />}
+                  </>
                 ) : (
                   <>
                     <p className="mb-1 flex items-center gap-2 text-label text-ink-muted">

@@ -14,4 +14,9 @@ export interface TeamChatMessageCreate {
      */
   content: string;
   mode?: ChatSendMode;
+  /**
+     * Allegati caricati con `POST /chat-attachments` e non ancora mandati (immagini e PDF). Il modello della conversazione deve leggerli: Claude Code (nodo) → 409, immagini senza visione → 409, PDF fuori da OpenAI e OpenRouter → 409. Con un turno in corso → 409 (niente coda con gli allegati).
+     * @maxItems 5
+     */
+  attachmentIds?: number[];
 }

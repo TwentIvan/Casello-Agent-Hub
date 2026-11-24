@@ -3,7 +3,7 @@ import { familyAndVersion, normalizeModelId } from "./normalize";
 import type { RegistryProvider } from "./provider-registry-data";
 import type { ModelMode, SourceEntry, SourceName } from "./sources";
 
-type SourcedField = "price" | "contextTokens" | "supportsTools" | "releasedAt" | "deprecationDate";
+type SourcedField = "price" | "contextTokens" | "supportsTools" | "supportsVision" | "supportsPdf" | "releasedAt" | "deprecationDate";
 
 function statusFor(deprecationDate: Date | null, now: Date): OfferRecord["status"] {
   return !deprecationDate ? "available" : deprecationDate.getTime() <= now.getTime() ? "retired" : "deprecated";
@@ -20,6 +20,12 @@ export interface OfferRecord {
   priceCachedInput: number | null;
   contextTokens: number | null;
   supportsTools: boolean | null;
+  /**
+   * Capacità dell'offerta (non del modello fuso): immagini e PDF in ingresso presso questo provider. Assente o null =
+   * non noto. Le usa il controllo degli allegati delle chat (`lib/chat-attachments/`).
+   */
+  supportsVision?: boolean | null;
+  supportsPdf?: boolean | null;
   status: "available" | "deprecated" | "retired";
   deprecationDate: Date | null;
   sources: Partial<Record<Exclude<SourcedField, "releasedAt">, SourceName>>;
@@ -146,6 +152,10 @@ export function mergeUniversal(
     if (ctx) sources.contextTokens = ctx.source;
     const tools = ordered.find((e) => e.supportsTools !== null);
     if (tools) sources.supportsTools = tools.source;
+    const vision = ordered.find((e) => e.supportsVision !== null);
+    if (vision) sources.supportsVision = vision.source;
+    const pdf = ordered.find((e) => e.supportsPdf != null);
+    if (pdf) sources.supportsPdf = pdf.source;
     const deprecationDate = g.bySource.litellm?.deprecationDate ?? null;
     if (deprecationDate) sources.deprecationDate = "litellm";
 
@@ -160,6 +170,8 @@ export function mergeUniversal(
       priceCachedInput: priced?.priceCachedInput ?? null,
       contextTokens: ctx?.contextTokens ?? null,
       supportsTools: tools?.supportsTools ?? null,
+      supportsVision: vision?.supportsVision ?? null,
+      supportsPdf: pdf?.supportsPdf ?? null,
       status: statusFor(deprecationDate, now),
       deprecationDate,
       sources,
@@ -233,6 +245,8 @@ export function keepFailedOfferFields(
     }
     if (kept("contextTokens")) out.contextTokens = old.contextTokens;
     if (kept("supportsTools")) out.supportsTools = old.supportsTools;
+    if (kept("supportsVision")) out.supportsVision = old.supportsVision ?? null;
+    if (kept("supportsPdf")) out.supportsPdf = old.supportsPdf ?? null;
     if (kept("deprecationDate")) out.deprecationDate = old.deprecationDate;
     out.status = statusFor(out.deprecationDate, now);
     return out;

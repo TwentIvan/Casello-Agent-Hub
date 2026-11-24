@@ -1863,3 +1863,9 @@ CREATE TABLE IF NOT EXISTS "rate_limit_counters" (
 );
 
 CREATE INDEX IF NOT EXISTS "rate_limit_counters_window_start_idx" ON "rate_limit_counters" USING btree ("window_start");
+
+-- Rianalisi incrementale dopo ogni merge (docs/migrations/2026-11-24-rianalisi-automatica.sql)
+ALTER TABLE "apps" ADD COLUMN IF NOT EXISTS "auto_reanalysis" boolean DEFAULT false NOT NULL;
+ALTER TABLE "apps" ADD COLUMN IF NOT EXISTS "reanalysis_seen_sha" text;
+ALTER TABLE "apps" ADD COLUMN IF NOT EXISTS "reanalysis_checked_at" timestamp;
+ALTER TABLE "analyses" ADD COLUMN IF NOT EXISTS "trigger_commit" text;

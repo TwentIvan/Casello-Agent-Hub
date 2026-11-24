@@ -12,6 +12,16 @@ import type { AnalysisStatus } from './analysisStatus';
 export interface Analysis {
   id: number;
   appId: number;
+  /**
+     * Commit del clone su cui ha lavorato l'agente locale (null se non riferito)
+     * @nullable
+     */
+  sourceCommit: string | null;
+  /**
+     * SHA del branch base che ha avviato la rianalisi automatica (null = avviata a mano)
+     * @nullable
+     */
+  triggerCommit: string | null;
   model: string;
   /** @nullable */
   aiModelId: number | null;

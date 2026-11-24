@@ -36,11 +36,11 @@ import { ModelChoiceError, chooseCloudModel, type ModelChoice } from "../lib/ai/
 import { resolveAgentModel } from "../lib/ai/default-model";
 import { userBudgetBlock } from "../lib/budget";
 import { luciusBestPracticeDefault } from "../lib/characters/settings";
-import { ANALYSIS_DEFAULT_MAX_TOKENS, CHOOSE_MODEL } from "../lib/architect/run-analysis";
-import { AnalysisBusyError, createAndStartAnalysis, insertAnalysis } from "../lib/architect/start";
+import { CHOOSE_MODEL } from "../lib/architect/run-analysis";
+import { AnalysisBusyError, createAndStartAnalysis, insertLocalAnalysis } from "../lib/architect/start";
 import { ApplyError, applyItem } from "../lib/architect/apply";
 import { exportAll, exportChapter } from "../lib/architect/issues";
-import { LOCAL_MODEL, cancelLocalAnalysis, releaseLocalAnalysis } from "../lib/architect/local-executor";
+import { cancelLocalAnalysis, releaseLocalAnalysis } from "../lib/architect/local-executor";
 import { ITEM_SCHEMAS, PHASES, reviewedToolPayload, type AnalysisChapter } from "../lib/architect/schemas";
 import { SOURCE_LIMITS } from "../lib/architect/source-tree";
 import { runRateLimit } from "../middlewares/rate-limit";
@@ -95,15 +95,7 @@ async function rejectOverBudget(res: Response, choice: ModelChoice): Promise<boo
  * e niente `startAnalysis`, la prende l'agente via MCP.
  */
 function createLocal(app: App, maxTokens: number | undefined, bestPractice: boolean) {
-  return insertAnalysis({
-    appId: app.id,
-    model: LOCAL_MODEL,
-    aiModelId: null,
-    executor: "local",
-    maxTokens: maxTokens ?? ANALYSIS_DEFAULT_MAX_TOKENS,
-    bestPractice,
-    sources: { code: app.sourceType, openapi: false, mcp: false, description: !!app.functionalDescription?.trim() },
-  });
+  return insertLocalAnalysis(app, { maxTokens, bestPractice });
 }
 
 const LOCAL_NO_MODEL = "con l'agente locale non si sceglie il modello: togli aiModelId";

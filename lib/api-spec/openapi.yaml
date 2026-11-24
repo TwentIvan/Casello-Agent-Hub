@@ -7167,7 +7167,7 @@ components:
 
     App:
       type: object
-      required: [id, name, slug, baseUrl, status, serviceSecretSet, extraHeaders, sourceType, sourceRepo, sourceBranch, sourceTokenSet, sourceInstallationId, openapiUrl, functionalDescription, architectureRefresh, stagingBranch, stagingUrl, alfredName, luciusName, leadName, botNames, pageActions, embedPagesSeen, createdAt, updatedAt]
+      required: [id, name, slug, baseUrl, status, serviceSecretSet, extraHeaders, sourceType, sourceRepo, sourceBranch, sourceTokenSet, sourceInstallationId, openapiUrl, functionalDescription, architectureRefresh, autoReanalysis, reanalysisSeenSha, reanalysisCheckedAt, stagingBranch, stagingUrl, alfredName, luciusName, leadName, botNames, pageActions, embedPagesSeen, createdAt, updatedAt]
       properties:
         id:
           type: integer
@@ -7225,6 +7225,16 @@ components:
           description: Descrizione funzionale dell'app per l'architetto
         architectureRefresh:
           $ref: "#/components/schemas/ArchitectureRefresh"
+        autoReanalysis:
+          type: boolean
+          description: Rianalisi automatica, a ogni nuovo commit del branch base un'analisi in coda per l'agente locale
+        reanalysisSeenSha:
+          type: ["string", "null"]
+          description: Ultimo SHA del branch base già gestito dalla rianalisi automatica
+        reanalysisCheckedAt:
+          type: ["string", "null"]
+          format: date-time
+          description: Ultimo controllo della rianalisi automatica
         stagingBranch:
           type: ["string", "null"]
           description: Branch di prova dell'App, riscritto da Botcave a ogni lavoro delle squadre (null = nessuna versione di prova)
@@ -7719,6 +7729,9 @@ components:
           type: ["string", "null"]
         architectureRefresh:
           $ref: "#/components/schemas/ArchitectureRefresh"
+        autoReanalysis:
+          type: boolean
+          description: Accende o spegne la rianalisi automatica (serve il codice da GitHub tramite installazione per avere effetto)
         stagingBranch:
           type: ["string", "null"]
           description: Branch di prova (non il base, non main/master, non botcave/…); null lo toglie
@@ -9152,12 +9165,18 @@ components:
 
     Analysis:
       type: object
-      required: [id, appId, model, aiModelId, status, executor, sources, maxTokens, tokensUsed, cachedTokens, costUsd, bestPractice, bestPracticeNotes, phase, error, leaseLabel, leaseUntil, createdAt, finishedAt]
+      required: [id, appId, model, aiModelId, status, executor, sources, maxTokens, tokensUsed, cachedTokens, costUsd, bestPractice, bestPracticeNotes, phase, error, leaseLabel, leaseUntil, sourceCommit, triggerCommit, createdAt, finishedAt]
       properties:
         id:
           type: integer
         appId:
           type: integer
+        sourceCommit:
+          type: ["string", "null"]
+          description: Commit del clone su cui ha lavorato l'agente locale (null se non riferito)
+        triggerCommit:
+          type: ["string", "null"]
+          description: SHA del branch base che ha avviato la rianalisi automatica (null = avviata a mano)
         model:
           type: string
         aiModelId:

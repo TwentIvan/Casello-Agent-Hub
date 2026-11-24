@@ -65,6 +65,18 @@ export interface App {
      */
   functionalDescription: string | null;
   architectureRefresh: ArchitectureRefresh;
+  /** Rianalisi automatica, a ogni nuovo commit del branch base un'analisi in coda per l'agente locale */
+  autoReanalysis: boolean;
+  /**
+     * Ultimo SHA del branch base già gestito dalla rianalisi automatica
+     * @nullable
+     */
+  reanalysisSeenSha: string | null;
+  /**
+     * Ultimo controllo della rianalisi automatica
+     * @nullable
+     */
+  reanalysisCheckedAt: Date | null;
   /**
      * Branch di prova dell'App, riscritto da Botcave a ogni lavoro delle squadre (null = nessuna versione di prova)
      * @nullable

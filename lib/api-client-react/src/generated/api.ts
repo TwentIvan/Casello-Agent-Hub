@@ -28,6 +28,7 @@ import type {
   AgentActivity,
   AgentInput,
   AgentModelAssignments,
+  AgentModelEvaluation,
   AgentSkill,
   AgentToolsInput,
   AgentUpdate,
@@ -8431,6 +8432,84 @@ export function useStreamLiveUpdates<TData = Awaited<ReturnType<typeof streamLiv
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getStreamLiveUpdatesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetAgentModelEvaluationUrl = (id: number,) => {
+
+
+
+
+  return `/api/agents/${id}/model-evaluation`
+}
+
+/**
+ * Legge le ultime run concluse dell'agente (al più 50 degli ultimi 30 giorni: esito, token, costo, passi tool falliti), calcola il costo medio stimato di una run con il modello attuale e con i modelli con strumenti degli account AI dell'utente (disponibili, prezzi noti, non in anteprima, non Claude Code sul nodo) e propone al più 5 modelli più economici. Un modello già provato dall'agente (almeno 3 run) con un successo più basso di 10 punti rispetto al riferimento non si propone. Solo lettura, nessuna chiamata a modelli: per cambiare modello si usa PATCH /agents/{id}.
+ * @summary Valutazione del modello di un agente con i modelli più economici
+ */
+export const getAgentModelEvaluation = async (id: number, options?: RequestInit): Promise<AgentModelEvaluation> => {
+
+  return customFetch<AgentModelEvaluation>(getGetAgentModelEvaluationUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAgentModelEvaluationQueryKey = (id: number,) => {
+    return [
+    `/api/agents/${id}/model-evaluation`
+    ] as const;
+    }
+
+
+export const getGetAgentModelEvaluationQueryOptions = <TData = Awaited<ReturnType<typeof getAgentModelEvaluation>>, TError = ErrorType<NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAgentModelEvaluation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAgentModelEvaluationQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAgentModelEvaluation>>> = ({ signal }) => getAgentModelEvaluation(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAgentModelEvaluation>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAgentModelEvaluationQueryResult = NonNullable<Awaited<ReturnType<typeof getAgentModelEvaluation>>>
+export type GetAgentModelEvaluationQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Valutazione del modello di un agente con i modelli più economici
+ */
+
+export function useGetAgentModelEvaluation<TData = Awaited<ReturnType<typeof getAgentModelEvaluation>>, TError = ErrorType<NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAgentModelEvaluation>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAgentModelEvaluationQueryOptions(id,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

@@ -1199,6 +1199,103 @@ export interface AppToolUpdate {
   needsVerification?: boolean;
 }
 
+/**
+ * @nullable
+ */
+export type AgentModelEvaluationCurrentModel = {
+  aiModelId: number;
+  name: string;
+  accountName: string;
+  /** @nullable */
+  priceInput: number | null;
+  /** @nullable */
+  priceOutput: number | null;
+  /**
+     * Costo stimato di una run media con i prezzi del modello; null senza prezzi o senza run
+     * @nullable
+     */
+  estimatedCostPerRunUsd: number | null;
+} | null;
+
+export type AgentModelEvaluationUsage = {
+  /** Run lette (al più 50) */
+  runs: number;
+  succeeded: number;
+  failed: number;
+  cancelled: number;
+  /**
+     * Riuscite su riuscite più fallite (0..1)
+     * @nullable
+     */
+  successRate: number | null;
+  /** @nullable */
+  avgPromptTokens: number | null;
+  /** @nullable */
+  avgCachedTokens: number | null;
+  /** @nullable */
+  avgCompletionTokens: number | null;
+  /**
+     * Costo medio registrato delle run con prezzo
+     * @nullable
+     */
+  avgCostUsd: number | null;
+  unpricedRuns: number;
+  toolCalls: number;
+  toolErrors: number;
+  /** Run concluse dell'agente nella finestra (base della stima mensile) */
+  runsInWindow: number;
+};
+
+export type AgentModelEvaluationByModelItem = {
+  /** @nullable */
+  aiModelId: number | null;
+  /** @nullable */
+  name: string | null;
+  runs: number;
+  succeeded: number;
+  failed: number;
+  /** @nullable */
+  successRate: number | null;
+  /** @nullable */
+  avgCostUsd: number | null;
+  toolCalls: number;
+  toolErrors: number;
+};
+
+export type AgentModelEvaluationSuggestionsItem = {
+  /** Id da passare come aiModelId a PATCH /agents/{id} */
+  aiModelId: number;
+  name: string;
+  accountName: string;
+  priceInput: number;
+  priceOutput: number;
+  estimatedCostPerRunUsd: number;
+  savingPerRunUsd: number;
+  savingPercent: number;
+  /** Risparmio per run per le run della finestra */
+  estimatedMonthlySavingUsd: number;
+  /** Run concluse dell'agente già fatte con questo modello */
+  observedRuns: number;
+  /** @nullable */
+  observedSuccessRate: number | null;
+};
+
+export interface AgentModelEvaluation {
+  agentId: number;
+  agentName: string;
+  /** Giorni delle run considerate */
+  windowDays: number;
+  /** Almeno 5 run concluse e non annullate nella finestra */
+  enoughData: boolean;
+  /** @nullable */
+  currentModel: AgentModelEvaluationCurrentModel;
+  usage: AgentModelEvaluationUsage;
+  byModel: AgentModelEvaluationByModelItem[];
+  suggestions: AgentModelEvaluationSuggestionsItem[];
+  /** Esito in una frase (messaggio fisso) */
+  note: string;
+}
+
 export type AgentActivityState = typeof AgentActivityState[keyof typeof AgentActivityState];
 
 

@@ -200,6 +200,19 @@ describe("correzioni della revisione finale", () => {
     expect((await getOpenWork(instanceId))!.status).toBe("open");
   });
 
+  it("chiudi_lavoro con una PR del lavoro in attesa del merge (CI in corso o verde) è rifiutato; con la CI rossa no", async () => {
+    const instanceId = await team();
+    const work = await ensureWorkForCodeTask((await instanceRow(instanceId))!);
+    await upsertCodeTask({ instanceId, planTaskId: "t1", repo: REPO, branch: `botcave/${instanceId}-t1`, baseBranch: work.branch, headSha: mainSha, pr: { number: 5, url: "u" } });
+    expect(await lead(instanceId, "chiudi_lavoro", { bulletin: "fatto" })).toMatchObject({ ok: false, content: WORK_MESSAGES.closePullPending });
+    await db.update(teamCodeTasksTable).set({ ciState: "success" }).where(eq(teamCodeTasksTable.planTaskId, "t1"));
+    expect(await lead(instanceId, "chiudi_lavoro", { bulletin: "fatto" })).toMatchObject({ ok: false, content: WORK_MESSAGES.closePullPending });
+    expect((await getOpenWork(instanceId))!.status).toBe("open");
+    // CI rossa: la PR resta fuori, il capo può chiudere (nessuna PR unita → lavoro abbandonato)
+    await db.update(teamCodeTasksTable).set({ ciState: "failure" }).where(eq(teamCodeTasksTable.planTaskId, "t1"));
+    expect((await lead(instanceId, "chiudi_lavoro", { bulletin: "fatto" })).ok).toBe(true);
+  });
+
   it("I4: un compito con una PR di prima della 3b (verso main) resta sul base e non apre un lavoro", async () => {
     const instanceId = await team();
     await upsertCodeTask({ instanceId, planTaskId: "t1", repo: REPO, branch: `botcave/${instanceId}-t1`, baseBranch: "main", headSha: mainSha, pr: { number: 6, url: "u" } });

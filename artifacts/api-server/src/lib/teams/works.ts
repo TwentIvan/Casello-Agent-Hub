@@ -37,6 +37,7 @@ export const WORK_MESSAGES = {
   workNotOpen: "il lavoro è in attesa di Porta in produzione: aspetta la decisione dell'utente prima di assegnare compiti con codice",
   stagingFailed: "versione di prova non aggiornata: GitHub ha rifiutato la scrittura del branch di prova",
   closeBusy: "un compito con codice è ancora in corso: aspetta il suo esito prima di chiudere il lavoro",
+  closePullPending: "una PR del lavoro ha la CI in corso o verde e Botcave la sta per unire: aspetta il merge prima di chiudere il lavoro",
 } as const;
 
 /** Stati di un lavoro non ancora chiuso (indice unico parziale `team_works_one_open`). */
@@ -152,6 +153,19 @@ export async function codeQueueBlock(instance: TeamInstanceRow, workId: number, 
     )
     .limit(1);
   return open ? WORK_MESSAGES.queueBusy : null;
+}
+
+/**
+ * Una PR del lavoro è ancora aperta con la CI in corso o verde: Botcave la unirà nel lavoro, quindi chiuderlo adesso la
+ * lascerebbe fuori da «Porta in produzione». Le PR con la CI rossa o senza CI (compito `blocked`) non trattengono il lavoro.
+ */
+export async function workPullPending(workId: number): Promise<boolean> {
+  const [row] = await db
+    .select({ id: teamCodeTasksTable.id })
+    .from(teamCodeTasksTable)
+    .where(and(eq(teamCodeTasksTable.workId, workId), eq(teamCodeTasksTable.prState, "open"), inArray(teamCodeTasksTable.ciState, ["pending", "success"])))
+    .limit(1);
+  return row !== undefined;
 }
 
 /**

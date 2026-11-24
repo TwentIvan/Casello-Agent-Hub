@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
-import { WORK_MESSAGES, WorkError, closeWorkIfDone, codeQueueBlock, ensureWorkForCodeTask, getOpenWork, isLegacyCodeTask, roleWritesCode, workSummary, writerTaskActive, type WorkSummary } from "./works";
+import { WORK_MESSAGES, WorkError, closeWorkIfDone, codeQueueBlock, ensureWorkForCodeTask, getOpenWork, isLegacyCodeTask, roleWritesCode, workPullPending, workSummary, writerTaskActive, type WorkSummary } from "./works";
 import { codeErrorMessage } from "../code-writer/session";
 import { z } from "zod";
 import { db, pendingActionsTable, teamCodeTasksTable, teamInstancesTable, teamPlanVersionsTable, teamTasksTable } from "@workspace/db";
@@ -753,6 +753,8 @@ async function closeWork(ctx: LeadContext, args: Record<string, unknown>): Promi
     const [instance] = await db.select().from(teamInstancesTable).where(eq(teamInstancesTable.id, ctx.instanceId)).limit(1);
     // Un compito con codice ancora in corso finirebbe fuori dal lavoro: si chiude dopo il suo esito
     if (instance && (await writerTaskActive(instance))) return fail(WORK_MESSAGES.closeBusy);
+    // Una PR con la CI in corso o verde sta per entrare nel lavoro: chiuderlo ora la lascerebbe fuori dal rilascio
+    if (await workPullPending(work.id)) return fail(WORK_MESSAGES.closePullPending);
     await lockActiveInstanceOnce(ctx.instanceId);
     const result = await closeWorkIfDone(ctx.instanceId, { fromLead: true, bulletin: parsed.data.bulletin });
     if (result === "already") return fail(WORK_MESSAGES.alreadyClosed);

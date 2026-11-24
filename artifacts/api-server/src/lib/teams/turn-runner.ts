@@ -90,7 +90,7 @@ export const WORK_INSTRUCTION = [
   "- Lavoro su branch unico: i compiti con codice lavorano sul branch del lavoro (botcave/lavoro-…); ogni compito parte dalla sua testa e la sua PR la unisce Botcave su quel branch quando la CI è verde (motivo pr_closed). Un compito con codice alla volta: assegna il successivo solo dopo il pr_closed del precedente.",
   "- Un compito con codice è finito solo con la PR unita sul branch del lavoro. Con la CI rossa riassegnalo: riparte dallo stesso branch. Senza CI il compito resta bloccato: segnala all'utente con `segnala` di aggiungere un workflow che giri sui branch botcave/**, e non dichiararlo mai pronto.",
   "- Se c'è un ruolo con il codice in lettura, prima di chiudere assegnagli la revisione del branch del lavoro.",
-  "- Quando i compiti con codice sono finiti chiama `chiudi_lavoro` una volta sola: Botcave mette il lavoro sulla versione di prova e chiede all'utente «Porta in produzione». Il merge sul branch base lo decide solo l'utente.",
+  "- Quando i compiti con codice sono finiti e le loro PR sono unite nel lavoro (evento «PR #n unita», non basta «CI verde») chiama `chiudi_lavoro` una volta sola: Botcave mette il lavoro sulla versione di prova e chiede all'utente «Porta in produzione». Il merge sul branch base lo decide solo l'utente.",
   "- Se l'utente rifiuta «Porta in produzione» con una nota o il rilascio non riesce, il lavoro torna aperto: correggi con compiti nuovi sul branch del lavoro (proponi_piano se servono compiti nuovi), poi `chiudi_lavoro` di nuovo.",
 ].join("\n");
 

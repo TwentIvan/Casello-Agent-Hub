@@ -96,6 +96,8 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   schede con icone, pulsante a pillola con lo stato; l'app ospite passa solo il contesto con `Botcave.setContext` (vedi "Riordino del plugin"). Spec: `docs/superpowers/specs/2026-11-17-botcave-plugin-riordino-design.md`.
 - Nuova app da zero (tappa 1, issue #143): da «Nuova app» → «Da zero» l'utente indica nome, slug, dominio, brief e un repository creato da lui dal modello su GitHub; una sola voce `app_bootstrap` in «Da confermare» e, all'approvazione, Botcave personalizza il repository (unico commit su `main`),
   registra l'App con il suo Responsabile, avvia l'analisi dell'architetto sul brief e mostra la carta «Primo deploy» con la lista di ciò che resta a mano; migrazione applicata dal deploy, due variabili facoltative (vedi "Nuova app da zero"). Spec: `docs/superpowers/specs/2026-11-22-botcave-nuova-app-da-zero-design.md`.
+- Onboarding guidato da GitHub (issue #111): in «Nuova app» → «Da GitHub» si sceglie un repository dell'App GitHub non ancora collegato, Botcave propone nome, slug, base URL e branch, crea l'App con il codice collegato tramite installazione
+  e mette subito in coda l'analisi per l'agente locale, poi apre la scheda App per la revisione; solo console, nessuna migrazione (vedi "Onboarding guidato da GitHub").
 - Frontend `artifacts/casello` completo: login Google, dashboard, App, Agenti (con Tool), lancio e
   monitoraggio delle Run. Pagine in `src/pages/`, componenti per area in `src/components/`; solo hook
   generati da Orval, mai fetch a mano.
@@ -2003,6 +2005,17 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
 - Migrazione: `docs/migrations/2026-11-22-nuova-app-da-zero.sql` (additiva e idempotente, niente `-post`, la applica il deploy; `ALTER TYPE … ADD VALUE` fuori da una transazione esplicita): valore `app_bootstrap` di `pending_action_kind`, enum `app_bootstrap_status`, tabella `app_bootstraps` con i due indici unici parziali; riportata in `docs/schema-casello.sql`; prova `test/migration-nuova-app-da-zero.test.ts`.
 - Fuori ambito: la tappa 2 (creazione del repository, Neon, Coolify, segreti, versione di prova e primo deploy automatici, creazione del repository su un account personale), il contenuto del repository modello (lo prepara una PR a parte verso `TwentIvan/botcave-modello-app`, che Ivan segna come «Template repository» e aggiunge all'installazione dell'App GitHub), stack diversi, migrazione di app esistenti,
   gestione automatica del DNS, origini del plugin nel database (`EMBED_ALLOWED_ORIGINS` resta una variabile).
+
+## Onboarding guidato da GitHub
+
+- Issue #111. Solo console, nessuna modifica all'API, a OpenAPI o allo schema: usa `GET /api/github/repos`, `GET /api/apps`, `POST /api/apps` (con `sourceType: github`, `sourceRepo`, `sourceBranch`, `sourceInstallationId`,
+  `generalAgentAiModelId`: le regole dell'installazione e dell'accesso al repository restano quelle del server) e `POST /api/apps/:id/analyses` con `executor: local`.
+- «Nuova app» ha tre scelte: «Da GitHub» (predefinita), «A mano» (il modulo completo di sempre) e «Da zero» (vedi "Nuova app da zero"). Modulo `components/apps/app-from-github-form.tsx`, logica pura in `src/lib/app-from-github.ts`
+  (`unregisteredRepos`: repository non ancora `sourceRepo` di un'App, senza distinguere le maiuscole; `appNameFromRepo`: `the-hub-up` → «The Hub Up»; `slugPreview`, stessa regola di `slugBase` del server, che con lo slug già preso aggiunge `-<id>`;
+  `suggestedBaseUrl` = `https://<slug>.<APP_BASE_DOMAIN>`, da `GET /api/app-bootstraps/config`). Scelto il repository si propongono nome, base URL e branch predefinito (modificabili), modello del Responsabile (preselezionato come gli altri moduli) e
+  l'interruttore «Analizza subito con l'agente locale» (acceso; best practice secondo il default di Lucius). «Crea e analizza»: crea l'App, mette in coda l'analisi locale e apre la scheda App; se l'analisi non parte l'App resta e
+  l'errore si mostra nel toast. Autenticazione, indirizzo interno e header si impostano dopo con «Modifica».
+- Fuori ambito: avvio automatico dell'agente locale sul Mac (la skill `casello-architetto-locale` resta da lanciare), analisi cloud da questo modulo, rilevamento automatico di base URL e autenticazione.
 
 ## The Hub Up 5c (tappa 1)
 

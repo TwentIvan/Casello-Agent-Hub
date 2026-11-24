@@ -1,4 +1,6 @@
 import type { Request, RequestHandler, Response } from "express";
+import { pool } from "@workspace/db";
+import { logger } from "../lib/logger";
 import type { Character } from "../lib/memory/types";
 
 /** Contatore a finestra fissa per chiave, in memoria. */
@@ -48,8 +50,8 @@ function middlewareFor(
   };
 }
 
-// Rate limit minimo in memoria, a finestra fissa per chiave (di default l'IP). Basta un solo
-// container API: con più repliche ognuna avrebbe il suo contatore.
+// Rate limit in memoria, a finestra fissa per chiave (di default l'IP): si azzera al riavvio e con più repliche
+// ognuna avrebbe il suo contatore. L'avvio di run e analisi usa i contatori persistenti qui sotto.
 export function rateLimit({
   limit,
   windowMs,
@@ -63,17 +65,95 @@ export function rateLimit({
   return middlewareFor(fixedWindowCounter({ limit, windowMs }), key);
 }
 
-// Ogni avvio consuma token sugli account AI: massimo 10 al minuto per IP, con un solo contatore condiviso
-// da POST /agents/:id/runs (con sessione o pannello incorporato) e dall'avvio delle analisi.
-export const runRateLimit = rateLimit({ limit: 10, windowMs: 60_000 });
+// Contatori persistenti in Postgres (`rate_limit_counters`), a finestra fissa allineata (inizio = multiplo di
+// `windowMs`) e per utente: non si azzerano a ogni deploy e valgono anche con più container API. Un errore del DB
+// (o un utente che non esiste più) ricade su un contatore in memoria con le stesse regole, così il limite non si spegne.
+const COUNTER_RETENTION_MS = 24 * 60 * 60_000;
+const COUNTER_SWEEP_EVERY_MS = 10 * 60_000;
+let lastCounterSweep = 0;
 
-// Avvio delle run con un token personale: 60 al minuto per token (id del token) al posto del limite per IP; con la
-// sessione (o il pannello incorporato, senza id di token) vale ancora `runRateLimit`. Le analisi restano su `runRateLimit`.
-const tokenRunCounter = rateLimit({ limit: 60, windowMs: 60_000, key: (req) => `token:${req.auth?.kind === "token" ? req.auth.tokenId : ""}` });
+function sweepOldCounters(now: number): void {
+  if (now - lastCounterSweep < COUNTER_SWEEP_EVERY_MS) return;
+  lastCounterSweep = now;
+  pool.query("DELETE FROM rate_limit_counters WHERE window_start < $1", [new Date(now - COUNTER_RETENTION_MS)]).catch((err: unknown) => {
+    logger.warn({ errName: err instanceof Error ? err.name : "unknown" }, "Pulizia dei contatori del rate limit non riuscita");
+  });
+}
+
+export function persistentWindowCounter({ name, limit, windowMs }: { name: string; limit: number; windowMs: number }) {
+  const fallback = fixedWindowCounter({ limit, windowMs });
+  return {
+    /** Azzera il contatore di riserva in memoria (solo per i test). */
+    resetFallback(): void {
+      fallback.reset();
+    },
+    /** Conta una richiesta dell'utente (`sub` distingue sotto-contatori, es. l'id del token). */
+    async consume(userId: number, sub = ""): Promise<{ ok: boolean; retryAfterSec: number }> {
+      const bucket = sub ? `${name}:${sub}` : name;
+      const now = Date.now();
+      const start = Math.floor(now / windowMs) * windowMs;
+      const retryAfterSec = Math.max(1, Math.ceil((start + windowMs - now) / 1000));
+      try {
+        const r = await pool.query<{ count: number }>(
+          `INSERT INTO rate_limit_counters (user_id, bucket, window_start, count) VALUES ($1, $2, $3, 1)
+           ON CONFLICT (user_id, bucket, window_start) DO UPDATE SET count = rate_limit_counters.count + 1
+           RETURNING count`,
+          [userId, bucket, new Date(start)],
+        );
+        sweepOldCounters(now);
+        return { ok: Number(r.rows[0]?.count ?? 1) <= limit, retryAfterSec };
+      } catch (err) {
+        logger.warn({ errName: err instanceof Error ? err.name : "unknown", bucket: name }, "Rate limit persistente non disponibile: contatore in memoria");
+        return fallback.consume(`user:${userId}:${bucket}`);
+      }
+    },
+  };
+}
+
+function persistentMiddleware(
+  counter: ReturnType<typeof persistentWindowCounter>,
+  sub: (req: Request) => string,
+  withoutUser: RequestHandler,
+): RequestHandler {
+  return async (req, res, next) => {
+    if (req.userId === undefined) {
+      withoutUser(req, res, next);
+      return;
+    }
+    const out = await counter.consume(req.userId, sub(req));
+    if (!out.ok) {
+      res.setHeader("Retry-After", out.retryAfterSec);
+      res.status(429).json({ error: "Troppe richieste: riprova tra poco" });
+      return;
+    }
+    next();
+  };
+}
+
+// Ogni avvio consuma token sugli account AI: massimo 10 al minuto per utente (contatore persistente), con un solo
+// contatore condiviso da POST /agents/:id/runs (con sessione o pannello incorporato) e dall'avvio delle analisi.
+// Senza utente (non dovrebbe succedere dietro requireAuth) vale il vecchio limite in memoria per IP.
+const runStartCounter = persistentWindowCounter({ name: "run_start", limit: 10, windowMs: 60_000 });
+const runStartByIp = rateLimit({ limit: 10, windowMs: 60_000 });
+export const runRateLimit = persistentMiddleware(runStartCounter, () => "", runStartByIp);
+
+// Avvio delle run con un token personale: 60 al minuto per token (id del token, contatore persistente dell'utente del
+// token) al posto del limite di 10; con la sessione (o il pannello incorporato, senza id di token) vale `runRateLimit`.
+// Le analisi restano su `runRateLimit`.
+const tokenRunStartCounter = persistentWindowCounter({ name: "run_start_token", limit: 60, windowMs: 60_000 });
+const tokenRunByIp = rateLimit({ limit: 60, windowMs: 60_000, key: (req) => `token:${req.auth?.kind === "token" ? req.auth.tokenId : ""}` });
+const tokenRunRateLimit = persistentMiddleware(
+  tokenRunStartCounter,
+  (req) => String(req.auth?.kind === "token" ? req.auth.tokenId : ""),
+  tokenRunByIp,
+);
 export const runTriggerRateLimit: RequestHandler = (req, res, next) => {
-  if (req.auth?.kind === "token" && req.auth.tokenId !== null) tokenRunCounter(req, res, next);
-  else runRateLimit(req, res, next);
+  if (req.auth?.kind === "token" && req.auth.tokenId !== null) return tokenRunRateLimit(req, res, next);
+  return runRateLimit(req, res, next);
 };
+
+/** Solo per i test: contatori persistenti dell'avvio di run e analisi. */
+export const runStartCounters = { session: runStartCounter, token: tokenRunStartCounter };
 
 // L'annullamento di una run non consuma token: ha un contatore proprio, più largo, così non
 // compete con avvio e ripresa.

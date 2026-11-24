@@ -29,7 +29,9 @@ export const teamEventTypeEnum = pgEnum("team_event_type", [
 
 // Motivo di un turno del capo (accumulati nel turno in coda)
 export type TeamTurnReason =
-  | { type: "request"; text: string }
+  // `source`: chi ha scritto il messaggio (`user` = l'utente, `system` = testo generato da Botcave); assente nei turni
+  // salvati prima che il campo esistesse.
+  | { type: "request"; text: string; source?: "user" | "system" }
   | { type: "task_finished"; taskId: number }
   | { type: "decision"; number: number; outcome: "approved" | "rejected"; note: string | null }
   | { type: "activation" }
@@ -157,6 +159,8 @@ export const teamEventsTable = pgTable(
       .references(() => teamInstancesTable.id, { onDelete: "cascade" }),
     type: teamEventTypeEnum("type").notNull(),
     taskId: integer("task_id").references(() => teamTasksTable.id, { onDelete: "set null" }),
+    // Turno del capo che ha prodotto l'evento (oggi solo `risposta_capo`)
+    turnId: integer("turn_id").references(() => teamTurnsTable.id, { onDelete: "set null" }),
     bulletin: text("bulletin").notNull(),
     detail: text("detail"),
     readAt: timestamp("read_at"),

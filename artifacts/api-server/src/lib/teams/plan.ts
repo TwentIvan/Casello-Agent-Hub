@@ -386,7 +386,7 @@ export async function correctPlan(instanceId: number, input: Plan): Promise<Plan
       );
     return written;
   });
-  await enqueueTurnReason(instanceId, { type: "request", text: `Il piano è stato modificato dall'utente: ${diffSummary(before, plan)}` });
+  await enqueueTurnReason(instanceId, { type: "request", text: `Il piano è stato modificato dall'utente: ${diffSummary(before, plan)}`, source: "system" });
   return view;
 }
 

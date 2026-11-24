@@ -14,6 +14,8 @@ export interface EmitEventInput {
   instanceId: number;
   type: TeamEventType;
   taskId?: number | null;
+  /** Turno del capo che produce l'evento (`risposta_capo`). */
+  turnId?: number | null;
   bulletin: string;
   detail?: string;
 }
@@ -25,6 +27,7 @@ export async function emitEvent(input: EmitEventInput, executor: Executor = db):
       instanceId: input.instanceId,
       type: input.type,
       taskId: input.taskId ?? null,
+      turnId: input.turnId ?? null,
       bulletin: input.bulletin.slice(0, MAX_BULLETIN),
       detail: input.detail === undefined ? null : input.detail.slice(0, MAX_EVENT_DETAIL),
     })

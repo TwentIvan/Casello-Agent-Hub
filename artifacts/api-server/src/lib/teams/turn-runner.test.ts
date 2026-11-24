@@ -358,7 +358,7 @@ describe("turni del capo", () => {
     expect(t.map((x) => x.status)).toEqual(["running", "queued"]);
     expect(t[1]!.reasons).toEqual([
       { type: "task_finished", taskId: task.id },
-      { type: "request", text: "come va?" },
+      { type: "request", text: "come va?", source: "user" },
     ]);
     expect(leadRequests()).toHaveLength(0);
 
@@ -541,6 +541,10 @@ describe("turni del capo", () => {
     await settleAll();
     const [event] = await listEvents(id);
     expect(event).toMatchObject({ type: "risposta_capo", bulletin: "Ho controllato: t1 è fermo perché il nodo è spento." });
+    // Origine esplicita (decisione A): il motivo porta `source: user` e la risposta il turno che l'ha prodotta
+    const [firstTurn] = await turns(id);
+    expect(firstTurn!.reasons).toEqual([{ type: "request", text: "come va t1?", source: "user" }]);
+    expect(event!.turnId).toBe(firstTurn!.id);
 
     const long = "a".repeat(500);
     leadScript.push(text(long));
@@ -607,7 +611,7 @@ describe("turni del capo", () => {
     await settleAll();
     const all = await turns(id);
     expect(all.map((t) => t.status)).toEqual(["failed", "done"]);
-    expect(all[1]!.reasons).toEqual([{ type: "request", text: BUDGET_RESUME_REQUEST }]);
+    expect(all[1]!.reasons).toEqual([{ type: "request", text: BUDGET_RESUME_REQUEST, source: "system" }]);
     const resumed = userMessages(leadRequests().at(-1)!);
     expect(resumed).toContain(`Nota dell'utente sul rifiuto della voce n. ${queued.number}:\ntogli il compito di collaudo`);
     expect(resumed).toContain(`Messaggio dell'utente:\n${BUDGET_RESUME_REQUEST}`);

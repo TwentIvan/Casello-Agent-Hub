@@ -178,7 +178,7 @@ export async function rejectRelease(action: PendingActionRow, note: string | nul
   const text = note
     ? `L'utente ha rifiutato «Porta in produzione» del lavoro ${w.number} con questa nota: ${note}. Il lavoro è di nuovo aperto: correggi con compiti sul branch del lavoro, poi chiudi_lavoro.`
     : `L'utente ha rifiutato «Porta in produzione» del lavoro ${w.number} senza nota: chiedigli cosa correggere con segnala.`;
-  await enqueueTurnReason(w.instanceId, { type: "request", text }, tx);
+  await enqueueTurnReason(w.instanceId, { type: "request", text, source: "system" }, tx);
   return w.instanceId;
 }
 

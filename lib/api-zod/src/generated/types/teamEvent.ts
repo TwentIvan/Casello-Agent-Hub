@@ -13,6 +13,11 @@ export interface TeamEvent {
   type: TeamEventType;
   /** @nullable */
   taskId: number | null;
+  /**
+     * Turno del capo che ha prodotto l'evento (oggi solo `risposta_capo`); null per gli altri eventi e per quelli più vecchi.
+     * @nullable
+     */
+  turnId: number | null;
   bulletin: string;
   /** @nullable */
   detail: string | null;

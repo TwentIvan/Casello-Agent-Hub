@@ -12,6 +12,8 @@ describe("motivi dei turni nella risposta dell'API", () => {
     const reasons = [
       { type: "activation" },
       { type: "request", text: "ciao" },
+      { type: "request", text: "come va?", source: "user" },
+      { type: "request", text: "Il tetto è stato aggiornato", source: "system" },
       { type: "decision", number: 3, outcome: "rejected", note: null },
       { type: "ci_finished", taskCodeId: 2, outcome: "none" },
       { type: "release_failed", workId: 1, message: "conflitto" },
@@ -27,6 +29,7 @@ describe("motivi dei turni nella risposta dell'API", () => {
         "testo",
         { type: "<b>x</b> y" },
         { type: "unknown", originalType: "finto" },
+        { type: "request", text: "x", source: "bot" },
       ]),
     ).toEqual([
       { type: "unknown", originalType: "work_reopened" },
@@ -34,6 +37,7 @@ describe("motivi dei turni nella risposta dell'API", () => {
       { type: "unknown", originalType: "?" },
       { type: "unknown", originalType: "bxby" },
       { type: "unknown", originalType: "unknown" },
+      { type: "unknown", originalType: "request" },
     ]);
   });
 

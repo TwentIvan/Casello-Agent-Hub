@@ -13481,7 +13481,8 @@ components:
         Motivo di un turno del capo. `outcome` vale approved|rejected per `decision` e success|failure|none per
         `ci_finished`; `taskCodeId` è la riga del compito con codice (CI, PR, merge), `workId` il lavoro (rilascio).
         `unknown` è un motivo salvato che la risposta non sa descrivere (tipo nuovo o campi non validi): `originalType`
-        ne riporta il tipo, così l'attività si legge comunque.
+        ne riporta il tipo, così l'attività si legge comunque. `source` (solo `request`) dice chi ha scritto il testo:
+        `user` un messaggio dell'utente al capo, `system` un testo generato da Botcave; assente nei turni più vecchi.
       required: [type]
       properties:
         type:
@@ -13491,6 +13492,9 @@ components:
           type: string
         text:
           type: string
+        source:
+          type: string
+          enum: [user, system]
         taskId:
           type: integer
         number:
@@ -13552,7 +13556,7 @@ components:
 
     TeamEvent:
       type: object
-      required: [id, instanceId, type, taskId, bulletin, detail, readAt, createdAt]
+      required: [id, instanceId, type, taskId, turnId, bulletin, detail, readAt, createdAt]
       properties:
         id:
           type: integer
@@ -13563,6 +13567,9 @@ components:
           enum: [piano_proposto, compito_finito, bloccato, decisione_richiesta, azione_manuale_richiesta, lavoro_finito, interrotto, risposta_capo, lavoro_in_prova, giro_evoluzione]
         taskId:
           type: ["integer", "null"]
+        turnId:
+          type: ["integer", "null"]
+          description: Turno del capo che ha prodotto l'evento (oggi solo `risposta_capo`); null per gli altri eventi e per quelli più vecchi.
         bulletin:
           type: string
         detail:

@@ -5678,6 +5678,14 @@ export const TeamTurnReasonType = {
   unknown: 'unknown',
 } as const;
 
+export type TeamTurnReasonSource = typeof TeamTurnReasonSource[keyof typeof TeamTurnReasonSource];
+
+
+export const TeamTurnReasonSource = {
+  user: 'user',
+  system: 'system',
+} as const;
+
 export type TeamTurnReasonOutcome = typeof TeamTurnReasonOutcome[keyof typeof TeamTurnReasonOutcome];
 
 
@@ -5690,12 +5698,13 @@ export const TeamTurnReasonOutcome = {
 } as const;
 
 /**
- * Motivo di un turno del capo. `outcome` vale approved|rejected per `decision` e success|failure|none per `ci_finished`; `taskCodeId` è la riga del compito con codice (CI, PR, merge), `workId` il lavoro (rilascio). `unknown` è un motivo salvato che la risposta non sa descrivere (tipo nuovo o campi non validi): `originalType` ne riporta il tipo, così l'attività si legge comunque.
+ * Motivo di un turno del capo. `outcome` vale approved|rejected per `decision` e success|failure|none per `ci_finished`; `taskCodeId` è la riga del compito con codice (CI, PR, merge), `workId` il lavoro (rilascio). `unknown` è un motivo salvato che la risposta non sa descrivere (tipo nuovo o campi non validi): `originalType` ne riporta il tipo, così l'attività si legge comunque. `source` (solo `request`) dice chi ha scritto il testo: `user` un messaggio dell'utente al capo, `system` un testo generato da Botcave; assente nei turni più vecchi.
  */
 export interface TeamTurnReason {
   type: TeamTurnReasonType;
   originalType?: string;
   text?: string;
+  source?: TeamTurnReasonSource;
   taskId?: number;
   number?: number;
   outcome?: TeamTurnReasonOutcome;
@@ -5763,6 +5772,11 @@ export interface TeamEvent {
   type: TeamEventType;
   /** @nullable */
   taskId: number | null;
+  /**
+     * Turno del capo che ha prodotto l'evento (oggi solo `risposta_capo`); null per gli altri eventi e per quelli più vecchi.
+     * @nullable
+     */
+  turnId: number | null;
   bulletin: string;
   /** @nullable */
   detail: string | null;

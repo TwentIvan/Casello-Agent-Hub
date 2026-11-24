@@ -313,7 +313,7 @@ describe("centralino su /mcp", () => {
     const ok = await call(client, "invia_al_capo", { id: mine, testo: "  Come va?  " });
     expect(ok.json).toEqual({ queued: true });
     const [turn] = await db.select().from(teamTurnsTable).where(eq(teamTurnsTable.instanceId, mine));
-    expect(turn!.reasons).toContainEqual({ type: "request", text: "Come va?" });
+    expect(turn!.reasons).toContainEqual({ type: "request", text: "Come va?", source: "user" });
 
     expect((await call(client, "invia_al_capo", { id: theirs, testo: "ciao" })).json).toEqual({ error: "squadra non trovata" });
     expect((await call(client, "invia_al_capo", { id: mine, testo: "   " })).isError).toBe(true);

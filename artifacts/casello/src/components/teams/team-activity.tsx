@@ -4,7 +4,6 @@ import {
   type TeamInstance,
   type TeamTask,
   type TeamTurn,
-  type TeamTurnReason,
   getGetTeamTaskQueryKey,
   getListTeamTasksQueryKey,
   getListTeamTurnsQueryKey,
@@ -17,6 +16,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { formatCost, formatDuration, formatRelative } from "@/lib/format";
+import { reasonText } from "@/lib/turn-reasons";
 import { TaskStatusBadge, TurnStatusBadge } from "./team-work-status";
 
 export const TEAM_POLL_MS = 5000;
@@ -70,31 +70,6 @@ export function useTeamWork(teamId: number) {
 }
 
 export type TeamWorkState = ReturnType<typeof useTeamWork>;
-
-function reasonText(r: TeamTurnReason): string {
-  switch (r.type) {
-    case "request":
-      return r.text ? `Richiesta: ${r.text}` : "Richiesta";
-    case "task_finished":
-      return r.taskId != null ? `Compito finito (esecuzione #${r.taskId})` : "Compito finito";
-    case "decision": {
-      const outcome = r.outcome === "approved" ? "approvata" : r.outcome === "rejected" ? "rifiutata" : "decisa";
-      return `Voce n. ${r.number ?? "?"} ${outcome}${r.note ? `: ${r.note}` : ""}`;
-    }
-    case "activation":
-      return "Attivazione della squadra";
-    case "restart":
-      return "Ripresa dopo un riavvio";
-    case "ci_finished":
-      return r.outcome === "success" ? "CI verde" : r.outcome === "failure" ? "CI non superata" : "Nessuna CI sul branch";
-    case "pr_closed":
-      return r.merged ? "PR unita" : "PR chiusa senza merge";
-    case "merge_failed":
-      return r.message ? `Merge non riuscito: ${r.message}` : "Merge non riuscito";
-    case "release_failed":
-      return r.message ? `Porta in produzione non riuscita: ${r.message}` : "Porta in produzione non riuscita";
-  }
-}
 
 const formatTime = (value: string) => new Date(value).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
 

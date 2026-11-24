@@ -735,6 +735,9 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
 - **Risposta del capo**: in un turno nato da un messaggio dell'utente (console, `invia_al_capo`, Alfred) l'ultimo messaggio del capo diventa l'evento `risposta_capo` (bollettino su una riga ≤ 300,
   testo intero nel dettaglio se più lungo; vuoto → nessun evento); il prompt lo dice al capo. Migrazione `docs/migrations/2026-11-risposta-capo.sql` (valore dell'enum `team_event_type`, fuori da una
   transazione esplicita, PRIMA del merge).
+- **Motivi nell'attività** (`lib/teams/turn-reasons.ts`): `GET …/turns` passa ogni motivo per lo schema del contratto (`publicTurnReasons`); un motivo che il contratto non descrive (tipo nuovo, campi non validi) diventa
+  `{type: "unknown", originalType}` (solo il tipo ripulito, mai il contenuto; avviso nel log) invece di un 500 su tutta l'attività. `TURN_REASON_TYPES` (`satisfies` sui tipi di `TeamTurnReason`) e il suo test obbligano ad
+  aggiungere ogni tipo nuovo anche a OpenAPI; il turno del capo salta con un avviso un tipo che non conosce. Console: testi in `src/lib/turn-reasons.ts` (`reasonText`), «Motivo non riconosciuto (<tipo>)» per gli altri.
 - **Eventi e bollettino** (`events.ts`; `team_events`): tipi `piano_proposto`, `compito_finito`, `bloccato`, `decisione_richiesta`,
   `azione_manuale_richiesta`, `lavoro_finito`, `interrotto`, `risposta_capo`; bollettino ≤ 300 caratteri, dettaglio ≤ 4 000; mai segreti né
   indirizzi delle app. Il bollettino è dell'utente che ha attivato la squadra. `GET /api/team-instances/:id/events`,

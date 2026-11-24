@@ -5675,6 +5675,7 @@ export const TeamTurnReasonType = {
   pr_closed: 'pr_closed',
   merge_failed: 'merge_failed',
   release_failed: 'release_failed',
+  unknown: 'unknown',
 } as const;
 
 export type TeamTurnReasonOutcome = typeof TeamTurnReasonOutcome[keyof typeof TeamTurnReasonOutcome];
@@ -5689,10 +5690,11 @@ export const TeamTurnReasonOutcome = {
 } as const;
 
 /**
- * Motivo di un turno del capo. `outcome` vale approved|rejected per `decision` e success|failure|none per `ci_finished`; `taskCodeId` è la riga del compito con codice (CI, PR, merge), `workId` il lavoro (rilascio).
+ * Motivo di un turno del capo. `outcome` vale approved|rejected per `decision` e success|failure|none per `ci_finished`; `taskCodeId` è la riga del compito con codice (CI, PR, merge), `workId` il lavoro (rilascio). `unknown` è un motivo salvato che la risposta non sa descrivere (tipo nuovo o campi non validi): `originalType` ne riporta il tipo, così l'attività si legge comunque.
  */
 export interface TeamTurnReason {
   type: TeamTurnReasonType;
+  originalType?: string;
   text?: string;
   taskId?: number;
   number?: number;

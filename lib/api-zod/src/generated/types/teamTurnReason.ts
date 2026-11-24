@@ -9,10 +9,11 @@ import type { TeamTurnReasonOutcome } from './teamTurnReasonOutcome';
 import type { TeamTurnReasonType } from './teamTurnReasonType';
 
 /**
- * Motivo di un turno del capo. `outcome` vale approved|rejected per `decision` e success|failure|none per `ci_finished`; `taskCodeId` è la riga del compito con codice (CI, PR, merge), `workId` il lavoro (rilascio).
+ * Motivo di un turno del capo. `outcome` vale approved|rejected per `decision` e success|failure|none per `ci_finished`; `taskCodeId` è la riga del compito con codice (CI, PR, merge), `workId` il lavoro (rilascio). `unknown` è un motivo salvato che la risposta non sa descrivere (tipo nuovo o campi non validi): `originalType` ne riporta il tipo, così l'attività si legge comunque.
  */
 export interface TeamTurnReason {
   type: TeamTurnReasonType;
+  originalType?: string;
   text?: string;
   taskId?: number;
   number?: number;

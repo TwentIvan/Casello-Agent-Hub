@@ -324,6 +324,12 @@ async function reasonMessages(instanceId: number, reasons: TeamTurnReason[], pla
       case "decision":
         out.push(...decisionMessages(reason, plan));
         break;
+      default: {
+        // Un motivo salvato con un tipo che questo processo non conosce (es. scritto da una versione più nuova): si
+        // registra e si salta, senza far fallire il turno
+        const type = (reason as { type?: unknown }).type;
+        logger.warn({ instanceId, type: typeof type === "string" ? type.slice(0, 60) : null }, "motivo del turno non riconosciuto");
+      }
     }
   }
   return out;

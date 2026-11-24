@@ -4397,6 +4397,38 @@ export interface CatalogChange {
   version: string;
 }
 
+/**
+ * Sostituto più economico con strumenti tra i modelli dell'utente; null se non ce n'è uno
+ */
+export type AgentModelDeprecationReplacement = {
+  aiModelId: number;
+  name: string;
+  accountName: string;
+  priceInput: number;
+  priceOutput: number;
+} | null;
+
+export interface AgentModelDeprecation {
+  agentId: number;
+  agentName: string;
+  appId: number;
+  appName: string;
+  aiModelId: number;
+  modelName: string;
+  /**
+     * Giorno della dismissione (AAAA-MM-GG); null per un modello ritirato senza data
+     * @nullable
+     */
+  deprecationDate: string | null;
+  retired: boolean;
+  /** Sostituto più economico con strumenti tra i modelli dell'utente; null se non ce n'è uno */
+  replacement: AgentModelDeprecationReplacement;
+}
+
+export interface AgentModelDeprecationList {
+  items: AgentModelDeprecation[];
+}
+
 export type CatalogSummaryViewDeprecatingItem = CatalogChange & {
   deprecationDate: string;
 };
@@ -4434,6 +4466,8 @@ export interface CatalogSummaryView {
   newProviders: CatalogSummaryViewNewProvidersItem[];
   /** Solo gli account dell'utente corrente */
   accounts: CatalogSummaryViewAccountsItem[];
+  /** Agenti con il modello ritirato o in dismissione entro 30 giorni, solo quelli con il modello di un account dell'utente corrente, con il sostituto proposto tra i suoi modelli */
+  agents: AgentModelDeprecation[];
 }
 
 export type CatalogRunViewTrigger = typeof CatalogRunViewTrigger[keyof typeof CatalogRunViewTrigger];

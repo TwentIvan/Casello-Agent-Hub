@@ -4987,6 +4987,22 @@ paths:
               schema:
                 $ref: "#/components/schemas/CatalogStatus"
 
+  /catalog/agent-deprecations:
+    get:
+      operationId: listAgentModelDeprecations
+      tags: [catalog]
+      summary: Agenti con il modello in dismissione
+      description: >-
+        Agenti il cui modello è ritirato o ha la data di dismissione entro 30 giorni, con il sostituto più economico con
+        strumenti tra i modelli degli account dell'utente corrente (null se non ce n'è uno). Solo letture.
+      responses:
+        "200":
+          description: Agenti
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentModelDeprecationList"
+
   /catalog/refresh:
     post:
       operationId: refreshCatalog
@@ -11617,9 +11633,57 @@ components:
         version:
           type: string
 
+    AgentModelDeprecation:
+      type: object
+      required: [agentId, agentName, appId, appName, aiModelId, modelName, deprecationDate, retired, replacement]
+      properties:
+        agentId:
+          type: integer
+        agentName:
+          type: string
+        appId:
+          type: integer
+        appName:
+          type: string
+        aiModelId:
+          type: integer
+        modelName:
+          type: string
+        deprecationDate:
+          type: ["string", "null"]
+          description: Giorno della dismissione (AAAA-MM-GG); null per un modello ritirato senza data
+        retired:
+          type: boolean
+        replacement:
+          description: Sostituto più economico con strumenti tra i modelli dell'utente; null se non ce n'è uno
+          oneOf:
+            - type: object
+              required: [aiModelId, name, accountName, priceInput, priceOutput]
+              properties:
+                aiModelId:
+                  type: integer
+                name:
+                  type: string
+                accountName:
+                  type: string
+                priceInput:
+                  type: number
+                priceOutput:
+                  type: number
+            - type: "null"
+
+    AgentModelDeprecationList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AgentModelDeprecation"
+
     CatalogSummaryView:
       type: object
-      required: [firstRun, added, retired, deprecating, priceChanged, newProviders, accounts]
+      required: [firstRun, added, retired, deprecating, priceChanged, newProviders, accounts, agents]
       properties:
         firstRun:
           type: boolean
@@ -11685,6 +11749,13 @@ components:
                 type: array
                 items:
                   type: string
+        agents:
+          type: array
+          description: >-
+            Agenti con il modello ritirato o in dismissione entro 30 giorni, solo quelli con il modello di un account
+            dell'utente corrente, con il sostituto proposto tra i suoi modelli
+          items:
+            $ref: "#/components/schemas/AgentModelDeprecation"
 
     CatalogRunView:
       type: object

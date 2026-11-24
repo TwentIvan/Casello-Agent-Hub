@@ -7191,7 +7191,24 @@ export const GetCatalogStatusResponse = zod.object({
   "accountId": zod.number(),
   "accountName": zod.string(),
   "missing": zod.array(zod.string())
-})).describe('Solo gli account dell\'utente corrente')
+})).describe('Solo gli account dell\'utente corrente'),
+  "agents": zod.array(zod.object({
+  "agentId": zod.number(),
+  "agentName": zod.string(),
+  "appId": zod.number(),
+  "appName": zod.string(),
+  "aiModelId": zod.number(),
+  "modelName": zod.string(),
+  "deprecationDate": zod.string().nullable().describe('Giorno della dismissione (AAAA-MM-GG); null per un modello ritirato senza data'),
+  "retired": zod.boolean(),
+  "replacement": zod.union([zod.object({
+  "aiModelId": zod.number(),
+  "name": zod.string(),
+  "accountName": zod.string(),
+  "priceInput": zod.number(),
+  "priceOutput": zod.number()
+}),zod.null()]).describe('Sostituto più economico con strumenti tra i modelli dell\'utente; null se non ce n\'è uno')
+})).describe('Agenti con il modello ritirato o in dismissione entro 30 giorni, solo quelli con il modello di un account dell\'utente corrente, con il sostituto proposto tra i suoi modelli')
 }),zod.null()])
 }),zod.null()]),
   "lastCompleted": zod.union([zod.object({
@@ -7239,9 +7256,51 @@ export const GetCatalogStatusResponse = zod.object({
   "accountId": zod.number(),
   "accountName": zod.string(),
   "missing": zod.array(zod.string())
-})).describe('Solo gli account dell\'utente corrente')
+})).describe('Solo gli account dell\'utente corrente'),
+  "agents": zod.array(zod.object({
+  "agentId": zod.number(),
+  "agentName": zod.string(),
+  "appId": zod.number(),
+  "appName": zod.string(),
+  "aiModelId": zod.number(),
+  "modelName": zod.string(),
+  "deprecationDate": zod.string().nullable().describe('Giorno della dismissione (AAAA-MM-GG); null per un modello ritirato senza data'),
+  "retired": zod.boolean(),
+  "replacement": zod.union([zod.object({
+  "aiModelId": zod.number(),
+  "name": zod.string(),
+  "accountName": zod.string(),
+  "priceInput": zod.number(),
+  "priceOutput": zod.number()
+}),zod.null()]).describe('Sostituto più economico con strumenti tra i modelli dell\'utente; null se non ce n\'è uno')
+})).describe('Agenti con il modello ritirato o in dismissione entro 30 giorni, solo quelli con il modello di un account dell\'utente corrente, con il sostituto proposto tra i suoi modelli')
 }),zod.null()])
 }),zod.null()]).describe('Ultima esecuzione completed o partial, da cui leggere le novità')
+})
+
+
+/**
+ * Agenti il cui modello è ritirato o ha la data di dismissione entro 30 giorni, con il sostituto più economico con strumenti tra i modelli degli account dell'utente corrente (null se non ce n'è uno). Solo letture.
+ * @summary Agenti con il modello in dismissione
+ */
+export const ListAgentModelDeprecationsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "agentId": zod.number(),
+  "agentName": zod.string(),
+  "appId": zod.number(),
+  "appName": zod.string(),
+  "aiModelId": zod.number(),
+  "modelName": zod.string(),
+  "deprecationDate": zod.string().nullable().describe('Giorno della dismissione (AAAA-MM-GG); null per un modello ritirato senza data'),
+  "retired": zod.boolean(),
+  "replacement": zod.union([zod.object({
+  "aiModelId": zod.number(),
+  "name": zod.string(),
+  "accountName": zod.string(),
+  "priceInput": zod.number(),
+  "priceOutput": zod.number()
+}),zod.null()]).describe('Sostituto più economico con strumenti tra i modelli dell\'utente; null se non ce n\'è uno')
+}))
 })
 
 
@@ -7301,7 +7360,24 @@ export const RefreshCatalogResponse = zod.object({
   "accountId": zod.number(),
   "accountName": zod.string(),
   "missing": zod.array(zod.string())
-})).describe('Solo gli account dell\'utente corrente')
+})).describe('Solo gli account dell\'utente corrente'),
+  "agents": zod.array(zod.object({
+  "agentId": zod.number(),
+  "agentName": zod.string(),
+  "appId": zod.number(),
+  "appName": zod.string(),
+  "aiModelId": zod.number(),
+  "modelName": zod.string(),
+  "deprecationDate": zod.string().nullable().describe('Giorno della dismissione (AAAA-MM-GG); null per un modello ritirato senza data'),
+  "retired": zod.boolean(),
+  "replacement": zod.union([zod.object({
+  "aiModelId": zod.number(),
+  "name": zod.string(),
+  "accountName": zod.string(),
+  "priceInput": zod.number(),
+  "priceOutput": zod.number()
+}),zod.null()]).describe('Sostituto più economico con strumenti tra i modelli dell\'utente; null se non ce n\'è uno')
+})).describe('Agenti con il modello ritirato o in dismissione entro 30 giorni, solo quelli con il modello di un account dell\'utente corrente, con il sostituto proposto tra i suoi modelli')
 }),zod.null()])
 })
 

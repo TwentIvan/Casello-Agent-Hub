@@ -5,7 +5,9 @@ import { Plus } from "lucide-react";
 import {
   type AgentStatus,
   getListAgentsQueryKey,
+  getListAgentModelDeprecationsQueryKey,
   getListAppsQueryKey,
+  useListAgentModelDeprecations,
   useListAgents,
   useListApps,
 } from "@workspace/api-client-react";
@@ -16,6 +18,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AgentCreateDialog } from "@/components/agents/agent-create-dialog";
+import { AgentDeprecationBadge } from "@/components/ai/agent-deprecation-badge";
 import { ModelDeprecationBadge } from "@/components/ai/model-deprecation-badge";
 import { AgentRoleBadge } from "@/components/agents/agent-role-badge";
 import { AgentActivityLed } from "@/components/agents/agent-activity-led";
@@ -38,6 +41,12 @@ export default function AgentsPage() {
   const agents = useListAgents(params, { query: { queryKey: getListAgentsQueryKey(params) } });
   const apps = useListApps({ query: { queryKey: getListAppsQueryKey() } });
   const activity = useAgentActivity();
+  // Avvisi del catalogo (modello ritirato o in dismissione entro 30 giorni) con il sostituto proposto
+  const deprecations = useListAgentModelDeprecations({ query: { queryKey: getListAgentModelDeprecationsQueryKey() } });
+  const deprecationByAgent = useMemo(
+    () => new Map((deprecations.data?.items ?? []).map((item) => [item.agentId, item])),
+    [deprecations.data],
+  );
 
   const sortedApps = useMemo(
     () => [...(apps.data ?? [])].sort((a, b) => a.name.localeCompare(b.name, "it")),
@@ -169,7 +178,11 @@ export default function AgentsPage() {
                         ) : (
                           <span>{agent.model}</span>
                         )}
-                        <ModelDeprecationBadge aiModelId={agent.aiModelId} href={`/agents/${agent.id}`} />
+                        {deprecationByAgent.has(agent.id) ? (
+                          <AgentDeprecationBadge item={deprecationByAgent.get(agent.id)!} href={`/agents/${agent.id}`} />
+                        ) : (
+                          <ModelDeprecationBadge aiModelId={agent.aiModelId} href={`/agents/${agent.id}`} />
+                        )}
                       </div>
                     </TableCell>
                     <TableCell className="whitespace-nowrap">

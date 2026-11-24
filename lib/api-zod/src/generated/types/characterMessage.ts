@@ -7,6 +7,7 @@
  */
 import type { CharacterMessageRole } from './characterMessageRole';
 import type { CharacterPageContext } from './characterPageContext';
+import type { ChatAttachment } from './chatAttachment';
 
 export interface CharacterMessage {
   id: number;
@@ -16,4 +17,6 @@ export interface CharacterMessage {
   error: boolean;
   pageContext: CharacterPageContext | null;
   createdAt: Date;
+  /** Allegati mandati con il messaggio (solo messaggi dell'utente; assente = nessuno) */
+  attachments?: ChatAttachment[];
 }

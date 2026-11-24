@@ -44,6 +44,8 @@ import { cancelQueued, getQueued, sendChatMessage, stopChatTurn } from "../lib/c
 import { getAlfredThread, restartAlfredThread } from "../lib/characters/subjects/alfred-thread";
 import { CHARACTER_MESSAGES, CHARACTER_MESSAGE_MAX_CHARS, CharacterError, type PageContext } from "../lib/characters/types";
 import { consumeCharacterMessage, consumeTurnStop } from "../middlewares/rate-limit";
+import { attachmentDecorator, sendChatMessageWithAttachments } from "../lib/chat-attachments/send";
+import { ChatAttachmentError, checkAttachmentsForSend } from "../lib/chat-attachments/service";
 import { parseRequest } from "../middlewares/error-handler";
 import { toNumberOrNull } from "./serializers";
 
@@ -87,10 +89,11 @@ async function detail(userId: number, conv: CharacterConversation) {
     .where(and(eq(characterMessagesTable.conversationId, conv.id), isNull(characterMessagesTable.queuedAt)))
     .orderBy(asc(characterMessagesTable.id));
   const proposals = await db.select().from(characterProposalsTable).where(eq(characterProposalsTable.conversationId, conv.id)).orderBy(asc(characterProposalsTable.id));
+  const withAttachments = await attachmentDecorator("character", conv.id, messages.map((m) => m.id));
   return {
     ...toPublicConversation(conv),
     subjectGone: await subjectGone(userId, conv),
-    messages: messages.map(toPublicMessage),
+    messages: messages.map((m) => withAttachments(toPublicMessage(m))),
     progress: conv.turnStatus === "running" ? readTurnProgress("character", conv.id) : null,
     proposals: proposals.map((p) => toPublicProposal(toProposalView(p))),
     queuedMessage: await getQueued(CHARACTER_CHAT_SPEC, conv.id),
@@ -102,7 +105,7 @@ async function guarded(res: Response, run: () => Promise<void>): Promise<void> {
   try {
     await run();
   } catch (err) {
-    if (!(err instanceof CharacterError)) throw err;
+    if (!(err instanceof CharacterError) && !(err instanceof ChatAttachmentError)) throw err;
     res.status(err.status).json({ error: err.message });
   }
 }
@@ -240,17 +243,20 @@ export function createCharactersRouter(): IRouter {
         res.status(409).json({ error: blocked });
         return;
       }
+      const attachmentIds = body.attachmentIds ?? [];
+      // Allegati: della conversazione, non ancora mandati e leggibili dal modello della conversazione (issue #120)
+      await checkAttachmentsForSend(userId, "character", id, attachmentIds, conv.aiModelId);
       if (!consumeCharacterMessage(userId, conv.character)) {
         res.status(429).json({ error: CHARACTER_MESSAGES.tooMany });
         return;
       }
       try {
-        const outcome = await sendChatMessage(CHARACTER_CHAT_SPEC, id, content, page, body.mode ?? "normal", () =>
-          startCharacterTurn(id, content, page),
+        const outcome = await sendChatMessageWithAttachments(CHARACTER_CHAT_SPEC, id, content, page, body.mode ?? "normal", attachmentIds, (ids) =>
+          startCharacterTurn(id, content, page, ids),
         );
         const message =
           outcome.kind === "started"
-            ? toPublicMessage(outcome.message)
+            ? (await attachmentDecorator("character", id, [outcome.message.id]))(toPublicMessage(outcome.message))
             : { ...outcome.queued, role: "user" as const, error: false, pageContext: page };
         res.status(202).json(SendCharacterMessageResponse.parse(message));
       } catch (err) {

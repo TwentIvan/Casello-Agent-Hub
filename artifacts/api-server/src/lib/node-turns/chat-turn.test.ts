@@ -139,3 +139,24 @@ describe("runChatTurn: interruzione", () => {
     expect(modelChat.mock.calls[0]![1]).toMatchObject({ signal: ac.signal });
   });
 });
+
+describe("runChatTurn: allegati (issue #120)", () => {
+  const withImage = [
+    { role: "user" as const, content: "guarda" },
+    { role: "user" as const, content: [{ type: "image_url" as const, image_url: { url: "data:image/png;base64,AA==" } }] },
+  ];
+
+  it("sul nodo un turno con allegati non parte e non ripiega sul cloud", async () => {
+    const out = await runChatTurn(input("node", { messages: withImage, resolved: { kind: "node", fallbackAiModelId: 9 } as unknown as ResolvedModel }));
+    expect(out).toMatchObject({ ok: false, error: "Claude Code (nodo) non legge gli allegati: scegli un modello cloud per questa conversazione" });
+    expect(delegateTurn).not.toHaveBeenCalled();
+    expect(modelChat).not.toHaveBeenCalled();
+  });
+
+  it("un modello cloud riceve le parti così come sono", async () => {
+    modelChat.mockResolvedValueOnce(reply(false));
+    const out = await runChatTurn(input("openai_compatible", { messages: withImage }));
+    expect(out.ok).toBe(true);
+    expect(modelChat.mock.calls[0]![1].messages).toEqual(withImage);
+  });
+});

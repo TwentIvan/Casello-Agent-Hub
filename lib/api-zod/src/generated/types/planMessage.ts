@@ -5,6 +5,7 @@
  * Casello — hub per agentificare applicazioni
  * OpenAPI spec version: 0.1.0
  */
+import type { ChatAttachment } from './chatAttachment';
 import type { PlanMessageRole } from './planMessageRole';
 
 export interface PlanMessage {
@@ -15,4 +16,6 @@ export interface PlanMessage {
   /** Messaggio del bot che riporta un errore */
   error: boolean;
   createdAt: Date;
+  /** Allegati mandati con il messaggio (solo messaggi dell'utente; assente = nessuno) */
+  attachments?: ChatAttachment[];
 }

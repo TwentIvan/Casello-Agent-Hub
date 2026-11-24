@@ -12,6 +12,8 @@ import { describeStep } from "../turn-progress/describe";
 import { beginTurnProgress, endTurnProgress, finishStep, startStep } from "../turn-progress/progress";
 import { delegateTurn } from "./delegate";
 import { NODE_TURN_MESSAGES } from "./messages";
+import { hasNonTextParts } from "../chat-attachments/formats";
+import { CHAT_ATTACHMENT_MESSAGES } from "../chat-attachments/support";
 
 /** Giri di Claude Code per un turno di chat: quelli di `runPlanTurn` più la risposta finale (spec §3). */
 export const CHAT_NODE_MAX_TURNS = PLAN_TURN_LIMITS.maxRounds + 1;
@@ -94,6 +96,8 @@ async function runTrackedTurn(original: ChatTurnInput): Promise<PlanTurnOutcome>
     },
   };
   if (input.resolved.kind !== "node") return cloudTurn(input.resolved, input);
+  // Allegati (immagini, PDF): Claude Code sul nodo riceve solo testo e non si ripiega sul cloud (issue #120)
+  if (input.messages.some((m) => hasNonTextParts(m.content))) return { ok: false, error: CHAT_ATTACHMENT_MESSAGES.node, tokens: 0, costUsd: null };
 
   const outcome = await delegateTurn({
     resolved: input.resolved,

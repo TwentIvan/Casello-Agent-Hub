@@ -5,6 +5,7 @@
  * Casello — hub per agentificare applicazioni
  * OpenAPI spec version: 0.1.0
  */
+import type { ChatAttachment } from './chatAttachment';
 import type { TeamChatMessageRole } from './teamChatMessageRole';
 
 export interface TeamChatMessage {
@@ -14,4 +15,6 @@ export interface TeamChatMessage {
   content: string;
   error: boolean;
   createdAt: Date;
+  /** Allegati mandati con il messaggio (solo messaggi dell'utente; assente = nessuno) */
+  attachments?: ChatAttachment[];
 }

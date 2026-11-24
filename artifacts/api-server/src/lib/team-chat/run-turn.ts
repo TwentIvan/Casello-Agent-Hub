@@ -28,6 +28,8 @@ import {
 } from "../characters/instruction-proposals";
 import { EMPTY_REPLY_MESSAGE, INTERRUPTED_TURN_MESSAGE, TurnBusyError } from "../plan-chat/run-turn";
 import { runChatTurn } from "../node-turns/chat-turn";
+import { attachmentNamesByMessage, bindChatAttachments, turnAttachments } from "../chat-attachments/service";
+import { historyNote, withAttachmentMessage } from "../chat-attachments/formats";
 import { codeAvailability } from "../code-reader/source-cache";
 import { CODE_INSTRUCTIONS_GENERAL, CODE_TOOLS, CodeToolRunner, isCodeTool } from "../code-reader/tools";
 import { CODE_TURN_LIMITS, STOPPED_TURN_MESSAGE } from "../plan-chat/turn";
@@ -55,7 +57,7 @@ const TITLE_MAX_CHARS = 80;
  * Salva il messaggio dell'utente e avvia il turno in background. Un solo turno alla volta per conversazione
  * (`TurnBusyError`); squadra chiusa → `InstanceError` 409 «squadra chiusa».
  */
-export async function startTeamChatTurn(conversationId: number, content: string): Promise<TeamChatMessage> {
+export async function startTeamChatTurn(conversationId: number, content: string, attachmentIds: number[] = []): Promise<TeamChatMessage> {
   const [found] = await db
     .select({ status: teamInstancesTable.status })
     .from(teamChatConversationsTable)
@@ -76,14 +78,19 @@ export async function startTeamChatTurn(conversationId: number, content: string)
       .select({ n: sql<number>`count(*)::int` })
       .from(teamChatMessagesTable)
       .where(and(eq(teamChatMessagesTable.conversationId, conversationId), isNull(teamChatMessagesTable.queuedAt)));
-    const [userMessage] = await db.insert(teamChatMessagesTable).values({ conversationId, role: "user", content }).returning();
+    // Messaggio e legame con gli allegati insieme: un allegato non più libero annulla entrambi
+    const userMessage = await db.transaction(async (tx) => {
+      const [row] = await tx.insert(teamChatMessagesTable).values({ conversationId, role: "user", content }).returning();
+      await bindChatAttachments(tx, "team_chat", conversationId, row!.id, attachmentIds);
+      return row!;
+    });
     if (n === 0) {
       const title = sliceChars(content.replace(/\s+/g, " ").trim(), TITLE_MAX_CHARS);
       await db.update(teamChatConversationsTable).set({ title }).where(eq(teamChatConversationsTable.id, conversationId));
     }
     const [assistant] = await db.insert(teamChatMessagesTable).values({ conversationId, role: "assistant", content: "" }).returning();
     void executeTeamChatTurn(conversationId, assistant!.id);
-    return userMessage!;
+    return userMessage;
   } catch (err) {
     // Il turno non è partito: la conversazione non deve restare bloccata
     await db
@@ -109,11 +116,12 @@ async function loadHistory(conversationId: number, assistantMessageId: number): 
     .where(eq(teamChatProposalsTable.conversationId, conversationId))
     .orderBy(asc(teamChatProposalsTable.id));
   const instructionStatuses = await loadInstructionProposalStatuses("team_chat", conversationId);
+  const attachmentNames = await attachmentNamesByMessage("team_chat", conversationId);
   const history: HistoryMessage[] = messages
     .filter((m) => m.id < assistantMessageId && !(m.role === "assistant" && m.content === ""))
     .map((m) => ({
       role: m.role,
-      content: m.content,
+      content: m.content + historyNote(attachmentNames.get(m.id) ?? []),
       proposals: proposals.filter((p) => p.messageId === m.id).map((p) => ({ kind: p.kind, roleKey: p.roleKey, status: p.status })),
       instructionProposals: instructionStatuses.get(m.id) ?? [],
     }));
@@ -186,7 +194,7 @@ async function executeTeamChatTurnInner(conversationId: number, assistantMessage
       const codeRunner = refApp && (await codeAvailability(conv.userId, refApp.app)).ok ? new CodeToolRunner(conv.userId, refApp.app.id) : null;
       // Un solo lettore di pagine web per turno (sempre offerto)
       const webReader = new WebPageReader(conv.userId);
-      const messages = buildTeamChatMessages({
+      const contextMessages = buildTeamChatMessages({
         team,
         memory: await memoryContextBlock(conv.userId, "lucius"),
         personalInstructions: await personalInstructionsBlock(conv.userId, "lucius"),
@@ -196,6 +204,11 @@ async function executeTeamChatTurnInner(conversationId: number, assistantMessage
         // Il valore dell'interruttore si legge all'inizio del turno
         ...(conv.bestPractice ? { bestPractice: { data: await bestPracticeData(conv.userId, refApp?.app.id ?? null) } } : {}),
       });
+      // Allegati dell'ultimo messaggio dell'utente: solo in questo turno (issue #120)
+      const messages = withAttachmentMessage(
+        contextMessages,
+        await turnAttachments("team_chat", conversationId, assistantMessageId, "team_chat_messages"),
+      );
       const resolved = await resolveModel(conv.aiModelId, { userId: conv.userId, mustOwn: true });
       const runner = new TeamChatToolRunner(conv.teamInstanceId, conv.userId, team);
       // Una sola ricerca delle best practice per turno (con l'interruttore acceso)

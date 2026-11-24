@@ -15,6 +15,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { RUN_STATUS_LABELS, RunStatusBadge } from "@/components/run-status-badge";
 import { listRefetchInterval } from "@/components/runs/run-queries";
+import { useLiveConnected } from "@/components/live/live-updates";
+import { livePollInterval } from "@/lib/live-updates";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { formatDuration, formatRelative } from "@/lib/format";
 
@@ -51,11 +53,13 @@ export default function RunsPage() {
     limit: PAGE_SIZE,
     ...(before !== undefined ? { before } : {}),
   };
+  const live = useLiveConnected();
   const runs = useListRuns(params, {
     query: {
       queryKey: getListRunsQueryKey(params),
-      // Aggiornamento automatico solo sulla prima pagina.
-      refetchInterval: (query) => (before === undefined ? listRefetchInterval(query.state.data) : false),
+      // Aggiornamento automatico solo sulla prima pagina (con il flusso in tempo reale, polling lento).
+      refetchInterval: (query) =>
+        before === undefined ? livePollInterval(listRefetchInterval(query.state.data), live) : false,
     },
   });
   const lastId = runs.data?.length ? runs.data[runs.data.length - 1]!.id : undefined;

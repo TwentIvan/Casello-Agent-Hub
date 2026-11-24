@@ -18,6 +18,8 @@ export * from './adminBugMessage';
 export * from './adminBugMessageAuthor';
 export * from './adminBugSummary';
 export * from './agent';
+export * from './agentActivity';
+export * from './agentActivityState';
 export * from './agentBudget';
 export * from './agentInput';
 export * from './agentModelAssignments';

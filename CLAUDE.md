@@ -67,6 +67,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   tool L0, dedup, una run per elemento nuovo) e webhook in entrata con segreto nell'URL; carta «Inneschi» nella scheda agente, Lucius propone
   inneschi di sorveglianza (vedi "Inneschi").
 - Run programmate (issue #107): un innesco di tipo `schedule` avvia le run di un agente a orario (espressione cron nell'ora italiana), per report periodici e controlli notturni (vedi "Inneschi", «Run programmate»).
+- Aggiornamenti in tempo reale delle run (issue #108): flusso SSE `/api/live` con gli avvisi «run cambiata» e stato per agente (in lavoro, aspetta te, fermo) da run in corso, run figlie e voci in «Da confermare»; la console rallenta il polling finché il flusso è aperto (vedi "Aggiornamenti in tempo reale delle run").
 - Alfred e i Responsabili: Alfred (voce, scritto e centralino `/mcp`) interpella il Responsabile di prodotto di ogni App con `chiedi_al_responsabile`, legge le App con `elenca_app` e l'esito con `leggi_run`; le scritture restano voci in «Da confermare» (vedi "Alfred (maggiordomo vocale)").
 - Proposte multiple (4a): un agente propone più creazioni o modifiche collegate con lo strumento interno `proponi`; in «Da confermare» compare una sola voce «Proposta» con i passi,
   approvabile in parte (caselle per passo), con riferimenti agli id creati dai passi precedenti; Alfred la legge passo per passo e la decide (vedi "Proposte multiple").
@@ -297,6 +298,7 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   (`/api/node/turns/*`); schema `lib/db/src/schema/node-turns.ts`; nodo `artifacts/casello-nodo/src/turns.ts` e `turn-runner.ts`; console
   `components/account/ai-account-dialog.tsx`, `node-account-fields.tsx`, `ai-accounts-section.tsx`, `nodes-section.tsx`, `components/runs/run-steps.tsx`. Prova di flusso
   `artifacts/api-server/test/node-turn-flow.test.ts` con `test/fake-claude.mjs`. Spec: `docs/superpowers/specs/2026-11-09-botcave-esecutore-claude-code-nodo-design.md`
+- `artifacts/api-server/src/lib/live/` — aggiornamenti in tempo reale delle run: avvisi (`events.ts`) e stato per agente (`activity.ts`); route `src/routes/live.ts` (`/api/live`, `/api/agent-activity`); console `components/live/live-updates.tsx`, `components/agents/agent-activity-led.tsx`, `src/lib/live-updates.ts` (vedi "Aggiornamenti in tempo reale delle run")
 - `artifacts/api-server/src/lib/turn-progress/` — avanzamento dei turni di chat: frasi dei passi (`describe.ts`) e registro in memoria (`progress.ts`); con `lib/node-turns/chat-turn.ts` e
   console `components/characters/` (`turn-progress.ts`, `turn-progress-view.tsx`, `character-chat.tsx`) (vedi "Avanzamento dei turni")
 - `artifacts/api-server/src/lib/chat-turns/` — Ferma, Invia subito e Accoda comuni alle tre chat: descrizione di una chat (`spec.ts`) e logica (`control.ts`: `stopChatTurn`, `sendChatMessage`, `queueChatMessage`, `drainQueued`); con `lib/stale-turns.ts`, i tre `run-turn.ts`,
@@ -370,6 +372,15 @@ Lingua: italiano per commenti, documentazione, issue e messaggi di commit. Codic
   (metodo, path, posizione dei parametri) e `params_schema` JSON (`"x-sensitive": true` oscura un parametro)
 - **Run**: esecuzione di un Agent: input, output, errore, durata, token, stato
   (pending/running/awaiting_client/succeeded/failed/cancelled; `awaiting_client` = in attesa dell'esito di un tool `ui` dal client); i passi in `run_steps`
+
+## Aggiornamenti in tempo reale delle run
+
+- Issue #108. La console sa subito quando una run cambia (stato o passi) e mostra per ogni agente se lavora, aspetta l'utente o è fermo; nessuna migrazione, nessuna variabile, nginx invariato (`/api/` ha già `proxy_buffering off` e `proxy_read_timeout 3600s`).
+- **Avvisi** (`lib/live/events.ts`): `publishRunChange(runId, agentId | null)` in memoria, mai eccezioni, solo id (mai input, output o argomenti). Lo chiamano `createQueuedRun`, `startRun`, la fine (`finishRun`, `failRun`), `cancelRun`, ogni passo scritto (`runStepWriter`) e le azioni `ui` (`awaiting_client` e ripresa, con agente null).
+- **Flusso** (`routes/live.ts`, `GET /api/live`, solo login: EventSource non manda `Authorization`, il pannello incorporato resta sul polling): `text/event-stream` con `X-Accel-Buffering: no`, `retry: 5000`, evento `ready` all'apertura, `runs` `{runs: [{runId, agentId}]}` con gli avvisi raccolti ogni 300 ms (`createRunChangeBatcher`: una run una volta per gruppo), commento `: ping` ogni 25 s; al più 6 flussi per utente (429 «troppi aggiornamenti in tempo reale aperti: chiudi qualche scheda»). In memoria: con più container (deploy) gli avvisi dell'altro non arrivano e vale il polling lento.
+- **Stato per agente** (`lib/live/activity.ts`, `GET /api/agent-activity`, ambiti per metodo): solo gli agenti non fermi, con `runningRuns`, `pendingRuns`, `awaitingClientRuns`, `activeChildRuns` (run figlie aperte di run dell'agente) e `pendingActions` (voci `pending` dell'utente con `agent_id` dell'agente). `agentState`: `waiting_user` se una run aspetta il client o c'è una voce da decidere, poi `working` con run in coda, in corso o figlie aperte, altrimenti `idle`.
+- **Console** (`components/live/live-updates.tsx`, logica pura in `src/lib/live-updates.ts`): `LiveUpdatesProvider` in `App.tsx` (un solo EventSource) ricarica a ogni `runs` la run, i suoi passi, gli elenchi delle run, l'attività degli agenti e le statistiche; a ogni riconnessione tutte le query delle run. Con il flusso aperto il polling di run, passi ed elenchi sale a 30 s (`useLivePollInterval`, `livePollInterval`): rete di sicurezza. LED «In lavoro» / «Aspetta te» / «Fermo» con il dettaglio nel tooltip (`AgentActivityLed`) nell'elenco Agenti e nella scheda agente; decidere una voce ricarica l'attività.
+- Fuori ambito: turni delle squadre, chat e analisi (restano sul loro polling), canale tra più container (es. LISTEN/NOTIFY di Postgres), flusso per il pannello incorporato.
 
 ## Tool composti
 

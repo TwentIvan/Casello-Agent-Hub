@@ -25,6 +25,7 @@ import type {
   AdminBugDetail,
   AdminBugSummary,
   Agent,
+  AgentActivity,
   AgentInput,
   AgentModelAssignments,
   AgentSkill,
@@ -8352,6 +8353,162 @@ export function useListRunSteps<TData = Awaited<ReturnType<typeof listRunSteps>>
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListRunStepsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getStreamLiveUpdatesUrl = () => {
+
+
+
+
+  return `/api/live`
+}
+
+/**
+ * Flusso `text/event-stream` solo con il login (EventSource della console; con un token 403). Eventi: `ready` all'apertura, `runs` con `{runs: [{runId, agentId}]}` quando lo stato o i passi di quelle run cambiano (al più un messaggio ogni 300 ms, `agentId` null se non noto), un commento `: ping` ogni 25 s. Dice solo quale run è cambiata: i dati si rileggono con le GET di sempre. In memoria: con più container gli avvisi dell'altro non arrivano. Al più 6 flussi per utente (429).
+ * @summary Aggiornamenti in tempo reale delle run (Server-Sent Events)
+ */
+export const streamLiveUpdates = async ( options?: RequestInit): Promise<string> => {
+
+  return customFetch<string>(getStreamLiveUpdatesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getStreamLiveUpdatesQueryKey = () => {
+    return [
+    `/api/live`
+    ] as const;
+    }
+
+
+export const getStreamLiveUpdatesQueryOptions = <TData = Awaited<ReturnType<typeof streamLiveUpdates>>, TError = ErrorType<ForbiddenResponse | TooManyRequestsResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof streamLiveUpdates>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getStreamLiveUpdatesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof streamLiveUpdates>>> = ({ signal }) => streamLiveUpdates({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof streamLiveUpdates>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type StreamLiveUpdatesQueryResult = NonNullable<Awaited<ReturnType<typeof streamLiveUpdates>>>
+export type StreamLiveUpdatesQueryError = ErrorType<ForbiddenResponse | TooManyRequestsResponse>
+
+
+/**
+ * @summary Aggiornamenti in tempo reale delle run (Server-Sent Events)
+ */
+
+export function useStreamLiveUpdates<TData = Awaited<ReturnType<typeof streamLiveUpdates>>, TError = ErrorType<ForbiddenResponse | TooManyRequestsResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof streamLiveUpdates>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getStreamLiveUpdatesQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListAgentActivityUrl = () => {
+
+
+
+
+  return `/api/agent-activity`
+}
+
+/**
+ * Solo gli agenti non fermi (gli assenti sono fermi), in ordine di id. `waiting_user` se una run aspetta il client o ci sono voci `pending` di «Da confermare» dell'utente nate dall'agente; `working` con run `pending`/`running` o run figlie ancora aperte; altrimenti `idle`.
+ * @summary Stato per agente (in lavoro, in attesa dell'utente, fermo)
+ */
+export const listAgentActivity = async ( options?: RequestInit): Promise<AgentActivity[]> => {
+
+  return customFetch<AgentActivity[]>(getListAgentActivityUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListAgentActivityQueryKey = () => {
+    return [
+    `/api/agent-activity`
+    ] as const;
+    }
+
+
+export const getListAgentActivityQueryOptions = <TData = Awaited<ReturnType<typeof listAgentActivity>>, TError = ErrorType<unknown>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAgentActivity>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListAgentActivityQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listAgentActivity>>> = ({ signal }) => listAgentActivity({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listAgentActivity>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListAgentActivityQueryResult = NonNullable<Awaited<ReturnType<typeof listAgentActivity>>>
+export type ListAgentActivityQueryError = ErrorType<unknown>
+
+
+/**
+ * @summary Stato per agente (in lavoro, in attesa dell'utente, fermo)
+ */
+
+export function useListAgentActivity<TData = Awaited<ReturnType<typeof listAgentActivity>>, TError = ErrorType<unknown>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listAgentActivity>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListAgentActivityQueryOptions(options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

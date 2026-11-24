@@ -18,6 +18,7 @@ import { RunStatusBadge } from "@/components/run-status-badge";
 import { BudgetAlerts } from "@/components/budget/budget";
 import { CLAUDE_WARNING_TEXT } from "@/components/account/node-status-list";
 import { formatDuration, formatRelative } from "@/lib/format";
+import { useLivePollInterval } from "@/components/live/live-updates";
 
 // Le run durano da secondi a decine di secondi: aggiornamento periodico leggero.
 const REFRESH_MS = 15_000;
@@ -48,8 +49,9 @@ function StatCard({ label, value, hint, icon: Icon, loading }: StatCardProps) {
 
 function RecentRuns() {
   const params = { limit: RECENT_RUNS };
+  const refresh = useLivePollInterval(REFRESH_MS);
   const runs = useListRuns(params, {
-    query: { queryKey: getListRunsQueryKey(params), refetchInterval: REFRESH_MS },
+    query: { queryKey: getListRunsQueryKey(params), refetchInterval: refresh },
   });
   const agents = useListAgents(undefined, { query: { queryKey: getListAgentsQueryKey() } });
 

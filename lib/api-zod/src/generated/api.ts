@@ -3451,6 +3451,29 @@ export const ListRunStepsResponse = zod.array(ListRunStepsResponseItem)
 
 
 /**
+ * Flusso `text/event-stream` solo con il login (EventSource della console; con un token 403). Eventi: `ready` all'apertura, `runs` con `{runs: [{runId, agentId}]}` quando lo stato o i passi di quelle run cambiano (al più un messaggio ogni 300 ms, `agentId` null se non noto), un commento `: ping` ogni 25 s. Dice solo quale run è cambiata: i dati si rileggono con le GET di sempre. In memoria: con più container gli avvisi dell'altro non arrivano. Al più 6 flussi per utente (429).
+ * @summary Aggiornamenti in tempo reale delle run (Server-Sent Events)
+ */
+export const StreamLiveUpdatesResponse = zod.unknown()
+
+
+/**
+ * Solo gli agenti non fermi (gli assenti sono fermi), in ordine di id. `waiting_user` se una run aspetta il client o ci sono voci `pending` di «Da confermare» dell'utente nate dall'agente; `working` con run `pending`/`running` o run figlie ancora aperte; altrimenti `idle`.
+ * @summary Stato per agente (in lavoro, in attesa dell'utente, fermo)
+ */
+export const ListAgentActivityResponseItem = zod.object({
+  "agentId": zod.number(),
+  "state": zod.enum(['working', 'waiting_user', 'idle']),
+  "runningRuns": zod.number(),
+  "pendingRuns": zod.number(),
+  "awaitingClientRuns": zod.number(),
+  "activeChildRuns": zod.number().describe('Run figlie ancora aperte nate da run dell\'agente'),
+  "pendingActions": zod.number().describe('Voci pending di «Da confermare» dell\'utente nate da run dell\'agente')
+})
+export const ListAgentActivityResponse = zod.array(ListAgentActivityResponseItem)
+
+
+/**
  * Porta a cancelled una run pending, running o awaiting_client, interrompe le chiamate in corso (modello e tool) e non avvia altri passi. Durata, token e costo già registrati restano. Risponde 409 se la run è già conclusa (succeeded, failed, cancelled).
  * @summary Annulla un'esecuzione non ancora conclusa
  */

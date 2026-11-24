@@ -4,6 +4,7 @@ import { logger } from "./logger";
 import type { DbTransaction } from "./tools/types";
 import { USER_TOKEN_LOST, startRun } from "./run-executor";
 import { setUserToken } from "./user-tokens";
+import { publishRunChange } from "./live/events";
 
 // Coda delle run: il POST crea la run `pending`, lo scheduler di questo processo la avvia quando c'è posto.
 // Limiti di concorrenza per agente e in totale; le run aspettano in ordine di creazione (created_at, id).
@@ -63,6 +64,7 @@ export async function createQueuedRun(input: {
     })
     .returning();
   if (userToken) setUserToken(run!.id, userToken);
+  publishRunChange(run!.id, run!.agentId);
   if (!input.tx) void scheduleRuns();
   return { ok: true, run: run! };
 }

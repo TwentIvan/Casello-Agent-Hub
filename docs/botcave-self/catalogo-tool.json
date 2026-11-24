@@ -165,6 +165,33 @@
     "replaces": "get_agent"
   },
   {
+    "name": "evaluate_agent_model",
+    "description": "Valuta il modello di un agente: ultime run concluse (al più 50 in 30 giorni: successo, token, costo, errori dei tool), costo stimato di una run con il modello attuale e al più 5 modelli con strumenti più economici tra i tuoi account, a parità di successo osservato, con il risparmio per run e mensile. Per cambiare modello si usa update_agent con l'aiModelId suggerito.",
+    "kind": "http",
+    "identity": "service",
+    "level": "L0",
+    "status": "active",
+    "paramsSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "Id dell'agente"
+        }
+      },
+      "required": [
+        "id"
+      ]
+    },
+    "definition": {
+      "method": "GET",
+      "path": "/api/agents/{id}/model-evaluation",
+      "paramLocations": {
+        "id": "path"
+      }
+    }
+  },
+  {
     "name": "list_agent_skills",
     "description": "Elenca le skill di un agente (istruzioni e tool usati).",
     "kind": "http",

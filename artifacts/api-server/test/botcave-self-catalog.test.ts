@@ -44,7 +44,7 @@ const apiPath = (tool: CatalogTool) => tool.definition.path.replace(/^\/api(?=\/
 
 // Spec §5.1 (letture) e §5.2 (scritture)
 const READS = [
-  "list_apps", "get_app_overview", "list_app_tools", "list_agents", "get_agent", "list_agent_skills",
+  "list_apps", "get_app_overview", "list_app_tools", "list_agents", "get_agent", "evaluate_agent_model", "list_agent_skills",
   "list_agent_triggers", "get_trigger", "list_trigger_runs", "test_trigger",
   "list_runs", "get_run", "get_run_steps", "get_dashboard_stats", "get_budget",
   "list_app_analyses", "get_analysis", "get_analysis_issues", "get_app_plan",

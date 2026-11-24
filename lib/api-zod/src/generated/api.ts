@@ -4656,6 +4656,7 @@ export const GetDashboardStatsResponse = zod.object({
   "pendingActions": zod.number().describe('Azioni dell\'utente corrente in attesa di conferma'),
   "triggersInError": zod.number().describe('Inneschi fermi in stato error (servono «Riprendi»)'),
   "evolutionCyclesPaused": zod.number().describe('Cicli di evoluzione in pausa attivati dall\'utente corrente'),
+  "fleetPaused": zod.boolean().describe('La flotta degli agenti è in pausa (nessuna run nuova parte, vedi \/fleet)'),
   "recentlyPairedNodes": zod.array(zod.object({
   "id": zod.number(),
   "name": zod.string(),

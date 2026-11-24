@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Link, useLocation } from "wouter";
-import { Bot, Cpu, LayoutDashboard, PlayCircle, Boxes, ShieldCheck, Sparkles, LayoutTemplate, Users, type LucideIcon } from "lucide-react";
+import { Bot, Cpu, Gauge, LayoutDashboard, PlayCircle, Boxes, ShieldCheck, Sparkles, LayoutTemplate, Users, type LucideIcon } from "lucide-react";
 import {
   getGetDashboardStatsQueryKey,
   getListUnreadTeamEventsQueryKey,
@@ -44,6 +44,7 @@ const NAV_ITEMS: NavItem[] = [
   { href: "/runs", label: "Run", icon: PlayCircle },
   { href: "/apps", label: "App", icon: Boxes },
   { href: "/agents", label: "Agenti", icon: Bot },
+  { href: "/fleet", label: "Flotta", icon: Gauge },
   { href: "/skills", label: "Skill", icon: Sparkles },
   { href: "/team-templates", label: "Modelli di squadra", icon: LayoutTemplate },
   { href: "/models", label: "Modelli AI", icon: Cpu },

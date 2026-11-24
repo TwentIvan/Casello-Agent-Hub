@@ -9093,7 +9093,7 @@ components:
 
     DashboardStats:
       type: object
-      required: [totalApps, totalAgents, totalRuns, successfulRuns, failedRuns, cancelledRuns, activeAgents, pendingActions, triggersInError, evolutionCyclesPaused, recentlyPairedNodes, nodeClaudeWarnings]
+      required: [totalApps, totalAgents, totalRuns, successfulRuns, failedRuns, cancelledRuns, activeAgents, pendingActions, triggersInError, evolutionCyclesPaused, fleetPaused, recentlyPairedNodes, nodeClaudeWarnings]
       properties:
         totalApps:
           type: integer
@@ -9118,6 +9118,9 @@ components:
         evolutionCyclesPaused:
           type: integer
           description: Cicli di evoluzione in pausa attivati dall'utente corrente
+        fleetPaused:
+          type: boolean
+          description: La flotta degli agenti è in pausa (nessuna run nuova parte, vedi /fleet)
         recentlyPairedNodes:
           type: array
           description: Nodi dell'utente collegati nelle ultime 24 ore (attivi)

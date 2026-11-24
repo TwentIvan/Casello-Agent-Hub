@@ -2,6 +2,7 @@
 import {
   type AgentActivity,
   getGetDashboardStatsQueryKey,
+  getGetFleetQueryKey,
   getGetRunQueryKey,
   getListAgentActivityQueryKey,
   getListRunStepsQueryKey,
@@ -40,9 +41,9 @@ export function parseRunsEvent(data: string): LiveRunChange[] {
   return out;
 }
 
-/** Elenchi e riepiloghi toccati da ogni run: elenchi delle run, stato degli agenti, statistiche. */
+/** Elenchi e riepiloghi toccati da ogni run: elenchi delle run, stato degli agenti, statistiche, flotta. */
 export function runSummaryQueryKeys(): ReadonlyArray<readonly unknown[]> {
-  return [getListRunsQueryKey(), getListAgentActivityQueryKey(), getGetDashboardStatsQueryKey()];
+  return [getListRunsQueryKey(), getListAgentActivityQueryKey(), getGetDashboardStatsQueryKey(), getGetFleetQueryKey()];
 }
 
 /** Chiavi da ricaricare per le run cambiate: la run e i suoi passi, poi elenchi e riepiloghi. */

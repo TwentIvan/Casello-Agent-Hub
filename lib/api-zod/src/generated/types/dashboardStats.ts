@@ -22,6 +22,8 @@ export interface DashboardStats {
   triggersInError: number;
   /** Cicli di evoluzione in pausa attivati dall'utente corrente */
   evolutionCyclesPaused: number;
+  /** La flotta degli agenti è in pausa (nessuna run nuova parte, vedi /fleet) */
+  fleetPaused: boolean;
   /** Nodi dell'utente collegati nelle ultime 24 ore (attivi) */
   recentlyPairedNodes: DashboardStatsRecentlyPairedNodesItem[];
   /** Nodi con un account «Claude Code (nodo)» dell'utente il cui Claude non è pronto */

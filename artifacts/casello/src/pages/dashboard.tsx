@@ -151,6 +151,17 @@ export default function Dashboard() {
           </AlertDescription>
         </Alert>
       ))}
+      {s?.fleetPaused && (
+        <Alert variant="destructive">
+          <AlertCircle className="size-4" />
+          <AlertTitle>Flotta in pausa: nessuna run nuova parte</AlertTitle>
+          <AlertDescription>
+            <Link href="/fleet" className="underline">
+              Apri la Flotta
+            </Link>
+          </AlertDescription>
+        </Alert>
+      )}
       {s && s.evolutionCyclesPaused > 0 && (
         <Alert>
           <AlertTitle>Cicli in pausa: {s.evolutionCyclesPaused}</AlertTitle>

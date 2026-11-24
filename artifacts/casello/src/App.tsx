@@ -19,6 +19,7 @@ import AppPlanPage from "@/pages/app-plan";
 import AgentsPage from "@/pages/agents";
 import AgentDetailPage from "@/pages/agent-detail";
 import RunsPage from "@/pages/runs";
+import FleetPage from "@/pages/fleet";
 import PendingActionsPage from "@/pages/pending-actions";
 import RunDetailPage from "@/pages/run-detail";
 import AnalysisDetailPage from "@/pages/analysis-detail";
@@ -74,6 +75,7 @@ function Router() {
               <Route path="/agents" component={AgentsPage} />
               <Route path="/agents/:id" component={AgentDetailPage} />
               <Route path="/runs" component={RunsPage} />
+              <Route path="/fleet" component={FleetPage} />
               <Route path="/runs/:id" component={RunDetailPage} />
               <Route path="/pending-actions" component={PendingActionsPage} />
               <Route path="/models" component={ModelsPage} />

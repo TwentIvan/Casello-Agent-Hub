@@ -26,6 +26,9 @@ const ACTION_LABELS: Record<string, string> = {
   "ai_account.delete": "Account AI eliminato",
   "ai_model.update": "Modello AI modificato",
   "budget.update": "Tetto di spesa modificato",
+  "fleet.policy.update": "Limiti della flotta modificati",
+  "fleet.pause": "Flotta in pausa",
+  "fleet.resume": "Flotta ripresa",
   "app.create": "App creata",
   "app.update": "App modificata",
   "app.delete": "App eliminata",
@@ -118,6 +121,9 @@ const DETAIL_LABELS: Record<string, (v: unknown) => string | null> = {
   sourceTokenChanged: (v) => (v === true ? "token del codice cambiato" : null),
   set: (v) => (v === true ? "impostato" : v === false ? "tolto" : null),
   replace: (v) => (v === true ? "al posto di un nodo esistente" : null),
+  maxRunningRuns: (v) => (typeof v === "number" ? `${v} run in corso in tutto` : null),
+  maxRunningPerAgent: (v) => (typeof v === "number" ? `${v} per agente` : null),
+  reasonGiven: (v) => (v === true ? "con motivo" : null),
 };
 
 /** Dettaglio leggibile su una riga (campi noti, gli altri ignorati). */

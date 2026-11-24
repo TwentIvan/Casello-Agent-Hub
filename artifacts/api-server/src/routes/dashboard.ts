@@ -3,6 +3,7 @@ import { sql, eq, and, gte, desc } from "drizzle-orm";
 import { currentUserId } from "../lib/auth";
 import { db, aiAccountsTable, appsTable, agentsTable, agentTriggersTable, evolutionCyclesTable, nodesTable, runsTable, pendingActionsTable } from "@workspace/db";
 import { GetDashboardStatsResponse } from "@workspace/api-zod";
+import { fleetPaused } from "../lib/fleet/policy";
 
 const router: IRouter = Router();
 
@@ -104,6 +105,7 @@ router.get("/dashboard/stats", async (req, res) => {
       pendingActions,
       triggersInError,
       evolutionCyclesPaused,
+      fleetPaused: await fleetPaused(),
       recentlyPairedNodes,
       nodeClaudeWarnings,
       avgDurationMs,

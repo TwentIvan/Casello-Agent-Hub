@@ -32,13 +32,14 @@ describe("parseRunsEvent", () => {
 });
 
 describe("queryKeysForRunChanges", () => {
-  it("run e passi di ogni run cambiata, poi elenchi delle run, stato degli agenti e statistiche", () => {
+  it("run e passi di ogni run cambiata, poi elenchi delle run, stato degli agenti, statistiche e flotta", () => {
     expect(queryKeysForRunChanges([{ runId: 9, agentId: 1 }])).toEqual([
       ["/api/runs/9"],
       ["/api/runs/9/steps"],
       ["/api/runs"],
       ["/api/agent-activity"],
       ["/api/dashboard/stats"],
+      ["/api/fleet"],
     ]);
     expect(queryKeysForRunChanges([])).toEqual([]);
   });

@@ -30,6 +30,8 @@ import {
   ListAgentSkillsParams,
   ListAgentSkillsResponse,
   DeleteAgentSkillParams,
+  GetAgentModelEvaluationParams,
+  GetAgentModelEvaluationResponse,
 } from "@workspace/api-zod";
 import { AGENT_WITHOUT_MODEL } from "../lib/run-executor";
 import { RUN_QUEUE_MESSAGES, createQueuedRun } from "../lib/run-queue";
@@ -38,6 +40,8 @@ import { budgetColumn, runBudgetBlock } from "../lib/budget";
 import { currentUserId } from "../lib/auth";
 import { ModelChoiceError, NO_MODEL, chooseOwnModel, type ModelChoice } from "../lib/ai/choice";
 import { resolveAgentModel } from "../lib/ai/default-model";
+import { EVALUATION_MESSAGES } from "../lib/model-evaluation/evaluate";
+import { evaluateAgentModel } from "../lib/model-evaluation/service";
 import { toPublicRun, userTokenFrom, withToolIds, withToolIdsOne } from "./serializers";
 import { parseRequest } from "../middlewares/error-handler";
 
@@ -90,6 +94,17 @@ router.get("/agents/:id", async (req, res) => {
     return;
   }
   res.json(GetAgentResponse.parse(await withToolIdsOne(agent)));
+});
+
+// Valutazione del modello (issue #112): solo letture, candidati tra i modelli degli account dell'utente
+router.get("/agents/:id/model-evaluation", async (req, res) => {
+  const { id } = parseRequest(GetAgentModelEvaluationParams, req.params);
+  const evaluation = await evaluateAgentModel(id, currentUserId(req));
+  if (!evaluation) {
+    res.status(404).json({ error: EVALUATION_MESSAGES.agentNotFound });
+    return;
+  }
+  res.json(GetAgentModelEvaluationResponse.parse(evaluation));
 });
 
 /**

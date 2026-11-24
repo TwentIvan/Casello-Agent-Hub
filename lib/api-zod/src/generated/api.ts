@@ -3458,6 +3458,70 @@ export const StreamLiveUpdatesResponse = zod.unknown()
 
 
 /**
+ * Legge le ultime run concluse dell'agente (al più 50 degli ultimi 30 giorni: esito, token, costo, passi tool falliti), calcola il costo medio stimato di una run con il modello attuale e con i modelli con strumenti degli account AI dell'utente (disponibili, prezzi noti, non in anteprima, non Claude Code sul nodo) e propone al più 5 modelli più economici. Un modello già provato dall'agente (almeno 3 run) con un successo più basso di 10 punti rispetto al riferimento non si propone. Solo lettura, nessuna chiamata a modelli: per cambiare modello si usa PATCH /agents/{id}.
+ * @summary Valutazione del modello di un agente con i modelli più economici
+ */
+export const GetAgentModelEvaluationParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetAgentModelEvaluationResponse = zod.object({
+  "agentId": zod.number(),
+  "agentName": zod.string(),
+  "windowDays": zod.number().describe('Giorni delle run considerate'),
+  "enoughData": zod.boolean().describe('Almeno 5 run concluse e non annullate nella finestra'),
+  "currentModel": zod.object({
+  "aiModelId": zod.number(),
+  "name": zod.string(),
+  "accountName": zod.string(),
+  "priceInput": zod.number().nullable(),
+  "priceOutput": zod.number().nullable(),
+  "estimatedCostPerRunUsd": zod.number().nullable().describe('Costo stimato di una run media con i prezzi del modello; null senza prezzi o senza run')
+}).nullable(),
+  "usage": zod.object({
+  "runs": zod.number().describe('Run lette (al più 50)'),
+  "succeeded": zod.number(),
+  "failed": zod.number(),
+  "cancelled": zod.number(),
+  "successRate": zod.number().nullable().describe('Riuscite su riuscite più fallite (0..1)'),
+  "avgPromptTokens": zod.number().nullable(),
+  "avgCachedTokens": zod.number().nullable(),
+  "avgCompletionTokens": zod.number().nullable(),
+  "avgCostUsd": zod.number().nullable().describe('Costo medio registrato delle run con prezzo'),
+  "unpricedRuns": zod.number(),
+  "toolCalls": zod.number(),
+  "toolErrors": zod.number(),
+  "runsInWindow": zod.number().describe('Run concluse dell\'agente nella finestra (base della stima mensile)')
+}),
+  "byModel": zod.array(zod.object({
+  "aiModelId": zod.number().nullable(),
+  "name": zod.string().nullable(),
+  "runs": zod.number(),
+  "succeeded": zod.number(),
+  "failed": zod.number(),
+  "successRate": zod.number().nullable(),
+  "avgCostUsd": zod.number().nullable(),
+  "toolCalls": zod.number(),
+  "toolErrors": zod.number()
+})),
+  "suggestions": zod.array(zod.object({
+  "aiModelId": zod.number().describe('Id da passare come aiModelId a PATCH \/agents\/{id}'),
+  "name": zod.string(),
+  "accountName": zod.string(),
+  "priceInput": zod.number(),
+  "priceOutput": zod.number(),
+  "estimatedCostPerRunUsd": zod.number(),
+  "savingPerRunUsd": zod.number(),
+  "savingPercent": zod.number(),
+  "estimatedMonthlySavingUsd": zod.number().describe('Risparmio per run per le run della finestra'),
+  "observedRuns": zod.number().describe('Run concluse dell\'agente già fatte con questo modello'),
+  "observedSuccessRate": zod.number().nullable()
+})),
+  "note": zod.string().describe('Esito in una frase (messaggio fisso)')
+})
+
+
+/**
  * Solo gli agenti non fermi (gli assenti sono fermi), in ordine di id. `waiting_user` se una run aspetta il client o ci sono voci `pending` di «Da confermare» dell'utente nate dall'agente; `working` con run `pending`/`running` o run figlie ancora aperte; altrimenti `idle`.
  * @summary Stato per agente (in lavoro, in attesa dell'utente, fermo)
  */

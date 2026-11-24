@@ -38,6 +38,7 @@ import { useAgentActivity } from "@/components/live/live-updates";
 import { AgentToolsSection } from "@/components/agents/agent-tools-section";
 import { AgentTriggersSection } from "@/components/agents/agent-triggers-section";
 import { AgentSkillsSection } from "@/components/agents/agent-skills-section";
+import { AgentModelEvaluationCard } from "@/components/agents/agent-model-evaluation-card";
 import { RunPanel } from "@/components/runs/run-panel";
 import { AgentBudgetCard } from "@/components/budget/budget";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -414,6 +415,7 @@ export default function AgentDetailPage() {
       <RunPanel key={`run-${agent.data.id}`} agent={agent.data} />
       <AgentConfigForm key={`config-${agent.data.id}`} agent={agent.data} dirtyRef={dirtyRef} />
       <AgentBudgetCard key={`budget-${agent.data.id}`} agent={agent.data} />
+      <AgentModelEvaluationCard key={`model-evaluation-${agent.data.id}-${agent.data.aiModelId}`} agent={agent.data} />
       <AgentToolsSection
         // Gli id salvati nella key: una scheda accettata che cambia gli strumenti riparte dalla selezione nuova
         key={`tools-${agent.data.id}-${[...agent.data.toolIds].sort((a, b) => a - b).join(",")}`}

@@ -2778,6 +2778,29 @@ paths:
         "429":
           $ref: "#/components/responses/TooManyRequests"
 
+  /agents/{id}/model-evaluation:
+    get:
+      operationId: getAgentModelEvaluation
+      tags: [agents]
+      summary: Valutazione del modello di un agente con i modelli più economici
+      description: >-
+        Legge le ultime run concluse dell'agente (al più 50 degli ultimi 30 giorni: esito, token, costo, passi tool falliti),
+        calcola il costo medio stimato di una run con il modello attuale e con i modelli con strumenti degli account AI
+        dell'utente (disponibili, prezzi noti, non in anteprima, non Claude Code sul nodo) e propone al più 5 modelli più
+        economici. Un modello già provato dall'agente (almeno 3 run) con un successo più basso di 10 punti rispetto al
+        riferimento non si propone. Solo lettura, nessuna chiamata a modelli: per cambiare modello si usa PATCH /agents/{id}.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Valutazione
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentModelEvaluation"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /agent-activity:
     get:
       operationId: listAgentActivity
@@ -8012,6 +8035,130 @@ components:
           type: boolean
 
     # ── Run ────────────────────────────────────────────────────────────────────
+
+    AgentModelEvaluation:
+      type: object
+      required: [agentId, agentName, windowDays, enoughData, currentModel, usage, byModel, suggestions, note]
+      properties:
+        agentId:
+          type: integer
+        agentName:
+          type: string
+        windowDays:
+          type: integer
+          description: Giorni delle run considerate
+        enoughData:
+          type: boolean
+          description: Almeno 5 run concluse e non annullate nella finestra
+        currentModel:
+          type: [object, "null"]
+          required: [aiModelId, name, accountName, priceInput, priceOutput, estimatedCostPerRunUsd]
+          properties:
+            aiModelId:
+              type: integer
+            name:
+              type: string
+            accountName:
+              type: string
+            priceInput:
+              type: [number, "null"]
+            priceOutput:
+              type: [number, "null"]
+            estimatedCostPerRunUsd:
+              type: [number, "null"]
+              description: Costo stimato di una run media con i prezzi del modello; null senza prezzi o senza run
+        usage:
+          type: object
+          required: [runs, succeeded, failed, cancelled, successRate, avgPromptTokens, avgCachedTokens, avgCompletionTokens, avgCostUsd, unpricedRuns, toolCalls, toolErrors, runsInWindow]
+          properties:
+            runs:
+              type: integer
+              description: Run lette (al più 50)
+            succeeded:
+              type: integer
+            failed:
+              type: integer
+            cancelled:
+              type: integer
+            successRate:
+              type: [number, "null"]
+              description: Riuscite su riuscite più fallite (0..1)
+            avgPromptTokens:
+              type: [integer, "null"]
+            avgCachedTokens:
+              type: [integer, "null"]
+            avgCompletionTokens:
+              type: [integer, "null"]
+            avgCostUsd:
+              type: [number, "null"]
+              description: Costo medio registrato delle run con prezzo
+            unpricedRuns:
+              type: integer
+            toolCalls:
+              type: integer
+            toolErrors:
+              type: integer
+            runsInWindow:
+              type: integer
+              description: Run concluse dell'agente nella finestra (base della stima mensile)
+        byModel:
+          type: array
+          items:
+            type: object
+            required: [aiModelId, name, runs, succeeded, failed, successRate, avgCostUsd, toolCalls, toolErrors]
+            properties:
+              aiModelId:
+                type: [integer, "null"]
+              name:
+                type: [string, "null"]
+              runs:
+                type: integer
+              succeeded:
+                type: integer
+              failed:
+                type: integer
+              successRate:
+                type: [number, "null"]
+              avgCostUsd:
+                type: [number, "null"]
+              toolCalls:
+                type: integer
+              toolErrors:
+                type: integer
+        suggestions:
+          type: array
+          items:
+            type: object
+            required: [aiModelId, name, accountName, priceInput, priceOutput, estimatedCostPerRunUsd, savingPerRunUsd, savingPercent, estimatedMonthlySavingUsd, observedRuns, observedSuccessRate]
+            properties:
+              aiModelId:
+                type: integer
+                description: Id da passare come aiModelId a PATCH /agents/{id}
+              name:
+                type: string
+              accountName:
+                type: string
+              priceInput:
+                type: number
+              priceOutput:
+                type: number
+              estimatedCostPerRunUsd:
+                type: number
+              savingPerRunUsd:
+                type: number
+              savingPercent:
+                type: integer
+              estimatedMonthlySavingUsd:
+                type: number
+                description: Risparmio per run per le run della finestra
+              observedRuns:
+                type: integer
+                description: Run concluse dell'agente già fatte con questo modello
+              observedSuccessRate:
+                type: [number, "null"]
+        note:
+          type: string
+          description: Esito in una frase (messaggio fisso)
 
     AgentActivity:
       type: object

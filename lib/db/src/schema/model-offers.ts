@@ -24,6 +24,9 @@ export const modelOffersTable = pgTable(
     priceCachedInputPerMtok: numeric("price_cached_input_per_mtok", { precision: 12, scale: 6 }),
     contextTokens: integer("context_tokens"),
     supportsTools: boolean("supports_tools"),
+    // Immagini e PDF in ingresso presso questo provider (null = non noto): allegati delle chat
+    supportsVision: boolean("supports_vision"),
+    supportsPdf: boolean("supports_pdf"),
     status: modelCatalogStatusEnum("status").notNull().default("available"),
     deprecationDate: timestamp("deprecation_date"),
     // Fonte di ciascun campo, per audit e per l'aggiornamento parziale

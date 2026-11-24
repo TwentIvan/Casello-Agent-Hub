@@ -55,6 +55,21 @@ describe("mergeUniversal", () => {
     expect(models.map((m) => m.canonicalKey).sort()).toEqual(["deepgram/base", "nuovo-provider/base"]);
   });
 
+  it("visione e PDF per offerta: dalla fonte del provider, non dal modello fuso (issue #120)", () => {
+    const { models, offers } = mergeUniversal(
+      [
+        { ...BASE, source: "litellm", key: "gpt-x", litellmProvider: "openai", priceInput: null, priceOutput: null, supportsVision: true, supportsPdf: true },
+        { ...BASE, source: "litellm", key: "groq/gpt-x", litellmProvider: "groq", priceInput: null, priceOutput: null, supportsVision: false, supportsPdf: false },
+      ],
+      PROVIDER_REGISTRY,
+      NOW,
+    );
+    expect(models.find((m) => m.canonicalKey === "gpt-x")).toMatchObject({ supportsVision: true });
+    const byProvider = new Map(offers.map((o) => [o.provider, o]));
+    expect(byProvider.get("openai")).toMatchObject({ supportsVision: true, supportsPdf: true, sources: { supportsVision: "litellm", supportsPdf: "litellm" } });
+    expect(byProvider.get("groq")).toMatchObject({ supportsVision: false, supportsPdf: false });
+  });
+
   it("i modelli non chat entrano con il loro tipo", async () => {
     const { models, offers } = await merged();
     expect(models.find((m) => m.canonicalKey === "text-embedding-3-small")).toMatchObject({ mode: "embedding" });

@@ -32,6 +32,7 @@ describe("fetchOpenRouterSource", () => {
       mode: "chat",
       supportsVision: false,
       supportsReasoning: false,
+      supportsPdf: false,
     });
     expect(entries.find((e) => e.key === "google/gemini-2.0-flash-exp:free")?.supportsTools).toBe(false);
     // Senza input_cache_read il prezzo di cache non è noto
@@ -139,6 +140,7 @@ describe("fetchLiteLlmSource", () => {
       mode: "chat",
       supportsVision: null,
       supportsReasoning: null,
+      supportsPdf: null,
     });
     expect(entries.find((e) => e.key === "groq/llama-3.3-70b")?.priceCachedInput).toBeNull();
   });

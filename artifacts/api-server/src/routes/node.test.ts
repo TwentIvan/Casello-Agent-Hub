@@ -7,6 +7,7 @@ import { getPlan } from "../lib/teams/plan";
 import { startTask } from "../lib/teams/task-runner";
 import { teamSpend } from "../lib/teams/team-budget";
 import { catalogSkill, ensureUser, nodeRole, seedNodeTeam } from "../../test/team-node-fixture";
+import { nodeModelFor } from "../../test/node-turn-fixture";
 
 // Protocollo dei nodi sull'app completa (porta 0): heartbeat, claim, ping e report con il token d'ambito `node`.
 // Le tabelle si svuotano SENZA ripartire con gli id: i limiti per nodo e per compito sono in memoria per id.
@@ -167,6 +168,16 @@ describe("capacità git e compiti con codice", () => {
 });
 
 describe("claim", () => {
+  it("ruolo node con un modello Claude Code (nodo): il pacchetto porta l'id del modello per claude --model", async () => {
+    const modelId = await nodeModelFor(userId);
+    const instanceId = await seedNodeTeam({ userId, roles: [sapRole({ aiModelId: modelId })] });
+    await startTask(instanceId, "t1");
+    const { token } = await nodeWith(userId, "Mac", ["sap:abap-developer"]);
+    const claim = await api("POST", "/node/claim", { token });
+    expect(claim.status, claim.text).toBe(200);
+    expect(claim.json.role).toMatchObject({ preferredModel: "sonnet (ultimo)", model: "sonnet" });
+  });
+
   it("pacchetto completo; il compito passa a running con lease di 15 minuti e il PLAN lo segna in corso", async () => {
     const instanceId = await seedNodeTeam({ userId, roles: [sapRole()] });
     const started = await startTask(instanceId, "t1");
@@ -180,7 +191,7 @@ describe("claim", () => {
       taskId: started.id,
       team: { id: instanceId, name: "Squadra WI", refType: "wi", refId: "1174", refTitle: "WI 1174" },
       workspace: "SAP/AIMAG/WI_1174",
-      role: { key: "operaio", name: "Operaio SAP", task: "Sviluppa in ABAP.", preferredModel: null },
+      role: { key: "operaio", name: "Operaio SAP", task: "Sviluppa in ABAP.", preferredModel: null, model: null },
       task: { planTaskId: "t1", title: "Compito t1", instructions: "Istruzioni di t1" },
       plan: {
         objective: "Chiudere il WI",

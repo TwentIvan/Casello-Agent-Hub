@@ -31,7 +31,7 @@ export const MODEL_UNAVAILABLE = "modello non disponibile";
  * eventualmente decifrata da `resolveModel` resta in questa funzione e non viene restituita.
  */
 export async function chooseOwnModel(aiModelId: number, userId: number): Promise<ModelChoice> {
-  return choose(aiModelId, userId, false);
+  return choose(aiModelId, userId, "any");
 }
 
 /** Consumatori senza esecutore sul nodo (ruoli `cloud` delle squadre, analisi cloud, centralino). */
@@ -42,10 +42,18 @@ export const NODE_MODEL_NOT_ALLOWED = "Claude Code (nodo) non è disponibile qui
  * → `ModelChoiceError` con NODE_MODEL_NOT_ALLOWED.
  */
 export async function chooseCloudModel(aiModelId: number, userId: number): Promise<ModelChoice> {
-  return choose(aiModelId, userId, true);
+  return choose(aiModelId, userId, "cloud");
 }
 
-async function choose(aiModelId: number, userId: number, cloudOnly: boolean): Promise<ModelChoice> {
+/** Ruoli `node` delle squadre: il modello, facoltativo, è quello che Claude Code usa sul Mac. */
+export const NODE_MODEL_REQUIRED = "un ruolo sul Mac usa un modello Claude Code (nodo): scegline uno del gruppo Claude Code";
+
+/** Come `chooseOwnModel`, solo modelli di un account Claude Code (nodo), altrimenti NODE_MODEL_REQUIRED. */
+export async function chooseNodeModel(aiModelId: number, userId: number): Promise<ModelChoice> {
+  return choose(aiModelId, userId, "node");
+}
+
+async function choose(aiModelId: number, userId: number, kind: "any" | "cloud" | "node"): Promise<ModelChoice> {
   if (!Number.isSafeInteger(aiModelId) || aiModelId <= 0) throw new ModelChoiceError(MODEL_UNAVAILABLE);
   let resolved;
   try {
@@ -54,6 +62,7 @@ async function choose(aiModelId: number, userId: number, cloudOnly: boolean): Pr
     if (err instanceof ModelAccessError || err instanceof ProviderError) throw new ModelChoiceError(err.message);
     throw err;
   }
-  if (cloudOnly && resolved.kind === "node") throw new ModelChoiceError(NODE_MODEL_NOT_ALLOWED);
+  if (kind === "cloud" && resolved.kind === "node") throw new ModelChoiceError(NODE_MODEL_NOT_ALLOWED);
+  if (kind === "node" && resolved.kind !== "node") throw new ModelChoiceError(NODE_MODEL_REQUIRED);
   return { aiModelId: resolved.aiModelId, model: resolved.modelId };
 }

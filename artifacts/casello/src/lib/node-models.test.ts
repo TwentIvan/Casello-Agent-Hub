@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { NODE_PROVIDER, isNodeAccount, withoutNodeModels } from "./node-models";
+import { NODE_PROVIDER, isNodeAccount, nodeModelIds, withoutNodeModels } from "./node-models";
 
 // Modelli Claude Code (nodo) fuori dalle tendine dei consumatori che girano solo nel cloud.
 
@@ -18,5 +18,12 @@ describe("withoutNodeModels", () => {
   it("isNodeAccount riconosce solo il provider del nodo", () => {
     expect(isNodeAccount({ provider: "claude_code_node" })).toBe(true);
     expect(isNodeAccount({ provider: "anthropic" })).toBe(false);
+  });
+});
+
+describe("nodeModelIds", () => {
+  it("raccoglie gli id dei modelli dei soli account Claude Code (nodo)", () => {
+    const groups = [group(1, "deepseek", [10]), group(2, NODE_PROVIDER, [20, 21])];
+    expect([...nodeModelIds(groups)]).toEqual([20, 21]);
   });
 });

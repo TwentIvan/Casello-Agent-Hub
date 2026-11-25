@@ -593,7 +593,7 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   `TEAM_MESSAGES`, nulla salvato): un solo capo («una squadra ha esattamente un capo»); 1..20 ruoli, `key` e `name` unici,
   ≤ 30 skill per ruolo (catalogo + specializzate); il capo è sempre `cloud` («il capo gira in cloud: scegli «cloud» e un modello cloud per il capo»: i suoi turni nascono
   nell'API, anche con un modello Claude Code (nodo), che li delega al Mac, vedi "Esecutore Claude Code (nodo)"; in console «Nodo locale» è disattivato per il capo e un ruolo node scelto come capo passa al cloud); `cloud` → `aiModelId` di un modello dei propri account («modello non
-  disponibile»), `node` → `aiModelId` null; skill `node` solo su ruoli `node`; skill inesistenti o deprecate rifiutate,
+  disponibile»), `node` → `aiModelId` null o un modello di un account Claude Code (nodo) dell'utente (`chooseNodeModel`, altrimenti «un ruolo sul Mac usa un modello Claude Code (nodo)…»: il nodo lo passa a `claude --model`, campo `role.model` del pacchetto; in console non c'è più «Dove gira»: lo deduce la tendina «Modello», con la voce «Claude Code sul Mac (modello predefinito)» = `node` senza modello, `placeRole` in `role-draft.ts`); skill `node` solo su ruoli `node`; skill inesistenti o deprecate rifiutate,
   salvo quelle già nel ruolo della versione precedente (stessa `key`); nelle istanze la versione fissata deve esistere;
   strumenti `active` e con livello effettivo ≠ L3 («lo strumento <nome> non può essere usato da una squadra»), salvo
   quelli già nel ruolo precedente. La validazione legge dal pool ed è SEMPRE fuori dalla transazione di scrittura.

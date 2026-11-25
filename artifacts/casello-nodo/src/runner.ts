@@ -90,6 +90,14 @@ function truncate(text: string, max: number): string {
   return text.length > max ? text.slice(0, max) : text;
 }
 
+/** Id di modello accettato per `claude --model` (alias come `sonnet` o id del catalogo); altro → modello predefinito. */
+const MODEL_ID_RE = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,99}$/;
+
+/** Argomenti `--model` del compito: solo con un id valido nel pacchetto (i server precedenti non lo mandano). */
+export function modelArgs(model: string | null | undefined): string[] {
+  return typeof model === "string" && MODEL_ID_RE.test(model) ? ["--model", model] : [];
+}
+
 function permissionArgs(mode: string): string[] {
   return mode === "bypassPermissions" ? ["--dangerously-skip-permissions"] : ["--permission-mode", mode];
 }
@@ -331,12 +339,13 @@ export function spawnGroup(o: SpawnGroupOptions): Promise<ChildResult> {
 async function runClaude(
   workspace: string,
   sessionId: string,
+  model: string | null | undefined,
   ctx: RunContext,
   signal: AbortSignal,
 ): Promise<ChildResult> {
   return spawnGroup({
     command: ctx.config.claudeBin,
-    args: ["-p", "--output-format", "json", "--session-id", sessionId, ...permissionArgs(ctx.config.permissionMode), PROMPT],
+    args: ["-p", "--output-format", "json", "--session-id", sessionId, ...modelArgs(model), ...permissionArgs(ctx.config.permissionMode), PROMPT],
     cwd: workspace,
     timeoutMs: ctx.config.taskTimeoutMinutes * 60_000,
     killGraceMs: ctx.killGraceMs,
@@ -614,8 +623,9 @@ export async function runTask(pkg: TaskPackage, ctx: RunContext): Promise<TaskRe
     await rm(taskFile, { force: true });
     await writeFile(taskFile, renderTaskFile(pkg), { mode: 0o600, flag: "wx" });
 
-    ctx.logger?.info(`compito ${pkg.taskId}: avvio Claude Code (sessione ${sessionId})`);
-    const child = await runClaude(ws, sessionId, ctx, control.signal);
+    const model = modelArgs(pkg.role.model)[1] ?? "predefinito";
+    ctx.logger?.info(`compito ${pkg.taskId}: avvio Claude Code (sessione ${sessionId}, modello ${model})`);
+    const child = await runClaude(ws, sessionId, pkg.role.model, ctx, control.signal);
     const cli = parseCli(child.stdout);
     const usage = usageFields(cli);
     ctx.logger?.info(

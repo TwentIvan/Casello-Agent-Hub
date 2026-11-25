@@ -48,6 +48,7 @@ import { SaveAsTemplateDialog } from "@/components/teams/save-as-template-dialog
 import { TeamUpdatesCard } from "@/components/teams/team-updates-card";
 import { LuciusButton } from "@/components/characters/lucius-button";
 import { LEAD_MESSAGE_INPUT_ID, LeadMessageCard } from "@/components/teams/lead-message";
+import { LeadThread } from "@/components/teams/lead-thread";
 import { PlanApprovalCards } from "@/components/teams/plan-approval-card";
 import { PlanCard } from "@/components/teams/plan-card";
 import { TEAM_POLL_MS, TeamActivity, type TeamWorkState, useTeamWork } from "@/components/teams/team-activity";
@@ -363,6 +364,7 @@ function TeamEditor({
         </TabsContent>
 
         <TabsContent value="messages" className="mt-0 space-y-6">
+          <LeadThread teamId={team.id} work={work} poll={poll} />
           <LeadMessageCard team={team} text={session.leadText} onTextChange={session.setLeadText} onSent={work.kick} />
         </TabsContent>
 

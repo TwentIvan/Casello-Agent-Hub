@@ -23,10 +23,16 @@ env:
   IMAGE_WEB: ghcr.io/twentivan/casello-web
 
 jobs:
-  # Test dell'API (Vitest + Postgres in memoria) e della console: girano a ogni push e bloccano la build
+  # Test dell'API (Vitest + Postgres in memoria) divisi in 4 parti parallele, ognuna con il suo Postgres in memoria
+  # (i file di una parte girano in serie: vedi vitest.config.ts); la console nella prima parte. Girano a ogni push e
+  # bloccano il deploy; le build delle immagini partono insieme (su main :latest si scrive solo dopo i test, nel deploy).
   test:
-    name: Test API
+    name: Test API (${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@v4
 
@@ -41,9 +47,10 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      - run: pnpm --filter @workspace/api-server run test
+      - run: pnpm --filter @workspace/api-server run test --shard=${{ matrix.shard }}/4
 
-      - run: pnpm --filter @workspace/casello run test
+      - if: matrix.shard == 1
+        run: pnpm --filter @workspace/casello run test
 
   # Botcave Nodo: si ricostruisce su macOS solo se la versione (package.json) o la minima (min-version.txt) differiscono da
   # quelle pubblicate in produzione. Altrimenti si riusano zip, binario e manifest già pubblicati (verificati con sha256 e
@@ -124,7 +131,7 @@ jobs:
   # Gli artefatti finiscono in docker/nodo-downloads/ delle immagini: web li serve da /downloads/nodo/, l'API legge il manifest.
   build-nodo:
     name: Build Botcave Nodo (macOS)
-    needs: [test, nodo-plan]
+    needs: [nodo-plan]
     if: needs.nodo-plan.outputs.reuse != 'true'
     runs-on: macos-latest
     steps:
@@ -159,10 +166,11 @@ jobs:
 
   build:
     name: Build ${{ matrix.app }}
-    needs: [test, nodo-plan, build-nodo]
+    # Insieme ai test: le immagini hanno solo il tag sha, :latest lo scrive il deploy dopo i test verdi
+    needs: [nodo-plan, build-nodo]
     # build-nodo saltato (file del nodo riusati) non deve saltare la build delle immagini
     if: >-
-      always() && needs.test.result == 'success' && needs.nodo-plan.result == 'success' &&
+      always() && needs.nodo-plan.result == 'success' &&
       (needs.build-nodo.result == 'success' || (needs.build-nodo.result == 'skipped' && needs.nodo-plan.outputs.reuse == 'true'))
     runs-on: ubuntu-latest
     strategy:
@@ -258,18 +266,16 @@ jobs:
           context: .
           file: ${{ matrix.dockerfile }}
           push: true
-          # :latest è quello che deploya Coolify: lo scrive solo main, i feat/** hanno solo il tag sha
-          tags: |
-            ${{ matrix.image }}:${{ github.sha }}
-            ${{ github.ref == 'refs/heads/main' && format('{0}:latest', matrix.image) || '' }}
+          # Solo il tag sha: :latest (quello che deploya Coolify) lo scrive il job deploy su main, dopo i test verdi
+          tags: ${{ matrix.image }}:${{ github.sha }}
           cache-from: type=gha,scope=${{ matrix.app }}
           cache-to: type=gha,scope=${{ matrix.app }},mode=max
 
   deploy:
     name: Deploy su Coolify
-    needs: build
-    # always(): build-nodo saltato più indietro nella catena non deve saltare il deploy; conta solo l'esito di build
-    if: always() && github.ref == 'refs/heads/main' && needs.build.result == 'success'
+    needs: [test, build]
+    # always(): build-nodo saltato più indietro nella catena non deve saltare il deploy; contano i test e la build
+    if: always() && github.ref == 'refs/heads/main' && needs.test.result == 'success' && needs.build.result == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     env:
@@ -277,6 +283,21 @@ jobs:
       COOLIFY_WEBHOOK_API: ${{ secrets.COOLIFY_WEBHOOK_API }}
       COOLIFY_WEBHOOK_WEB: ${{ secrets.COOLIFY_WEBHOOK_WEB }}
     steps:
+      - name: Login a ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # :latest punta all'immagine di questo commit (già costruita col tag sha): nessuna nuova build
+      - name: Tag latest delle immagini
+        run: |
+          set -euo pipefail
+          for image in "$IMAGE_API" "$IMAGE_WEB"; do
+            docker buildx imagetools create -t "$image:latest" "$image:${{ github.sha }}"
+          done
+
       - name: Deploy API e web (con attesa della fine)
         # Il webhook di Coolify risponde subito e il deploy prosegue in background: se il job
         # finisse lì, la concurrency non servirebbe e un secondo merge arriverebbe a deploy in

@@ -2495,8 +2495,9 @@ modello del centralino: `GET|PUT /api/account/centralino-model`, solo login).
 
 - Push su `main` → GitHub Actions builda `ghcr.io/twentivan/casello-api` e `casello-web` e chiama i
   webhook Coolify. Push su `feat/**` e `botcave/**` (branch dei compiti delle squadre: la loro CI è quella che Botcave sorveglia) builda soltanto (collaudo), senza deploy.
-- Il tag `:latest` (quello che deploya Coolify) lo scrive solo `main`; ogni build ha anche il tag
-  `:<sha>`. I run su `main` sono in coda uno alla volta e il job di deploy chiama i webhook con
+- I test dell'API girano in 4 job paralleli (`vitest --shard=n/4`, ognuno con il suo Postgres in memoria; la console nel primo) e le
+  build delle immagini partono insieme ai test: ogni build pubblica solo il tag `:<sha>`. Il tag `:latest` (quello che deploya Coolify)
+  lo scrive solo il job di deploy su `main`, dopo i test verdi, puntandolo all'immagine `:<sha>` (`docker buildx imagetools create`, nessuna nuova build). I run su `main` sono in coda uno alla volta e il job di deploy chiama i webhook con
   `force=true` e attende la fine del deploy su Coolify: merge ravvicinati non lasciano un'immagine vecchia.
 - Due container su Coolify: `casello-api` (porta 3000, solo rete interna) e `casello-web` (nginx: SPA +
   proxy di `/api/` verso `casello-api:3000`). Il frontend chiama `/api` con URL relativi: un solo dominio.

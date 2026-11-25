@@ -110,7 +110,10 @@ describe("fireSchedule", () => {
 
   it("una sola run per scadenza: la seconda chiamata non trova nulla di scaduto", async () => {
     const { trigger, agentId } = await seed();
-    const [a, b] = await Promise.all([fireSchedule(trigger.id, NOW), fireSchedule(trigger.id, NOW)]);
+    // L'ora vera, non NOW: la scadenza successiva deve cadere nel futuro rispetto a now() del DB, altrimenti la seconda
+    // chiamata la troverebbe già scaduta (con NOW fisso il test fallirebbe dal giorno dopo NOW)
+    const real = new Date();
+    const [a, b] = await Promise.all([fireSchedule(trigger.id, real), fireSchedule(trigger.id, real)]);
     expect([a, b].filter((o) => o === "skipped")).toHaveLength(1);
     expect(await db.select().from(runsTable).where(eq(runsTable.agentId, agentId))).toHaveLength(1);
   });

@@ -8,6 +8,9 @@ import { apiErrorMessage } from "@/lib/api-errors";
 
 const MAX_TEXT = 4000;
 
+/** Id del campo di scrittura: la barra di stato della squadra ci porta il fuoco con «Scrivi al capo». */
+export const LEAD_MESSAGE_INPUT_ID = "team-lead-message";
+
 /** «Scrivi al capo»: il messaggio diventa un motivo del prossimo turno del capo (solo squadre attive). */
 export function LeadMessageCard({
   team,
@@ -55,6 +58,7 @@ export function LeadMessageCard({
           }}
         >
           <Textarea
+            id={LEAD_MESSAGE_INPUT_ID}
             rows={3}
             maxLength={MAX_TEXT}
             value={text}

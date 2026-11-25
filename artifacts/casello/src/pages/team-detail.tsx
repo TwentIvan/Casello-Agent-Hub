@@ -34,6 +34,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent } from "@/components/ui/tabs";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import {
   type LocalSkillDraft,
@@ -44,10 +45,9 @@ import {
 import { type RoleDraft, draftFromView, toInstanceRole, withKeys } from "@/components/teams/role-draft";
 import { RolesEditor } from "@/components/teams/roles-editor";
 import { SaveAsTemplateDialog } from "@/components/teams/save-as-template-dialog";
-import { TeamStatusBadge } from "@/components/teams/team-status";
 import { TeamUpdatesCard } from "@/components/teams/team-updates-card";
 import { LuciusButton } from "@/components/characters/lucius-button";
-import { LeadMessageCard } from "@/components/teams/lead-message";
+import { LEAD_MESSAGE_INPUT_ID, LeadMessageCard } from "@/components/teams/lead-message";
 import { PlanApprovalCards } from "@/components/teams/plan-approval-card";
 import { PlanCard } from "@/components/teams/plan-card";
 import { TEAM_POLL_MS, TeamActivity, type TeamWorkState, useTeamWork } from "@/components/teams/team-activity";
@@ -57,6 +57,8 @@ import { NodeFolderPicker } from "@/components/teams/node-folder-picker";
 import { TeamReadinessCard } from "@/components/teams/team-readiness-card";
 import { activateLabel, blockingProblems } from "@/lib/team-readiness";
 import { TeamBulletin } from "@/components/teams/team-bulletin";
+import { TeamStatusBar } from "@/components/teams/team-status-bar";
+import type { TeamTab } from "@/lib/team-status-bar";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { formatRelative } from "@/lib/format";
@@ -81,11 +83,17 @@ function toSave(
 
 type Confirm = "activate" | "close" | null;
 
-/** Stato della squadra che sopravvive al rimontaggio dell'editor: polling del lavoro e testo non inviato al capo. */
+/**
+ * Stato della squadra che sopravvive al rimontaggio dell'editor: polling del lavoro, testo non inviato al capo, scheda
+ * aperta e titoli dei compiti del PLAN (per la barra di stato).
+ */
 interface TeamSession {
   work: TeamWorkState;
   leadText: string;
   setLeadText: (text: string) => void;
+  tab: TeamTab;
+  setTab: (tab: TeamTab) => void;
+  taskTitles: ReadonlyMap<string, string>;
 }
 
 /**
@@ -97,6 +105,9 @@ function useTeamSession(teamId: number): TeamSession {
   const queryClient = useQueryClient();
   const work = useTeamWork(teamId);
   const [leadText, setLeadText] = useState("");
+  const [tab, setTab] = useState<TeamTab>("overview");
+  const plan = useGetTeamPlan(teamId, { query: { queryKey: getGetTeamPlanQueryKey(teamId) } });
+  const taskTitles = useMemo(() => new Map((plan.data?.tasks ?? []).map((t) => [t.id, t.title])), [plan.data]);
   const wasLive = useRef(work.live);
   useEffect(() => {
     if (wasLive.current && !work.live) {
@@ -110,29 +121,39 @@ function useTeamSession(teamId: number): TeamSession {
     }
     wasLive.current = work.live;
   }, [work.live, queryClient, teamId]);
-  return { work, leadText, setLeadText };
+  return { work, leadText, setLeadText, tab, setTab, taskTitles };
 }
 
-/**
- * Lavoro della squadra: piano da approvare, piano, messaggi al capo, attività, bollettino e tetto di spesa. Finché un
- * turno o un compito è in coda o in corso (e per il periodo di grazia dopo) tutte le sezioni si aggiornano ogni 5 secondi.
- */
-function TeamWork({ team, dirty, session }: { team: TeamInstance; dirty: boolean; session: TeamSession }) {
-  const { work } = session;
-  const poll = work.polling ? TEAM_POLL_MS : false;
-  const plan = useGetTeamPlan(team.id, { query: { queryKey: getGetTeamPlanQueryKey(team.id) } });
-  const taskTitles = useMemo(() => new Map((plan.data?.tasks ?? []).map((t) => [t.id, t.title])), [plan.data]);
-  const usedTaskIds = useMemo(() => (work.tasks.data ?? []).map((t) => t.planTaskId), [work.tasks.data]);
-
+/** Panoramica: App e lavoro di riferimento in sola lettura (si modificano in Impostazioni). */
+function TeamOverview({ team }: { team: TeamInstance }) {
   return (
-    <>
-      <PlanApprovalCards team={team} poll={poll} onDecided={work.kick} />
-      <PlanCard team={team} poll={poll} usedTaskIds={usedTaskIds} onSaved={work.kick} />
-      <LeadMessageCard team={team} text={session.leadText} onTextChange={session.setLeadText} onSent={work.kick} />
-      <TeamActivity team={team} work={work} taskTitles={taskTitles} />
-      <TeamBulletin teamId={team.id} poll={poll} />
-      <TeamBudgetCard team={team} dirty={dirty} />
-    </>
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Lavoro di riferimento</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[8rem_minmax(0,1fr)]">
+          <dt className="text-muted-foreground">App</dt>
+          <dd className="min-w-0 truncate">
+            <Link href={`/apps/${team.ref.appId}`} className="font-medium hover:underline">
+              {team.ref.appName}
+            </Link>
+          </dd>
+          <dt className="text-muted-foreground">Lavoro</dt>
+          <dd className="min-w-0 break-words">{team.ref.title}</dd>
+          <dt className="text-muted-foreground">Riferimento</dt>
+          <dd className="min-w-0 break-all font-mono text-xs leading-5">
+            {team.ref.type} · {team.ref.id}
+          </dd>
+          {team.bugTeam && (
+            <>
+              <dt className="text-muted-foreground">Bug</dt>
+              <dd className="min-w-0">Squadra per i bug di questa App</dd>
+            </>
+          )}
+        </dl>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -173,6 +194,9 @@ function TeamEditor({
   const [confirm, setConfirm] = useState<Confirm>(null);
   const [savingAsTemplate, setSavingAsTemplate] = useState(false);
   const closed = team.status === "closed";
+  const { work } = session;
+  const poll = work.polling ? TEAM_POLL_MS : false;
+  const usedTaskIds = useMemo(() => (work.tasks.data ?? []).map((t) => t.planTaskId), [work.tasks.data]);
   // Il codice ai ruoli si dà solo se l'App di riferimento ha il repository collegato tramite l'App GitHub; finché l'App
   // non è letta (o la lettura fallisce) la tendina resta attiva: decide comunque il server al salvataggio
   const refApp = useGetApp(team.ref.appId, { query: { queryKey: getGetAppQueryKey(team.ref.appId) } });
@@ -251,13 +275,18 @@ function TeamEditor({
     .filter((s) => s.code.trim() !== "")
     .map((s) => ({ code: s.code.trim(), name: s.name || s.code }));
 
+  const writeToLead = () => {
+    session.setTab("messages");
+    // la scheda Messaggi si monta al cambio: il campo esiste dal frame successivo
+    requestAnimationFrame(() => document.getElementById(LEAD_MESSAGE_INPUT_ID)?.focus());
+  };
+
   return (
     <>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="break-words text-h2">{team.name}</h2>
           <div className="mt-2 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
-            <TeamStatusBadge status={team.status} />
             {team.template ? (
               <span>
                 Dal modello{" "}
@@ -306,110 +335,139 @@ function TeamEditor({
         </p>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Lavoro di riferimento</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[8rem_minmax(0,1fr)]">
-            <dt className="text-muted-foreground">App</dt>
-            <dd className="min-w-0 truncate">
-              <Link href={`/apps/${team.ref.appId}`} className="font-medium hover:underline">
-                {team.ref.appName}
-              </Link>
-            </dd>
-            <dt className="text-muted-foreground">Lavoro</dt>
-            <dd className="min-w-0 break-all font-mono text-xs leading-5">
-              {team.ref.type} · {team.ref.id}
-            </dd>
-          </dl>
-          <div className="grid gap-3 md:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="team-name">Nome della squadra</Label>
-              <Input id="team-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} disabled={closed} />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="team-ref-title">Titolo del lavoro</Label>
-              <Input
-                id="team-ref-title"
-                value={refTitle}
-                onChange={(e) => setRefTitle(e.target.value)}
-                maxLength={300}
-                disabled={closed}
-              />
-            </div>
-          </div>
-          <div className="flex items-start gap-2">
-            <Checkbox
-              id="team-bug-team"
-              checked={bugTeam}
-              onCheckedChange={(v) => setBugTeam(v === true)}
-              disabled={closed}
-              className="mt-0.5"
-            />
-            <div className="min-w-0">
-              <Label htmlFor="team-bug-team">Squadra per i bug di questa App</Label>
+      <Tabs value={session.tab} onValueChange={(value) => session.setTab(value as TeamTab)} className="space-y-4">
+        <TeamStatusBar
+          team={team}
+          work={work}
+          taskTitles={session.taskTitles}
+          dirty={dirty}
+          onWriteToLead={writeToLead}
+        />
+
+        <TabsContent value="overview" className="mt-0 space-y-6">
+          <TeamOverview team={team} />
+          {readinessData && <TeamReadinessCard readiness={readinessData} />}
+          <PlanApprovalCards team={team} poll={poll} onDecided={work.kick} />
+          <TeamBulletin teamId={team.id} poll={poll} />
+          <TeamBudgetCard team={team} dirty={dirty} />
+        </TabsContent>
+
+        <TabsContent value="plan" className="mt-0 space-y-6">
+          <PlanApprovalCards team={team} poll={poll} onDecided={work.kick} />
+          <PlanCard team={team} poll={poll} usedTaskIds={usedTaskIds} onSaved={work.kick} />
+          <TeamAttachments teamId={team.id} readOnly={closed} />
+        </TabsContent>
+
+        <TabsContent value="activity" className="mt-0 space-y-6">
+          <TeamActivity team={team} work={work} taskTitles={session.taskTitles} />
+        </TabsContent>
+
+        <TabsContent value="messages" className="mt-0 space-y-6">
+          <LeadMessageCard team={team} text={session.leadText} onTextChange={session.setLeadText} onSent={work.kick} />
+        </TabsContent>
+
+        {/* forceMount: le modifiche non salvate (ruoli, skill, campi) restano anche cambiando scheda */}
+        <TabsContent value="settings" forceMount className="mt-0 space-y-6 data-[state=inactive]:hidden">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Lavoro di riferimento</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[8rem_minmax(0,1fr)]">
+                <dt className="text-muted-foreground">App</dt>
+                <dd className="min-w-0 truncate">
+                  <Link href={`/apps/${team.ref.appId}`} className="font-medium hover:underline">
+                    {team.ref.appName}
+                  </Link>
+                </dd>
+                <dt className="text-muted-foreground">Lavoro</dt>
+                <dd className="min-w-0 break-all font-mono text-xs leading-5">
+                  {team.ref.type} · {team.ref.id}
+                </dd>
+              </dl>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="team-name">Nome della squadra</Label>
+                  <Input id="team-name" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} disabled={closed} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="team-ref-title">Titolo del lavoro</Label>
+                  <Input
+                    id="team-ref-title"
+                    value={refTitle}
+                    onChange={(e) => setRefTitle(e.target.value)}
+                    maxLength={300}
+                    disabled={closed}
+                  />
+                </div>
+              </div>
+              <div className="flex items-start gap-2">
+                <Checkbox
+                  id="team-bug-team"
+                  checked={bugTeam}
+                  onCheckedChange={(v) => setBugTeam(v === true)}
+                  disabled={closed}
+                  className="mt-0.5"
+                />
+                <div className="min-w-0">
+                  <Label htmlFor="team-bug-team">Squadra per i bug di questa App</Label>
+                  <p className="text-xs text-muted-foreground">
+                    Le segnalazioni approvate dall'app ({team.ref.appName}) vengono affidate a questa squadra: serve che sia attiva. Una sola squadra
+                    per App; se ce n'è già un'altra il salvataggio lo dice. Si salva con «Salva».
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Spazio di lavoro sul nodo</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-1.5">
+              <Label htmlFor="team-node-workspace">Cartella</Label>
+              <div className="flex min-w-0 gap-2">
+                <Input
+                  id="team-node-workspace"
+                  value={nodeWorkspace}
+                  onChange={(e) => setNodeWorkspace(e.target.value)}
+                  maxLength={300}
+                  placeholder="es. SAP/AIMAG/WI_1174"
+                  className="min-w-0 font-mono text-sm"
+                  disabled={closed}
+                />
+                {!closed && (
+                  <Button type="button" variant="outline" className="shrink-0" onClick={() => setFolderPickerOpen(true)}>
+                    <FolderSearch className="mr-1.5 h-4 w-4" />
+                    Sfoglia
+                  </Button>
+                )}
+              </div>
+              <NodeFolderPicker open={folderPickerOpen} onOpenChange={setFolderPickerOpen} value={nodeWorkspace} onPick={setNodeWorkspace} />
               <p className="text-xs text-muted-foreground">
-                Le segnalazioni approvate dall'app ({team.ref.appName}) vengono affidate a questa squadra: serve che sia attiva. Una sola squadra
-                per App; se ce n'è già un'altra il salvataggio lo dice. Si salva con «Salva».
+                Percorso relativo alla cartella radice scelta quando hai installato il nodo (solo lettere, cifre, <span className="font-mono">. _ -</span> e{" "}
+                <span className="font-mono">/</span>, senza <span className="font-mono">..</span>). Serve ai compiti dei ruoli «nodo»: se è vuoto
+                risultano bloccati, salvo i ruoli con il codice (lavorano in una copia preparata da Botcave). «Sfoglia» mostra le cartelle che il nodo ha sotto la radice. Si salva con «Salva».
               </p>
+            </CardContent>
+          </Card>
+
+          {!closed && <TeamUpdatesCard team={team} dirty={dirty} />}
+
+          <section className="space-y-3">
+            <h3 className="text-lg font-medium">Ruoli</h3>
+            <RolesEditor roles={roles} onChange={setRoles} mode="instance" localSkills={localOptions} readOnly={closed} teamId={team.id} codeEnabled={codeEnabled} />
+          </section>
+
+          <section className="space-y-3">
+            <div>
+              <h3 className="text-lg font-medium">Skill specializzate</h3>
+              <p className="text-sm text-muted-foreground">Proprie di questa squadra, senza versioni: si modificano qui.</p>
             </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Spazio di lavoro sul nodo</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-1.5">
-          <Label htmlFor="team-node-workspace">Cartella</Label>
-          <div className="flex min-w-0 gap-2">
-            <Input
-              id="team-node-workspace"
-              value={nodeWorkspace}
-              onChange={(e) => setNodeWorkspace(e.target.value)}
-              maxLength={300}
-              placeholder="es. SAP/AIMAG/WI_1174"
-              className="min-w-0 font-mono text-sm"
-              disabled={closed}
-            />
-            {!closed && (
-              <Button type="button" variant="outline" className="shrink-0" onClick={() => setFolderPickerOpen(true)}>
-                <FolderSearch className="mr-1.5 h-4 w-4" />
-                Sfoglia
-              </Button>
-            )}
-          </div>
-          <NodeFolderPicker open={folderPickerOpen} onOpenChange={setFolderPickerOpen} value={nodeWorkspace} onPick={setNodeWorkspace} />
-          <p className="text-xs text-muted-foreground">
-            Percorso relativo alla cartella radice scelta quando hai installato il nodo (solo lettere, cifre, <span className="font-mono">. _ -</span> e{" "}
-            <span className="font-mono">/</span>, senza <span className="font-mono">..</span>). Serve ai compiti dei ruoli «nodo»: se è vuoto
-            risultano bloccati, salvo i ruoli con il codice (lavorano in una copia preparata da Botcave). «Sfoglia» mostra le cartelle che il nodo ha sotto la radice. Si salva con «Salva».
-          </p>
-        </CardContent>
-      </Card>
-
-      {readinessData && <TeamReadinessCard readiness={readinessData} />}
-
-      <TeamAttachments teamId={team.id} readOnly={closed} />
-
-      <TeamWork team={team} dirty={dirty} session={session} />
-
-      {!closed && <TeamUpdatesCard team={team} dirty={dirty} />}
-
-      <section className="space-y-3">
-        <h3 className="text-lg font-medium">Ruoli</h3>
-        <RolesEditor roles={roles} onChange={setRoles} mode="instance" localSkills={localOptions} readOnly={closed} teamId={team.id} codeEnabled={codeEnabled} />
-      </section>
-
-      <section className="space-y-3">
-        <div>
-          <h3 className="text-lg font-medium">Skill specializzate</h3>
-          <p className="text-sm text-muted-foreground">Proprie di questa squadra, senza versioni: si modificano qui.</p>
-        </div>
-        <LocalSkillsEditor skills={localSkills} onChange={setLocalSkills} onRemove={removeLocalSkill} readOnly={closed} />
-      </section>
+            <LocalSkillsEditor skills={localSkills} onChange={setLocalSkills} onRemove={removeLocalSkill} readOnly={closed} />
+          </section>
+        </TabsContent>
+      </Tabs>
 
       <ConfirmDialog
         open={confirm === "activate"}

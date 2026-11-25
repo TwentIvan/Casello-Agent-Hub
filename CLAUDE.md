@@ -777,9 +777,13 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   …/plan/manual-actions/:actionId/done`, `GET …/tasks` (ultimi 200), `GET …/tasks/:taskId` (con i passi; 404 «compito non
   trovato»), `GET …/turns` (ultimi 50, con i passi), `GET …/events`, `PUT …/budget`, `GET /api/team-events`, `POST
   /api/team-events/read`. Con un token personale valgono gli ambiti per metodo.
-- Console (scheda squadra, `pages/team-detail.tsx`): «Piano da approvare» (Approva / Rifiuta con nota), «Piano» (compiti con
-  stato ed esito, azioni manuali con «Fatto», punti aperti, «Modifica»), «Scrivi al capo», «Attività» (turni e compiti con i
-  passi), «Bollettino» («Segna come letti»), tetto di spesa, «Attiva». Polling ogni 5 s finché un turno o un compito è in
+- Console (scheda squadra, `pages/team-detail.tsx`): barra di stato fissa in alto (`components/teams/team-status-bar.tsx`, logica pura in
+  `src/lib/team-status-bar.ts`: stato della squadra, turno o compito in corso, indicatore dell'aggiornamento automatico, «Scrivi al capo» che apre
+  «Messaggi» col fuoco nel campo) con sotto le schede Panoramica (lavoro di riferimento, «Pronta a lavorare», piano da approvare, bollettino, tetto),
+  Piano («Piano da approvare» con Approva / Rifiuta con nota, compiti con stato ed esito, azioni manuali con «Fatto», punti aperti, «Modifica», allegati),
+  Attività (turni e compiti con i passi), Messaggi («Scrivi al capo») e Impostazioni (nome, titolo, squadra per i bug, spazio di lavoro, aggiornamenti
+  del modello, ruoli, skill specializzate; resta montata, LED sulla scheda con modifiche non salvate); la scheda aperta sta in `TeamDetail` e non si
+  perde al salvataggio. «Attiva». Polling ogni 5 s finché un turno o un compito è in
   coda o in corso, più un periodo di grazia di ~10 s dopo la fine o dopo un'azione dell'utente che accoda un turno. Niente
   scorrimento orizzontale a 1280 px.
 - Migrazione: `docs/migrations/2026-11-squadre-esecuzione.sql` (additiva e idempotente, nessuna colonna tolta, niente `-post`):

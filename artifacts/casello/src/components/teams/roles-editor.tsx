@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Crown, Download, Plus, Trash2, X } from "lucide-react";
-import { getDownloadRoleInstructionsUrl, getDownloadRolesExportUrl, type TeamRoleCode, type TeamRoleRunsOn } from "@workspace/api-client-react";
+import { getDownloadRoleInstructionsUrl, getDownloadRolesExportUrl, type TeamRoleCode } from "@workspace/api-client-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -10,9 +10,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { ModelPicker } from "@/components/ai/model-picker";
+import { useAiModelGroups } from "@/components/ai/ai-queries";
+import { nodeModelIds } from "@/lib/node-models";
 import { TOOL_LEVEL_LABELS } from "@/lib/tool-labels";
 import { cn } from "@/lib/utils";
-import { CODE_LABELS, RUNS_ON_LABELS, type RoleDraft, codeOptions, newRole, selectableCodeOptions } from "./role-draft";
+import { CODE_LABELS, MAC_DEFAULT_LABEL, type RoleDraft, codeOptions, newRole, placeRole, selectableCodeOptions } from "./role-draft";
 import { SkillKindBadge } from "./skill-kind";
 import { SkillPicker } from "./skill-picker";
 import { ToolPicker } from "./tool-picker";
@@ -40,7 +42,8 @@ interface RolesEditorProps {
 
 export const CODE_DISABLED_HINT = "Collega il repository dell'app tramite l'App GitHub per dare il codice ai ruoli";
 export const CODE_LEAD_HINT = "Il capo non esegue compiti: per lui conta solo «Scrittura e merge», che gli fa unire le PR della squadra";
-export const LEAD_RUNS_ON_HINT = "Il capo gira sempre in cloud: i suoi turni li esegue Botcave";
+export const LEAD_MODEL_HINT = "Con un modello del gruppo Claude Code i turni del capo li esegue il Mac";
+export const NODE_ROLE_HINT = "Gira sul Mac con Claude Code: i compiti li prende il nodo";
 export const CODE_MERGE_HINT = "Unisce le PR della squadra con la CI verde; quelle con uno script -post passano da «Da confermare»";
 
 
@@ -77,11 +80,13 @@ function RoleCard({
   readOnly,
   teamId,
   codeEnabled,
+  nodeIds,
   onChange,
   onMakeLead,
   onRemove,
 }: {
   role: RoleDraft;
+  nodeIds: ReadonlySet<number>;
   mode: "template" | "instance";
   localSkills: LocalSkillOption[];
   readOnly: boolean;
@@ -162,32 +167,21 @@ function RoleCard({
           />
         </div>
 
-        <div className="grid gap-3 md:grid-cols-[12rem_minmax(0,1fr)]">
-          <div className="space-y-1.5">
-            <Label htmlFor={`${id}-runs`}>Dove gira</Label>
-            <Select
-              value={role.runsOn}
-              onValueChange={(v) => onChange({ runsOn: v as TeamRoleRunsOn })}
-              disabled={readOnly}
-            >
-              <SelectTrigger id={`${id}-runs`}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {(Object.keys(RUNS_ON_LABELS) as TeamRoleRunsOn[]).map((k) => (
-                  <SelectItem key={k} value={k} disabled={role.isLead && k === "node"}>
-                    {RUNS_ON_LABELS[k]}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {role.isLead && <p className="text-xs text-muted-foreground">{LEAD_RUNS_ON_HINT}</p>}
-          </div>
-          {role.runsOn === "cloud" && (
-            <div className="min-w-0 space-y-1.5">
-              <Label htmlFor={`${id}-model`}>Modello</Label>
-              <ModelPicker id={`${id}-model`} value={role.aiModelId} onChange={(v) => onChange({ aiModelId: v })} disabled={readOnly} cloudOnly />
-            </div>
+        <div className="min-w-0 space-y-1.5">
+          <Label htmlFor={`${id}-model`}>Modello</Label>
+          <ModelPicker
+            id={`${id}-model`}
+            value={role.aiModelId}
+            onChange={(v) => onChange(placeRole(role, v, nodeIds, !role.isLead && v === null))}
+            disabled={readOnly}
+            allowNone={!role.isLead}
+            noneLabel={MAC_DEFAULT_LABEL}
+            noneSelected={role.runsOn === "node"}
+          />
+          {role.isLead ? (
+            <p className="text-xs text-muted-foreground">{LEAD_MODEL_HINT}</p>
+          ) : (
+            role.runsOn === "node" && <p className="text-xs text-muted-foreground">{NODE_ROLE_HINT}</p>
           )}
         </div>
 
@@ -333,9 +327,18 @@ function RoleCard({
 export function RolesEditor({ roles, onChange, mode, localSkills = [], readOnly = false, teamId, codeEnabled = true }: RolesEditorProps) {
   const update = (uid: string, patch: Partial<RoleDraft>) =>
     onChange(roles.map((r) => (r.uid === uid ? { ...r, ...patch } : r)));
-  // Il capo gira sempre in cloud: un ruolo sul nodo scelto come capo passa al cloud (il modello si sceglie nella scheda)
+  const groups = useAiModelGroups();
+  const nodeIds = nodeModelIds(groups.data ?? []);
+  // Dove gira lo dice il modello: il capo resta in Botcave; chi lascia il capo con un modello Claude Code passa al Mac
   const makeLead = (uid: string) =>
-    onChange(roles.map((r) => (r.uid === uid ? { ...r, isLead: true, ...(r.runsOn === "node" ? { runsOn: "cloud" as const } : {}) } : { ...r, isLead: false })));
+    onChange(
+      roles.map((r) => {
+        const isLead = r.uid === uid;
+        if (isLead === r.isLead) return r;
+        const next = { ...r, isLead };
+        return { ...next, ...placeRole(next, r.aiModelId, nodeIds) };
+      }),
+    );
 
   return (
     <div className="space-y-3">
@@ -363,6 +366,7 @@ export function RolesEditor({ roles, onChange, mode, localSkills = [], readOnly 
           readOnly={readOnly}
           teamId={teamId}
           codeEnabled={codeEnabled}
+          nodeIds={nodeIds}
           onChange={(patch) => update(role.uid, patch)}
           onMakeLead={() => makeLead(role.uid)}
           onRemove={() => onChange(roles.filter((r) => r.uid !== role.uid))}

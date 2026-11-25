@@ -69,9 +69,26 @@ export function selectableCodeOptions(runsOn: TeamRoleRunsOn, current: TeamRoleC
   return base.includes(value) ? base : [...base, value];
 }
 
+/** Voce della tendina del modello per un ruolo sul Mac senza un modello scelto: Claude Code usa il suo predefinito. */
+export const MAC_DEFAULT_LABEL = "Claude Code sul Mac (modello predefinito)";
+
+/**
+ * Dove gira un ruolo, dedotto dal modello: un modello Claude Code (nodo) porta sul Mac i ruoli che eseguono compiti;
+ * il capo resta in Botcave (i suoi turni li delega al Mac il modello stesso). `macDefault`: «Claude Code sul Mac» senza modello.
+ */
+export function placeRole(
+  role: Pick<RoleDraft, "isLead" | "code">,
+  aiModelId: number | null,
+  nodeIds: ReadonlySet<number>,
+  macDefault = false,
+): Pick<RoleDraft, "aiModelId" | "runsOn" | "code"> {
+  const runsOn: TeamRoleRunsOn = !role.isLead && (macDefault || (aiModelId !== null && nodeIds.has(aiModelId))) ? "node" : "cloud";
+  return { aiModelId: macDefault ? null : aiModelId, runsOn, code: codeOptions(runsOn).includes(role.code) ? role.code : "none" };
+}
+
 export const RUNS_ON_LABELS: Record<TeamRoleRunsOn, string> = {
   cloud: "Cloud",
-  node: "Nodo locale",
+  node: "Mac (Claude Code)",
 };
 
 const KEY_PATTERN = /^[a-z0-9_-]{1,40}$/;

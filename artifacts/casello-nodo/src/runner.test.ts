@@ -5,7 +5,7 @@ import { mkdir, realpath, symlink } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { CaselloClient } from "./client";
-import { isLeaseLostReport, killAllTaskGroups, runTask, WorkspaceQueue, type RunContext } from "./runner";
+import { isLeaseLostReport, killAllTaskGroups, modelArgs, runTask, WorkspaceQueue, type RunContext } from "./runner";
 import { GIT_MESSAGES, GitWorkspaceError } from "./git-errors";
 import { FakeCasello, json } from "./test/fake-casello";
 import { FAKE_TOKEN, fakeSpawn, taskPackage, tempDir, testConfig, type SpawnCall } from "./test/helpers";
@@ -86,6 +86,22 @@ describe("runTask", () => {
     } finally {
       delete process.env.CASELLO_TOKEN;
     }
+  });
+
+  it("modello del ruolo nel pacchetto → --model prima dei permessi", async () => {
+    const calls: SpawnCall[] = [];
+    const pkg = taskPackage();
+    await runTask({ ...pkg, role: { ...pkg.role, model: "claude-haiku-4-5-20251001" } }, ctx("esito", calls));
+    expect(calls[0].args.slice(5, 8)).toEqual(["--model", "claude-haiku-4-5-20251001", "--dangerously-skip-permissions"]);
+  });
+
+  it("modelArgs: solo id validi, altrimenti modello predefinito", () => {
+    expect(modelArgs("sonnet")).toEqual(["--model", "sonnet"]);
+    expect(modelArgs(null)).toEqual([]);
+    expect(modelArgs(undefined)).toEqual([]);
+    expect(modelArgs("--help")).toEqual([]);
+    expect(modelArgs("a b")).toEqual([]);
+    expect(modelArgs("x".repeat(101))).toEqual([]);
   });
 
   it("modalità dei permessi diversa da bypassPermissions → --permission-mode", async () => {

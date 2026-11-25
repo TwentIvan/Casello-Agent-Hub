@@ -1,7 +1,10 @@
 import { and, desc, eq, lt, sql } from "drizzle-orm";
-import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
-import { db, teamInstancesTable, teamCodeTasksTable, teamTasksTable, teamTurnStepsTable, teamTurnsTable, type TeamInstanceRow, type TeamTurnReason, type TeamTurnRow } from "@workspace/db";
+import type { ChatCompletionFunctionTool, ChatCompletionMessageParam } from "openai/resources/chat/completions";
+import { aiModelsTable, db, nodesTable, teamInstancesTable, teamCodeTasksTable, teamTasksTable, teamTurnStepsTable, teamTurnsTable, type TeamInstanceRow, type TeamTurnReason, type TeamTurnRow } from "@workspace/db";
 import { runAgentLoop, type LoopDeps, type LoopLimits } from "../agent-loop";
+import { dispatchAgentCall } from "../agent-dispatch";
+import { resolveModel, type ResolvedModel } from "../ai/executor";
+import { delegateTurn } from "../node-turns/delegate";
 import { logger } from "../logger";
 import { modelChatDeps, newUsage, stepWriter, usageCost, type LoopUsage } from "../loop-wiring";
 import { isUniqueViolation } from "../pg-errors";
@@ -409,23 +412,13 @@ async function executeTurn(turn: TeamTurnRow, usage: LoopUsage): Promise<TurnRes
     decisionOnly: decisionOnlyTurn(allReasons),
   });
   const signal = new AbortController().signal;
-  const deps: LoopDeps = {
-    chat: modelChatDeps({
-      aiModelId,
-      functionTools: roleFunctionTools(roleTools.tools, leadTools),
-      caller: "team-turn",
-      usage,
-      maxTokens: LEAD_COMPLETION_TOKENS,
-      signal,
-      logContext: { teamTurnId: turn.id },
-    }),
+  const toolDeps = {
     tools,
     executeTool: roleToolExecutor(roleTools, internal),
     queueAction: teamQueueAction(roleTools, { instanceId: instance.id, userId: instance.activatedBy }),
     onStep: stepWriter((row) => db.insert(teamTurnStepsTable).values({ turnId: turn.id, ...row }), toolSchemaLookup(tools)),
-    limits: LEAD_LIMITS,
-    signal,
   };
+  const functionTools = roleFunctionTools(roleTools.tools, leadTools);
   const readiness = await readinessBlock(instance);
   const messages: ChatCompletionMessageParam[] = [
     { role: "system", content: systemPrompt(instance, lead, roles, skills) },
@@ -433,16 +426,130 @@ async function executeTurn(turn: TeamTurnRow, usage: LoopUsage): Promise<TurnRes
     ...(readiness ? [{ role: "user" as const, content: readiness }] : []),
     ...reasons.map((content) => ({ role: "user" as const, content })),
   ];
-  const outcome = await runAgentLoop({ messages, queue: [], rounds: 0, tokens: 0, activeMs: 0 }, deps);
-  switch (outcome.type) {
-    case "finished":
+
+  const cloudTurn = async (modelId: number, resolved?: ResolvedModel): Promise<TurnResult> => {
+    const deps: LoopDeps = {
+      chat: modelChatDeps({
+        aiModelId: modelId,
+        functionTools,
+        caller: "team-turn",
+        usage,
+        maxTokens: LEAD_COMPLETION_TOKENS,
+        signal,
+        logContext: { teamTurnId: turn.id },
+        ...(resolved ? { resolved } : {}),
+      }),
+      ...toolDeps,
+      limits: LEAD_LIMITS,
+      signal,
+    };
+    const outcome = await runAgentLoop({ messages, queue: [], rounds: 0, tokens: 0, activeMs: 0 }, deps);
+    switch (outcome.type) {
+      case "finished":
+        if (userRequested) await emitLeadReply(instance.id, turn.id, outcome.content);
+        return { status: "done", aiModelId: modelId };
+      case "failed":
+        return { status: "failed", error: outcome.error, aiModelId: modelId };
+      case "cancelled":
+        return { status: "failed", error: TURN_MESSAGES.internalError, aiModelId: modelId };
+    }
+  };
+
+  // Capo con un modello Claude Code (nodo): il turno si delega al Mac dell'account, con gli stessi strumenti su /mcp/turn
+  const resolved = await resolveOrNull(aiModelId);
+  if (resolved?.kind !== "node") return cloudTurn(aiModelId, resolved ?? undefined);
+
+  const t0 = Date.now();
+  const outcome = await delegateTurn({
+    resolved,
+    userId: resolved.ownerUserId,
+    consumer: "team_turn",
+    refId: turn.id,
+    messages,
+    tools: functionTools.filter((t): t is ChatCompletionFunctionTool => t.type === "function"),
+    dispatch: (call) => dispatchAgentCall(call, toolDeps),
+    // Giri del ciclo cloud più la risposta finale
+    maxTurns: LEAD_LIMITS.maxRounds + 1,
+    timeoutMs: LEAD_NODE_TIMEOUT_MS,
+    signal,
+  });
+  const durationMs = Date.now() - t0;
+  const note = await nodeNote(resolved.nodeId);
+  switch (outcome.kind) {
+    case "done":
+      addNodeUsage(usage, outcome);
+      await toolDeps.onStep({ type: "model", ok: true, durationMs, note });
       if (userRequested) await emitLeadReply(instance.id, turn.id, outcome.content);
       return { status: "done", aiModelId };
     case "failed":
+      addNodeUsage(usage, outcome);
+      await toolDeps.onStep({ type: "model", ok: false, durationMs, error: outcome.error, note });
       return { status: "failed", error: outcome.error, aiModelId };
     case "cancelled":
       return { status: "failed", error: TURN_MESSAGES.internalError, aiModelId };
+    case "fallback": {
+      const fallback = await usableLeadFallback(instance.id, resolved);
+      logger.info({ teamTurnId: turn.id, reason: outcome.reason, fallback: fallback !== null }, "Turno del capo senza Claude Code");
+      if (!fallback) {
+        await toolDeps.onStep({ type: "model", ok: false, durationMs, error: outcome.message });
+        return { status: "failed", error: outcome.message, aiModelId };
+      }
+      await toolDeps.onStep({ type: "model", ok: true, durationMs, note: `Claude Code non disponibile: turno eseguito con ${fallback.name}` });
+      // La spesa del turno va al modello di ripiego
+      return cloudTurn(fallback.resolved.aiModelId, fallback.resolved);
+    }
   }
+}
+
+/** Tempo massimo di Claude Code per un turno del capo: come il Responsabile di prodotto. */
+export const LEAD_NODE_TIMEOUT_MS = 600_000;
+
+async function resolveOrNull(aiModelId: number): Promise<ResolvedModel | null> {
+  try {
+    return await resolveModel(aiModelId, { userId: null, mustOwn: false });
+  } catch {
+    // Il ciclo cloud rifà la risoluzione e trasforma l'errore in un passo `model` fallito col messaggio fisso
+    return null;
+  }
+}
+
+/** Token e costo riferiti dal nodo (costo null con token → parziale). */
+function addNodeUsage(
+  usage: LoopUsage,
+  r: { promptTokens: number; completionTokens: number; cachedTokens: number; costUsd: string | null },
+): void {
+  usage.promptTokens += r.promptTokens;
+  usage.completionTokens += r.completionTokens;
+  usage.cachedTokens += r.cachedTokens;
+  const cost = r.costUsd === null ? NaN : Number(r.costUsd);
+  if (Number.isFinite(cost)) usage.costUsd += cost;
+  else if (r.promptTokens + r.completionTokens > 0) usage.costPartial = true;
+}
+
+async function nodeNote(nodeId: number | null): Promise<string | undefined> {
+  if (nodeId === null) return undefined;
+  const [node] = await db.select({ name: nodesTable.name }).from(nodesTable).where(eq(nodesTable.id, nodeId)).limit(1);
+  return node ? `Claude Code sul nodo «${node.name}»` : undefined;
+}
+
+/**
+ * Modello di ripiego dell'account nodo del capo, se usabile: dello stesso proprietario, cloud, risolvibile e senza tetti
+ * raggiunti (della squadra, del modello, dell'account e dell'utente). Null altrimenti.
+ */
+async function usableLeadFallback(instanceId: number, node: ResolvedModel): Promise<{ resolved: ResolvedModel; name: string } | null> {
+  const id = node.fallbackAiModelId;
+  if (id === null) return null;
+  let fallback: ResolvedModel;
+  try {
+    fallback = await resolveModel(id, { userId: node.ownerUserId, mustOwn: true });
+  } catch (err) {
+    logger.warn({ fallbackAiModelId: id, errName: errName(err) }, "Modello di ripiego del capo non usabile");
+    return null;
+  }
+  if (fallback.kind !== "openai_compatible") return null;
+  if ((await teamBudgetBlock(instanceId, id)) !== null) return null;
+  const [row] = await db.select({ displayName: aiModelsTable.displayName }).from(aiModelsTable).where(eq(aiModelsTable.id, id)).limit(1);
+  return { resolved: fallback, name: row?.displayName || fallback.modelId };
 }
 
 /**

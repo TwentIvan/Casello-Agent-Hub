@@ -7,6 +7,7 @@
 import { randomBytes } from "node:crypto";
 import { and, asc, count, eq, gt, inArray, isNotNull, sql } from "drizzle-orm";
 import {
+  aiAccountsTable,
   aiModelsTable,
   db,
   nodesTable,
@@ -123,7 +124,8 @@ export interface TaskPackage {
   leaseExpiresAt: Date;
   team: { id: number; name: string; refType: string; refId: string; refTitle: string };
   workspace: string | null;
-  role: { key: string; name: string; task: string; preferredModel: string | null };
+  /** `model`: id del modello Claude Code del ruolo (account nodo), passato dal nodo a `claude --model`; null = predefinito. */
+  role: { key: string; name: string; task: string; preferredModel: string | null; model: string | null };
   task: { planTaskId: string; title: string; instructions: string };
   plan: {
     objective: string;
@@ -338,10 +340,16 @@ async function tryClaim(node: Node, candidate: Candidate): Promise<ClaimAttempt>
   });
 }
 
-async function preferredModel(role: InstanceRole): Promise<string | null> {
-  if (role.aiModelId === null) return null;
-  const [row] = await db.select({ name: aiModelsTable.displayName, modelId: aiModelsTable.modelId }).from(aiModelsTable).where(eq(aiModelsTable.id, role.aiModelId));
-  return row ? row.name || row.modelId : null;
+/** Nome mostrato del modello del ruolo e, se è di un account Claude Code (nodo), l'id da passare a `claude --model`. */
+async function roleModel(role: InstanceRole): Promise<{ preferred: string | null; model: string | null }> {
+  if (role.aiModelId === null) return { preferred: null, model: null };
+  const [row] = await db
+    .select({ name: aiModelsTable.displayName, modelId: aiModelsTable.modelId, nodeId: aiAccountsTable.nodeId })
+    .from(aiModelsTable)
+    .innerJoin(aiAccountsTable, eq(aiModelsTable.accountId, aiAccountsTable.id))
+    .where(eq(aiModelsTable.id, role.aiModelId));
+  if (!row) return { preferred: null, model: null };
+  return { preferred: row.name || row.modelId, model: row.nodeId !== null ? row.modelId : null };
 }
 
 async function buildPackage(candidate: Candidate, task: TeamTaskRow): Promise<TaskPackage> {
@@ -349,7 +357,7 @@ async function buildPackage(candidate: Candidate, task: TeamTaskRow): Promise<Ta
   const [plan, skills, model, attachments] = await Promise.all([
     getPlan(instance.id),
     skillTexts(instance.id, role),
-    preferredModel(role),
+    roleModel(role),
     taskAttachmentViews(instance.id, task.attachmentIds),
   ]);
   const planTask = plan.tasks.find((t) => t.id === task.planTaskId);
@@ -360,7 +368,7 @@ async function buildPackage(candidate: Candidate, task: TeamTaskRow): Promise<Ta
     leaseExpiresAt: task.leaseExpiresAt!,
     team: { id: instance.id, name: instance.name, refType: instance.refType, refId: instance.refId, refTitle: instance.refTitle },
     workspace: instance.nodeWorkspace,
-    role: { key: role.key, name: role.name, task: role.task, preferredModel: model },
+    role: { key: role.key, name: role.name, task: role.task, preferredModel: model.preferred, model: model.model },
     task: {
       planTaskId: task.planTaskId,
       title: planTask?.title ?? task.planTaskId,

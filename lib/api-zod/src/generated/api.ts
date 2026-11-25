@@ -1121,7 +1121,8 @@ export const NodeClaimResponse = zod.object({
   "key": zod.string(),
   "name": zod.string(),
   "task": zod.string(),
-  "preferredModel": zod.string().nullable().describe('Modello preferito, solo indicativo')
+  "preferredModel": zod.string().nullable().describe('Modello preferito, solo indicativo'),
+  "model": zod.string().nullish().describe('Id del modello Claude Code del ruolo (account nodo), da passare a claude --model; null o assente = modello predefinito di Claude Code')
 }),
   "task": zod.object({
   "planTaskId": zod.string(),
@@ -6605,6 +6606,7 @@ export const ListTeamTasksResponseItem = zod.object({
   "httpStatus": zod.number().nullable(),
   "durationMs": zod.number().nullable(),
   "error": zod.string().nullable(),
+  "note": zod.string().nullish().describe('Nota informativa (es. turno del capo eseguito da Claude Code sul nodo); assente nei passi dei compiti'),
   "createdAt": zod.coerce.date()
 })).optional().describe('Passi dell\'esecuzione (solo nel dettaglio)')
 })
@@ -6651,6 +6653,7 @@ export const GetTeamTaskResponse = zod.object({
   "httpStatus": zod.number().nullable(),
   "durationMs": zod.number().nullable(),
   "error": zod.string().nullable(),
+  "note": zod.string().nullish().describe('Nota informativa (es. turno del capo eseguito da Claude Code sul nodo); assente nei passi dei compiti'),
   "createdAt": zod.coerce.date()
 })).optional().describe('Passi dell\'esecuzione (solo nel dettaglio)')
 })
@@ -6700,6 +6703,7 @@ export const ListTeamTurnsResponseItem = zod.object({
   "httpStatus": zod.number().nullable(),
   "durationMs": zod.number().nullable(),
   "error": zod.string().nullable(),
+  "note": zod.string().nullish().describe('Nota informativa (es. turno del capo eseguito da Claude Code sul nodo); assente nei passi dei compiti'),
   "createdAt": zod.coerce.date()
 }))
 })

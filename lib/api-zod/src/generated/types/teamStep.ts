@@ -23,5 +23,10 @@ export interface TeamStep {
   durationMs: number | null;
   /** @nullable */
   error: string | null;
+  /**
+     * Nota informativa (es. turno del capo eseguito da Claude Code sul nodo); assente nei passi dei compiti
+     * @nullable
+     */
+  note?: string | null;
   createdAt: Date;
 }

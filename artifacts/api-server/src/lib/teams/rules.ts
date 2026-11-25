@@ -1,7 +1,7 @@
 import { inArray } from "drizzle-orm";
 import { db, appToolsTable, skillsTable, skillVersionsTable } from "@workspace/db";
 import { effectiveLevel } from "../tools/levels";
-import { ModelChoiceError, MODEL_UNAVAILABLE, NODE_MODEL_NOT_ALLOWED, chooseCloudModel } from "../ai/choice";
+import { ModelChoiceError, MODEL_UNAVAILABLE, NODE_MODEL_NOT_ALLOWED, NODE_MODEL_REQUIRED, chooseCloudModel, chooseNodeModel, chooseOwnModel } from "../ai/choice";
 import {
   InstanceRoleSchema,
   MAX_ROLES,
@@ -33,8 +33,8 @@ export const TEAM_MESSAGES = {
   localSkillNotFound: (code: string) => `skill specializzata ${code} inesistente`,
   skillNodeOnly: (code: string) => `la skill ${code} gira solo sul nodo locale`,
   toolNotUsable: (name: string) => `lo strumento ${name} non può essere usato da una squadra`,
-  nodeRoleHasModel: "un ruolo sul nodo non ha un modello cloud",
-  leadOnNode: "il capo gira in cloud: scegli «cloud» e un modello cloud per il capo",
+  nodeRoleHasModel: NODE_MODEL_REQUIRED,
+  leadOnNode: "il capo gira in Botcave: per farlo lavorare sul Mac scegli per lui un modello Claude Code (nodo)",
   codeUnavailable: "l'app di riferimento non ha il codice collegato tramite l'App GitHub",
   nodeCodeRead: "un ruolo node non usa la lettura del codice: scegli Nessuno o Scrittura",
   nodeCodeMerge: "un ruolo sul nodo non può unire le PR: usa un ruolo cloud o il capo",
@@ -112,24 +112,28 @@ export async function validateRoles(input: ValidateRolesInput): Promise<void> {
   }
 
   // Luogo e modello
-  const checkedModels = new Set<number>();
+  const checkedModels = new Set<string>();
   for (const role of roles) {
-    if (role.runsOn === "node") {
-      if (role.aiModelId !== null) fail(TEAM_MESSAGES.nodeRoleHasModel);
-      continue;
-    }
+    // Ruolo sul Mac: il modello è facoltativo (senza, Claude Code usa il suo predefinito) e deve essere di un account
+    // Claude Code (nodo): il nodo lo passa a `claude --model`.
+    if (role.runsOn === "node" && role.aiModelId === null) continue;
     if (role.aiModelId === null) fail(TEAM_MESSAGES.modelUnavailable);
-    if (checkedModels.has(role.aiModelId)) continue;
+    // I compiti `cloud` girano nell'API: un modello Claude Code (nodo) non ha esecutore lì. Il capo invece sì: i suoi
+    // turni si delegano al nodo dell'account (vedi turn-runner.ts), con gli strumenti del capo su /mcp/turn.
+    const kind = role.runsOn === "node" ? "node" : role.isLead ? "lead" : "cloud";
+    const checkKey = `${role.aiModelId}:${kind}`;
+    if (checkedModels.has(checkKey)) continue;
     try {
-      // Capo e compiti `cloud` girano nell'API: un modello Claude Code (nodo) non ha esecutore qui
-      await chooseCloudModel(role.aiModelId, userId);
+      await (kind === "node" ? chooseNodeModel : kind === "lead" ? chooseOwnModel : chooseCloudModel)(role.aiModelId, userId);
     } catch (err) {
       if (err instanceof ModelChoiceError) {
-        fail(err.message === NODE_MODEL_NOT_ALLOWED ? TEAM_MESSAGES.nodeModelNotAllowed : TEAM_MESSAGES.modelUnavailable);
+        if (err.message === NODE_MODEL_NOT_ALLOWED) fail(TEAM_MESSAGES.nodeModelNotAllowed);
+        if (err.message === NODE_MODEL_REQUIRED) fail(TEAM_MESSAGES.nodeRoleHasModel);
+        fail(TEAM_MESSAGES.modelUnavailable);
       }
       throw err;
     }
-    checkedModels.add(role.aiModelId);
+    checkedModels.add(checkKey);
   }
 
   // Skill del catalogo: una sola lettura per tutti i codici

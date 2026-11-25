@@ -121,19 +121,36 @@ describe("modello e luogo", () => {
     await expectError(template([role({ aiModelId: 999_999 })]), TEAM_MESSAGES.modelUnavailable);
   });
 
-  it("cloud con un modello Claude Code (nodo) → 400 con il messaggio fisso", async () => {
+  it("ruolo cloud non capo con un modello Claude Code (nodo) → 400 con il messaggio fisso", async () => {
     const nodeModel = await nodeModelFor(userId);
-    await expectError(template([role({ aiModelId: nodeModel })]), TEAM_MESSAGES.nodeModelNotAllowed);
+    await expectError(template([role({ key: "l", name: "L" }), role({ isLead: false, aiModelId: nodeModel })]), TEAM_MESSAGES.nodeModelNotAllowed);
     expect(TEAM_MESSAGES.nodeModelNotAllowed).toBe("Claude Code (nodo) non è disponibile qui: scegli un modello cloud");
+  });
+
+  it("il capo può usare un modello Claude Code (nodo)", async () => {
+    const nodeModel = await nodeModelFor(userId);
+    await expect(template([role({ aiModelId: nodeModel })])).resolves.toBeUndefined();
+  });
+
+  it("stesso modello nodo per il capo e per un ruolo cloud → 400 sul ruolo", async () => {
+    const nodeModel = await nodeModelFor(userId);
+    await expectError(
+      template([role({ key: "l", name: "L", aiModelId: nodeModel }), role({ isLead: false, aiModelId: nodeModel })]),
+      TEAM_MESSAGES.nodeModelNotAllowed,
+    );
   });
 
   it("capo sul nodo → 400 con il messaggio fisso", async () => {
     await expectError(template([role({ runsOn: "node", aiModelId: null })]), TEAM_MESSAGES.leadOnNode);
-    expect(TEAM_MESSAGES.leadOnNode).toBe("il capo gira in cloud: scegli «cloud» e un modello cloud per il capo");
+    expect(TEAM_MESSAGES.leadOnNode).toBe("il capo gira in Botcave: per farlo lavorare sul Mac scegli per lui un modello Claude Code (nodo)");
   });
 
-  it("node con modello", async () => {
+  it("node con un modello cloud → 400; con un modello Claude Code (nodo) o senza modello → ok", async () => {
     await expectError(template([role({ key: "l", name: "L" }), role({ isLead: false, runsOn: "node", aiModelId: myModel })]), TEAM_MESSAGES.nodeRoleHasModel);
+    expect(TEAM_MESSAGES.nodeRoleHasModel).toBe("un ruolo sul Mac usa un modello Claude Code (nodo): scegline uno del gruppo Claude Code");
+    const nodeModel = await nodeModelFor(userId);
+    await expect(template([role({ key: "l", name: "L" }), role({ isLead: false, runsOn: "node", aiModelId: nodeModel })])).resolves.toBeUndefined();
+    await expectError(template([role({ key: "l", name: "L" }), role({ isLead: false, runsOn: "node", aiModelId: otherModel })]), TEAM_MESSAGES.modelUnavailable);
     await expect(template([role({ key: "l", name: "L" }), role({ isLead: false, runsOn: "node", aiModelId: null })])).resolves.toBeUndefined();
   });
 });

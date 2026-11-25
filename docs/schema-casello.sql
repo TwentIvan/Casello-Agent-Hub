@@ -746,6 +746,7 @@ CREATE TABLE IF NOT EXISTS "team_turn_steps" (
 	"http_status" integer,
 	"duration_ms" integer,
 	"error" text,
+	"note" text,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	CONSTRAINT "team_turn_steps_turn_id_team_turns_id_fk" FOREIGN KEY ("turn_id") REFERENCES "public"."team_turns"("id") ON DELETE cascade ON UPDATE no action
 );
@@ -1207,7 +1208,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS "ai_accounts_one_per_node" ON "ai_accounts" US
 ALTER TABLE "nodes" ADD COLUMN IF NOT EXISTS "last_turn_poll_at" timestamp;
 
 DO $$ BEGIN
-  CREATE TYPE "public"."node_turn_consumer" AS ENUM('character', 'plan_chat', 'team_chat', 'run');
+  CREATE TYPE "public"."node_turn_consumer" AS ENUM('character', 'plan_chat', 'team_chat', 'run', 'team_turn');
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;
 DO $$ BEGIN

@@ -11739,6 +11739,9 @@ components:
             preferredModel:
               type: ["string", "null"]
               description: Modello preferito, solo indicativo
+            model:
+              type: ["string", "null"]
+              description: Id del modello Claude Code del ruolo (account nodo), da passare a claude --model; null o assente = modello predefinito di Claude Code
         task:
           type: object
           required: [planTaskId, title, instructions]
@@ -13410,6 +13413,9 @@ components:
           type: ["integer", "null"]
         error:
           type: ["string", "null"]
+        note:
+          type: ["string", "null"]
+          description: Nota informativa (es. turno del capo eseguito da Claude Code sul nodo); assente nei passi dei compiti
         createdAt:
           type: string
           format: date-time

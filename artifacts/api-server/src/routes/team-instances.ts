@@ -281,6 +281,8 @@ router.post("/team-instances/:id/plan/manual-actions/:actionId/done", async (req
 
 // ─── Esecuzione: attivazione, messaggi al capo, tetto, attività, bollettino ──
 
+// Copiati in `TEAM_ACTIVITY_LIMITS` della console (`artifacts/casello/src/lib/team-activity.ts`), che avvisa quando l'attività
+// li raggiunge: se cambiano qui, vanno cambiati anche lì.
 const MAX_TURNS = 50;
 const MAX_TASKS = 200;
 const MAX_USER_EVENTS = 200;

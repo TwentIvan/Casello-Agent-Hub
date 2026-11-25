@@ -121,10 +121,23 @@ describe("modello e luogo", () => {
     await expectError(template([role({ aiModelId: 999_999 })]), TEAM_MESSAGES.modelUnavailable);
   });
 
-  it("cloud con un modello Claude Code (nodo) → 400 con il messaggio fisso", async () => {
+  it("ruolo cloud non capo con un modello Claude Code (nodo) → 400 con il messaggio fisso", async () => {
     const nodeModel = await nodeModelFor(userId);
-    await expectError(template([role({ aiModelId: nodeModel })]), TEAM_MESSAGES.nodeModelNotAllowed);
+    await expectError(template([role({ key: "l", name: "L" }), role({ isLead: false, aiModelId: nodeModel })]), TEAM_MESSAGES.nodeModelNotAllowed);
     expect(TEAM_MESSAGES.nodeModelNotAllowed).toBe("Claude Code (nodo) non è disponibile qui: scegli un modello cloud");
+  });
+
+  it("il capo può usare un modello Claude Code (nodo)", async () => {
+    const nodeModel = await nodeModelFor(userId);
+    await expect(template([role({ aiModelId: nodeModel })])).resolves.toBeUndefined();
+  });
+
+  it("stesso modello nodo per il capo e per un ruolo cloud → 400 sul ruolo", async () => {
+    const nodeModel = await nodeModelFor(userId);
+    await expectError(
+      template([role({ key: "l", name: "L", aiModelId: nodeModel }), role({ isLead: false, aiModelId: nodeModel })]),
+      TEAM_MESSAGES.nodeModelNotAllowed,
+    );
   });
 
   it("capo sul nodo → 400 con il messaggio fisso", async () => {

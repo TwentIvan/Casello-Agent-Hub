@@ -23,6 +23,7 @@ import { MERGE_TOOL, mergeTeamPull } from "../code-writer/merge";
 import { githubConfig } from "../github/config";
 import { userHasInstallation } from "../github/installations";
 import { logger } from "../logger";
+import { isNodeModel } from "../ai/node-account";
 import { modelChatDeps, newUsage, stepWriter, usageCost, type LoopUsage } from "../loop-wiring";
 import type { CatalogTool, ToolResult } from "../tools/types";
 import { ATTACHMENT_MESSAGES } from "./attachments";
@@ -64,6 +65,7 @@ export const TASK_MESSAGES = {
   startFailed: "errore interno",
   notActivated: "squadra non attivata",
   noModel: "il ruolo non ha un modello",
+  nodeModelTask: "il ruolo usa Claude Code (nodo), che qui esegue solo i turni del capo: assegna il compito a un altro ruolo",
   interrupted: "interrotto dal riavvio",
   internalError: "errore interno nell'esecuzione del compito",
   reported: "esito registrato: il compito è chiuso",
@@ -485,6 +487,8 @@ async function executeTask(task: TeamTaskRow, usage: LoopUsage): Promise<TaskRes
   if (activatedBy === null) return failedWith(TASK_MESSAGES.notActivated);
   const aiModelId = task.aiModelId ?? role.aiModelId;
   if (aiModelId === null) return failedWith(TASK_MESSAGES.noModel);
+  // Solo il capo può avere un modello Claude Code (nodo), e solo per i suoi turni: un compito cloud non ha esecutore sul nodo
+  if (await isNodeModel(aiModelId)) return failedWith(TASK_MESSAGES.nodeModelTask);
 
   const block = await teamBudgetBlock(instance.id, aiModelId);
   if (block) return { status: "blocked", outcome: block.slice(0, MAX_TASK_OUTCOME), error: block };

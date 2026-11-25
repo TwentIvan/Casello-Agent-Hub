@@ -6605,6 +6605,7 @@ export const ListTeamTasksResponseItem = zod.object({
   "httpStatus": zod.number().nullable(),
   "durationMs": zod.number().nullable(),
   "error": zod.string().nullable(),
+  "note": zod.string().nullish().describe('Nota informativa (es. turno del capo eseguito da Claude Code sul nodo); assente nei passi dei compiti'),
   "createdAt": zod.coerce.date()
 })).optional().describe('Passi dell\'esecuzione (solo nel dettaglio)')
 })
@@ -6651,6 +6652,7 @@ export const GetTeamTaskResponse = zod.object({
   "httpStatus": zod.number().nullable(),
   "durationMs": zod.number().nullable(),
   "error": zod.string().nullable(),
+  "note": zod.string().nullish().describe('Nota informativa (es. turno del capo eseguito da Claude Code sul nodo); assente nei passi dei compiti'),
   "createdAt": zod.coerce.date()
 })).optional().describe('Passi dell\'esecuzione (solo nel dettaglio)')
 })
@@ -6698,6 +6700,7 @@ export const ListTeamTurnsResponseItem = zod.object({
   "httpStatus": zod.number().nullable(),
   "durationMs": zod.number().nullable(),
   "error": zod.string().nullable(),
+  "note": zod.string().nullish().describe('Nota informativa (es. turno del capo eseguito da Claude Code sul nodo); assente nei passi dei compiti'),
   "createdAt": zod.coerce.date()
 }))
 })

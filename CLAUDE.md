@@ -591,8 +591,8 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   sono `{code, version}` fissate e c'è `localSkills` (codici delle skill specializzate).
 - **Regole** (`rules.ts`, `validateRoles`, a ogni salvataggio di modello o istanza; violazione → 400 con messaggio fisso in
   `TEAM_MESSAGES`, nulla salvato): un solo capo («una squadra ha esattamente un capo»); 1..20 ruoli, `key` e `name` unici,
-  ≤ 30 skill per ruolo (catalogo + specializzate); il capo è sempre `cloud` («il capo gira in cloud: scegli «cloud» e un modello cloud per il capo»: i suoi turni girano
-  solo nell'API; in console «Nodo locale» è disattivato per il capo e un ruolo node scelto come capo passa al cloud); `cloud` → `aiModelId` di un modello dei propri account («modello non
+  ≤ 30 skill per ruolo (catalogo + specializzate); il capo è sempre `cloud` («il capo gira in cloud: scegli «cloud» e un modello cloud per il capo»: i suoi turni nascono
+  nell'API, anche con un modello Claude Code (nodo), che li delega al Mac, vedi "Esecutore Claude Code (nodo)"; in console «Nodo locale» è disattivato per il capo e un ruolo node scelto come capo passa al cloud); `cloud` → `aiModelId` di un modello dei propri account («modello non
   disponibile»), `node` → `aiModelId` null; skill `node` solo su ruoli `node`; skill inesistenti o deprecate rifiutate,
   salvo quelle già nel ruolo della versione precedente (stessa `key`); nelle istanze la versione fissata deve esistere;
   strumenti `active` e con livello effettivo ≠ L3 («lo strumento <nome> non può essere usato da una squadra»), salvo
@@ -2292,8 +2292,18 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
 - Spec: `docs/superpowers/specs/2026-11-09-botcave-esecutore-claude-code-nodo-design.md`; piano `docs/superpowers/plans/2026-11-09-botcave-esecutore-claude-code-nodo.md`.
   Dove il codice differisce dalla spec vale il codice, descritto qui. «Claude Code (nodo)» si sceglie come un modello: i turni li esegue `casello-nodo` sul
   Mac dell'utente con `claude -p` e il suo login (posto Claude Team), con le regole di sempre (L2 in «Da confermare», schede da accettare, nessun segreto sul Mac).
-  Consumatori: conversazioni dei personaggi (Alfred scritto, Lucius), chat del piano, chat di squadra e run degli agenti (inneschi compresi). Fuori: voce di
-  Alfred, turni del capo e compiti `cloud` delle squadre, analisi dell'architetto.
+  Consumatori: conversazioni dei personaggi (Alfred scritto, Lucius), chat del piano, chat di squadra, run degli agenti (inneschi compresi) e turni del capo delle squadre (vedi
+  «Capo su Claude Code» qui sotto). Fuori: voce di Alfred, compiti `cloud` delle squadre, analisi dell'architetto.
+- **Capo su Claude Code** (`teams/turn-runner.ts`, `rules.ts`): il capo resta `runsOn: cloud` ma il suo `aiModelId` può essere un modello di un account nodo (`validateRoles` usa
+  `chooseOwnModel` per il capo e `chooseCloudModel` per gli altri ruoli `cloud`; lo stesso modello nodo su un ruolo non capo → 400 «Claude Code (nodo) non è disponibile qui…»). Il turno nasce
+  nell'API come sempre; con un modello `kind: "node"` va a `delegateTurn` (consumatore `team_turn`, `ref_id` = id del turno) con gli stessi messaggi e strumenti del ciclo cloud (strumenti
+  del capo e di app), chiamate smistate da `dispatchAgentCall` (passi `tool`/`queued` in `team_turn_steps` mentre Claude lavora, L2 in coda come sempre), `maxTurns` 11 e `timeoutMs`
+  600 000 (`LEAD_NODE_TIMEOUT_MS`); a fine turno un passo `model` con la nota «Claude Code sul nodo «<nome>»» (colonna `team_turn_steps.note`, `TeamStep.note`). Token e costo li riferisce il
+  nodo (tetti come sempre). Ripiego con le regole delle run: modello di ripiego dell'account se usabile e senza tetti raggiunti (`teamBudgetBlock` con quel modello), passo «Claude Code non
+  disponibile: turno eseguito con <nome>», spesa del turno al ripiego (`team_turns.ai_model_id`); senza ripiego turno `failed` col messaggio fisso del nodo ed evento `bloccato`. Un compito
+  assegnato a un ruolo con un modello nodo (cioè al capo) chiude `failed` «il ruolo usa Claude Code (nodo), che qui esegue solo i turni del capo…» (`TASK_MESSAGES.nodeModelTask`). Console:
+  nell'editor dei ruoli il selettore del modello del capo mostra anche i modelli nodo. Migrazione `docs/migrations/2026-11-25-capo-claude-code-nodo.sql` (additiva, la applica il deploy):
+  valore `team_turn` di `node_turn_consumer`, colonna `team_turn_steps.note`. Prova `teams/turn-runner-node.test.ts`.
 - **Account nodo** (`lib/ai/node-account.ts`): provider `claude_code_node` del registro (protocollo `claude_code_node`, `managed`, senza indirizzo; `GET
   /api/ai/providers` lo segna `requiresNode: true`), `ExecutorKind` `openai_compatible | node`. Colonne `ai_accounts.node_id` (`SET NULL`, indice unico
   parziale: un account per nodo) e `fallback_ai_model_id` (`SET NULL`). `POST /api/ai/accounts` con `provider: "claude_code_node"` vuole `nodeId` di un nodo
@@ -2305,7 +2315,7 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   account nodo restituisce `kind: "node"`, `nodeId`, `fallbackAiModelId` e il nome del modello, senza chiavi; `modelChat` su `kind: "node"` è un errore di
   programmazione.
 - **Dove non si sceglie**: i consumatori che girano solo nell'API rifiutano un modello di un account nodo con 400 «Claude Code (nodo) non è disponibile
-  qui: scegli un modello cloud» (`NODE_MODEL_NOT_ALLOWED`, `chooseCloudModel` in `lib/ai/choice.ts`): ruoli `cloud` delle squadre (`validateRoles`,
+  qui: scegli un modello cloud» (`NODE_MODEL_NOT_ALLOWED`, `chooseCloudModel` in `lib/ai/choice.ts`): ruoli `cloud` delle squadre tranne il capo (`validateRoles`,
   `TEAM_MESSAGES.nodeModelNotAllowed`), avvio delle analisi cloud, `PUT /api/account/centralino-model`; Alfred a voce accetta solo modelli Gemini (400 «modello
   non adatto ad Alfred»). `POST /api/ai/models/:id/probe` su un modello nodo → 400 «la prova non è disponibile per Claude Code: usa Verifica sull'account»
   (nessuna chiamata). Righe già salvate non si migrano: un'analisi accodata con un modello nodo fallisce col messaggio fisso, il riassunto del centralino

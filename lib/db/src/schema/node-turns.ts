@@ -4,7 +4,7 @@ import { nodesTable } from "./nodes";
 import { aiModelsTable } from "./ai-models";
 
 export const nodeTurnStatusEnum = pgEnum("node_turn_status", ["queued", "running", "done", "failed", "cancelled", "expired"]);
-export const nodeTurnConsumerEnum = pgEnum("node_turn_consumer", ["character", "plan_chat", "team_chat", "run"]);
+export const nodeTurnConsumerEnum = pgEnum("node_turn_consumer", ["character", "plan_chat", "team_chat", "run", "team_turn"]);
 
 // Turno di un modello delegato al nodo locale (Claude Code sul Mac): traccia tecnica, il risultato vero sta nel messaggio
 // della conversazione o nella run. `package` si svuota alla chiusura; le righe chiuse da oltre 30 giorni si cancellano.

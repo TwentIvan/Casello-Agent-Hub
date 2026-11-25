@@ -142,6 +142,8 @@ export const teamTurnStepsTable = pgTable(
     httpStatus: integer("http_status"),
     durationMs: integer("duration_ms"),
     error: text("error"),
+    /** Nota informativa del passo (es. «Claude Code sul nodo «Mac»») */
+    note: text("note"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (table) => [index("team_turn_steps_turn_id_position_idx").on(table.turnId, table.position)],

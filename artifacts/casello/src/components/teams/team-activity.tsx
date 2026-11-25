@@ -189,7 +189,7 @@ export function TeamActivity({
   team: TeamInstance;
   work: TeamWorkState;
   /** Titoli dei compiti del PLAN per id. */
-  taskTitles: Map<string, string>;
+  taskTitles: ReadonlyMap<string, string>;
 }) {
   const { turns, tasks } = work;
   const entries: Entry[] = [

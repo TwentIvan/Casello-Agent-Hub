@@ -4208,6 +4208,11 @@ export type NodeTaskPackageRole = {
      * @nullable
      */
   preferredModel: string | null;
+  /**
+     * Id del modello Claude Code del ruolo (account nodo), da passare a claude --model; null o assente = modello predefinito di Claude Code
+     * @nullable
+     */
+  model?: string | null;
 };
 
 export type NodeTaskPackageTask = {

@@ -10,3 +10,8 @@ export const isNodeAccount = (account: { provider: string }): boolean => account
 export function withoutNodeModels<G extends { account: { provider: string } }>(groups: G[]): G[] {
   return groups.filter((g) => !isNodeAccount(g.account));
 }
+
+/** Id dei modelli degli account Claude Code (nodo). */
+export function nodeModelIds(groups: { account: { provider: string }; models: { id: number }[] }[]): Set<number> {
+  return new Set(groups.filter((g) => isNodeAccount(g.account)).flatMap((g) => g.models.map((m) => m.id)));
+}

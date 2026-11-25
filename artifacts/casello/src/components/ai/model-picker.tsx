@@ -31,6 +31,10 @@ interface ModelPickerProps {
   disabled?: boolean;
   /** Mostra in cima la voce «Nessun modello» (onChange(null)), per i campi in cui l'assenza è una scelta valida. */
   allowNone?: boolean;
+  /** Testo della voce in cima al posto di «Nessun modello». */
+  noneLabel?: string;
+  /** Con `allowNone`: il valore null è quella voce (default vero); falso = null vuol dire «ancora da scegliere». */
+  noneSelected?: boolean;
   /** Consumatore che gira solo nel cloud: niente modelli Claude Code (nodo); uno già scelto resta come voce disabilitata. */
   cloudOnly?: boolean;
   /** Passati al trigger (es. da FormControl o per un Label con htmlFor). */
@@ -66,7 +70,7 @@ function ModelItem({ model, selected, onPick }: { model: AiModel; selected: bool
  * tra quelli dell'utente (agente configurato da altri, modello nascosto o del vecchio gateway dismesso) resta
  * come voce disabilitata, così il valore non si perde.
  */
-export function ModelPicker({ value, onChange, disabled, allowNone, cloudOnly, id, ...aria }: ModelPickerProps) {
+export function ModelPicker({ value, onChange, disabled, allowNone, noneLabel = NONE_LABEL, noneSelected = true, cloudOnly, id, ...aria }: ModelPickerProps) {
   const groups = useAiModelGroups();
   // null: nessuna scelta dell'utente, il gruppo "Altri modelli" è aperto se contiene il valore corrente
   const [othersToggled, setOthersToggled] = useState<boolean | null>(null);
@@ -135,7 +139,7 @@ export function ModelPicker({ value, onChange, disabled, allowNone, cloudOnly, i
             className="w-full justify-between font-normal"
           >
             <span className={cn("truncate", triggerLabel === null && "text-muted-foreground")}>
-              {triggerLabel ?? (allowNone ? NONE_LABEL : "Scegli un modello")}
+              {triggerLabel ?? (allowNone && noneSelected ? noneLabel : "Scegli un modello")}
             </span>
             <ChevronsUpDown className="size-4 shrink-0 opacity-50" />
           </Button>
@@ -148,9 +152,9 @@ export function ModelPicker({ value, onChange, disabled, allowNone, cloudOnly, i
               {allowNone && (
                 <>
                   <CommandGroup>
-                    <CommandItem value={NONE_LABEL} onSelect={() => pick(null)}>
-                      <Check className={cn("size-4", value === null ? "opacity-100" : "opacity-0")} />
-                      <span className="text-muted-foreground">{NONE_LABEL}</span>
+                    <CommandItem value={noneLabel} onSelect={() => pick(null)}>
+                      <Check className={cn("size-4", value === null && noneSelected ? "opacity-100" : "opacity-0")} />
+                      <span className="text-muted-foreground">{noneLabel}</span>
                     </CommandItem>
                   </CommandGroup>
                   <CommandSeparator />

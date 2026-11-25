@@ -40,7 +40,7 @@ interface RolesEditorProps {
 
 export const CODE_DISABLED_HINT = "Collega il repository dell'app tramite l'App GitHub per dare il codice ai ruoli";
 export const CODE_LEAD_HINT = "Il capo non esegue compiti: per lui conta solo «Scrittura e merge», che gli fa unire le PR della squadra";
-export const LEAD_RUNS_ON_HINT = "Il capo gira sempre in cloud: i suoi turni li esegue Botcave";
+export const LEAD_RUNS_ON_HINT = "Il capo gira in cloud; con un modello Claude Code (nodo) i suoi turni li esegue il Mac";
 export const CODE_MERGE_HINT = "Unisce le PR della squadra con la CI verde; quelle con uno script -post passano da «Da confermare»";
 
 
@@ -186,7 +186,7 @@ function RoleCard({
           {role.runsOn === "cloud" && (
             <div className="min-w-0 space-y-1.5">
               <Label htmlFor={`${id}-model`}>Modello</Label>
-              <ModelPicker id={`${id}-model`} value={role.aiModelId} onChange={(v) => onChange({ aiModelId: v })} disabled={readOnly} cloudOnly />
+              <ModelPicker id={`${id}-model`} value={role.aiModelId} onChange={(v) => onChange({ aiModelId: v })} disabled={readOnly} cloudOnly={!role.isLead} />
             </div>
           )}
         </div>

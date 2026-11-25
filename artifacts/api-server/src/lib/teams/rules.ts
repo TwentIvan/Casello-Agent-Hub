@@ -1,7 +1,7 @@
 import { inArray } from "drizzle-orm";
 import { db, appToolsTable, skillsTable, skillVersionsTable } from "@workspace/db";
 import { effectiveLevel } from "../tools/levels";
-import { ModelChoiceError, MODEL_UNAVAILABLE, NODE_MODEL_NOT_ALLOWED, chooseCloudModel } from "../ai/choice";
+import { ModelChoiceError, MODEL_UNAVAILABLE, NODE_MODEL_NOT_ALLOWED, chooseCloudModel, chooseOwnModel } from "../ai/choice";
 import {
   InstanceRoleSchema,
   MAX_ROLES,
@@ -112,24 +112,26 @@ export async function validateRoles(input: ValidateRolesInput): Promise<void> {
   }
 
   // Luogo e modello
-  const checkedModels = new Set<number>();
+  const checkedModels = new Set<string>();
   for (const role of roles) {
     if (role.runsOn === "node") {
       if (role.aiModelId !== null) fail(TEAM_MESSAGES.nodeRoleHasModel);
       continue;
     }
     if (role.aiModelId === null) fail(TEAM_MESSAGES.modelUnavailable);
-    if (checkedModels.has(role.aiModelId)) continue;
+    // I compiti `cloud` girano nell'API: un modello Claude Code (nodo) non ha esecutore lì. Il capo invece sì: i suoi
+    // turni si delegano al nodo dell'account (vedi turn-runner.ts), con gli strumenti del capo su /mcp/turn.
+    const checkKey = `${role.aiModelId}:${role.isLead ? "lead" : "cloud"}`;
+    if (checkedModels.has(checkKey)) continue;
     try {
-      // Capo e compiti `cloud` girano nell'API: un modello Claude Code (nodo) non ha esecutore qui
-      await chooseCloudModel(role.aiModelId, userId);
+      await (role.isLead ? chooseOwnModel : chooseCloudModel)(role.aiModelId, userId);
     } catch (err) {
       if (err instanceof ModelChoiceError) {
         fail(err.message === NODE_MODEL_NOT_ALLOWED ? TEAM_MESSAGES.nodeModelNotAllowed : TEAM_MESSAGES.modelUnavailable);
       }
       throw err;
     }
-    checkedModels.add(role.aiModelId);
+    checkedModels.add(checkKey);
   }
 
   // Skill del catalogo: una sola lettura per tutti i codici

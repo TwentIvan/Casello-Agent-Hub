@@ -9,6 +9,7 @@ export const COLLAUDO_MESSAGES = {
   timeout: "tempo del collaudo scaduto",
   interrupted: "collaudo interrotto",
   notDelivered: "collaudo non consegnato",
+  internalError: "errore interno nel collaudo",
   autoFixExhausted: "2 correzioni automatiche non sono bastate",
   invalidRecipe: (detail: string) => `ricetta non valida: ${detail}`,
   dispatchFailed:

@@ -1,15 +1,15 @@
 import { and, eq, gte, inArray, sql } from "drizzle-orm";
-import { db, teamInstancesTable, teamTasksTable, teamTurnsTable } from "@workspace/db";
+import { db, releaseTestsTable, teamInstancesTable, teamTasksTable, teamTurnsTable } from "@workspace/db";
 import { monthStart, unpricedOf, type Spend } from "../budget";
 
-// Spesa delle squadre (compiti e turni del capo), senza dipendenze dal ciclo di evoluzione: la usano sia il tetto delle
+// Spesa delle squadre (compiti, turni del capo e collaudi dei lavori), senza dipendenze dal ciclo di evoluzione: la usano sia il tetto delle
 // squadre (`team-budget.ts`) sia la spesa del ciclo (`evolution/spend.ts`), che altrimenti si importerebbero a vicenda.
 
 /** Tipo del lavoro di riferimento delle squadre create da un ciclo di evoluzione. */
 export const EVOLUTION_REF_TYPE = "evoluzione";
 
 async function spendOf(instanceIds: number[] | ReturnType<typeof evolutionInstancesOf>, since: Date): Promise<Spend> {
-  const [tasks, turns] = await Promise.all([
+  const [tasks, turns, tests] = await Promise.all([
     db
       .select({ spent: sql<string>`coalesce(sum(${teamTasksTable.costUsd}), 0)`, unpriced: unpricedOf(teamTasksTable) })
       .from(teamTasksTable)
@@ -18,8 +18,12 @@ async function spendOf(instanceIds: number[] | ReturnType<typeof evolutionInstan
       .select({ spent: sql<string>`coalesce(sum(${teamTurnsTable.costUsd}), 0)`, unpriced: unpricedOf(teamTurnsTable) })
       .from(teamTurnsTable)
       .where(and(inArray(teamTurnsTable.instanceId, instanceIds), gte(teamTurnsTable.createdAt, since))),
+    db
+      .select({ spent: sql<string>`coalesce(sum(${releaseTestsTable.costUsd}), 0)`, unpriced: unpricedOf(releaseTestsTable) })
+      .from(releaseTestsTable)
+      .where(and(inArray(releaseTestsTable.instanceId, instanceIds), gte(releaseTestsTable.createdAt, since))),
   ]);
-  return [...tasks, ...turns].reduce<Spend>(
+  return [...tasks, ...turns, ...tests].reduce<Spend>(
     (acc, r) => ({ spentUsd: acc.spentUsd + Number(r.spent), unpricedCount: acc.unpricedCount + r.unpriced }),
     { spentUsd: 0, unpricedCount: 0 },
   );
@@ -32,7 +36,7 @@ function evolutionInstancesOf(appId: number) {
     .where(and(eq(teamInstancesTable.refAppId, appId), eq(teamInstancesTable.refType, EVOLUTION_REF_TYPE)));
 }
 
-/** Spesa del mese della squadra: compiti e turni del capo; i costi null con token si contano a parte. */
+/** Spesa del mese della squadra: compiti, turni del capo e collaudi; i costi null con token si contano a parte. */
 export async function teamSpend(instanceId: number, since: Date = monthStart()): Promise<Spend> {
   return spendOf([instanceId], since);
 }

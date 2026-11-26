@@ -74,6 +74,7 @@ import { TemplateError } from "../lib/teams/templates";
 import { applyUpdates, getUpdates } from "../lib/teams/updates";
 import { teamReadiness } from "../lib/teams/readiness";
 import { listWorks } from "../lib/teams/works";
+import { publicTurnReasons } from "../lib/teams/turn-reasons";
 import { parseRequest } from "../middlewares/error-handler";
 
 // Squadre (istanze di modelli) legate a un lavoro. Con un token personale valgono gli ambiti per metodo.
@@ -280,6 +281,8 @@ router.post("/team-instances/:id/plan/manual-actions/:actionId/done", async (req
 
 // ─── Esecuzione: attivazione, messaggi al capo, tetto, attività, bollettino ──
 
+// Copiati in `TEAM_ACTIVITY_LIMITS` della console (`artifacts/casello/src/lib/team-activity.ts`), che avvisa quando l'attività
+// li raggiunge: se cambiano qui, vanno cambiati anche lì.
 const MAX_TURNS = 50;
 const MAX_TASKS = 200;
 const MAX_USER_EVENTS = 200;
@@ -290,7 +293,11 @@ const publicTask = ({ costUsd, leaseToken: _leaseToken, ...rest }: TeamTaskRow, 
   costUsd: toNumberOrNull(costUsd),
   nodeName,
 });
-const publicTurn = ({ costUsd, ...rest }: TeamTurnRow) => ({ ...rest, costUsd: toNumberOrNull(costUsd) });
+const publicTurn = ({ costUsd, reasons, ...rest }: TeamTurnRow) => ({
+  ...rest,
+  reasons: publicTurnReasons(rest.id, reasons),
+  costUsd: toNumberOrNull(costUsd),
+});
 
 router.post("/team-instances/:id/activate", async (req, res) => {
   const { id } = parseRequest(ActivateTeamInstanceParams, req.params);

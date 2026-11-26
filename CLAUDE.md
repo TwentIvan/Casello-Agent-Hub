@@ -735,6 +735,12 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
 - **Risposta del capo**: in un turno nato da un messaggio dell'utente (console, `invia_al_capo`, Alfred) l'ultimo messaggio del capo diventa l'evento `risposta_capo` (bollettino su una riga ≤ 300,
   testo intero nel dettaglio se più lungo; vuoto → nessun evento); il prompt lo dice al capo. Migrazione `docs/migrations/2026-11-risposta-capo.sql` (valore dell'enum `team_event_type`, fuori da una
   transazione esplicita, PRIMA del merge).
+- **Origine dei messaggi** (decisione A, opzione 1): ogni motivo `request` porta `source`: `user` per i messaggi scritti dall'utente al capo (`sendToLead`: console, `invia_al_capo`, Alfred, «Implementa»), `system` per i testi generati da Botcave
+  (correzione del PLAN, ripresa dopo il tetto, rifiuto di «Porta in produzione», bug approvato, ciclo di evoluzione); assente nei turni salvati prima (sta nel jsonb `team_turns.reasons`). L'evento `risposta_capo` ha `team_events.turn_id` (FK `SET NULL`, `TeamEvent.turnId`) = turno che l'ha prodotto,
+  così il thread utente-capo si ricava senza filtrare sul testo. La logica dei turni non cambia (`hasUserRequest` resta sul testo). Migrazione `docs/migrations/2026-11-24-origine-messaggi-capo.sql` (additiva, la applica il deploy); prova `test/migration-origine-messaggi-capo.test.ts`.
+- **Motivi nell'attività** (`lib/teams/turn-reasons.ts`): `GET …/turns` passa ogni motivo per lo schema del contratto (`publicTurnReasons`); un motivo che il contratto non descrive (tipo nuovo, campi non validi) diventa
+  `{type: "unknown", originalType}` (solo il tipo ripulito, mai il contenuto; avviso nel log) invece di un 500 su tutta l'attività. `TURN_REASON_TYPES` (`satisfies` sui tipi di `TeamTurnReason`) e il suo test obbligano ad
+  aggiungere ogni tipo nuovo anche a OpenAPI; il turno del capo salta con un avviso un tipo che non conosce. Console: testi in `src/lib/turn-reasons.ts` (`reasonText`), «Motivo non riconosciuto (<tipo>)» per gli altri.
 - **Eventi e bollettino** (`events.ts`; `team_events`): tipi `piano_proposto`, `compito_finito`, `bloccato`, `decisione_richiesta`,
   `azione_manuale_richiesta`, `lavoro_finito`, `interrotto`, `risposta_capo`; bollettino ≤ 300 caratteri, dettaglio ≤ 4 000; mai segreti né
   indirizzi delle app. Il bollettino è dell'utente che ha attivato la squadra. `GET /api/team-instances/:id/events`,
@@ -771,9 +777,13 @@ TradeFlow). Botcave non conosce le organizzazioni delle app: le sceglie con gli 
   …/plan/manual-actions/:actionId/done`, `GET …/tasks` (ultimi 200), `GET …/tasks/:taskId` (con i passi; 404 «compito non
   trovato»), `GET …/turns` (ultimi 50, con i passi), `GET …/events`, `PUT …/budget`, `GET /api/team-events`, `POST
   /api/team-events/read`. Con un token personale valgono gli ambiti per metodo.
-- Console (scheda squadra, `pages/team-detail.tsx`): «Piano da approvare» (Approva / Rifiuta con nota), «Piano» (compiti con
-  stato ed esito, azioni manuali con «Fatto», punti aperti, «Modifica»), «Scrivi al capo», «Attività» (turni e compiti con i
-  passi), «Bollettino» («Segna come letti»), tetto di spesa, «Attiva». Polling ogni 5 s finché un turno o un compito è in
+- Console (scheda squadra, `pages/team-detail.tsx`): barra di stato fissa in alto (`components/teams/team-status-bar.tsx`, logica pura in
+  `src/lib/team-status-bar.ts`: stato della squadra, turno o compito in corso, indicatore dell'aggiornamento automatico, «Scrivi al capo» che apre
+  «Messaggi» col fuoco nel campo) con sotto le schede Panoramica (lavoro di riferimento, «Pronta a lavorare», piano da approvare, bollettino, tetto),
+  Piano («Piano da approvare» con Approva / Rifiuta con nota, compiti con stato ed esito, azioni manuali con «Fatto», punti aperti, «Modifica», allegati),
+  Attività (turni e compiti con i passi, ricerca lato client per testo, titolo, ruolo, esito e motivi, filtro per tipo, motivi e resoconti interi, avviso quando si raggiungono i 50 turni o i 200 compiti che il server restituisce: `src/lib/team-activity.ts`, `TEAM_ACTIVITY_LIMITS` copia di `MAX_TURNS`/`MAX_TASKS`), Messaggi (thread «Conversazione con il capo»: messaggi dell'utente dai motivi `request` con `source: user` e risposte dagli eventi `risposta_capo` legati con `turnId`, più turno in attesa, fallito o senza risposta scritta; logica pura in `src/lib/lead-thread.ts`, componente `components/teams/lead-thread.tsx`; sotto «Scrivi al capo») e Impostazioni (nome, titolo, squadra per i bug, spazio di lavoro, aggiornamenti
+  del modello, ruoli, skill specializzate; resta montata, LED sulla scheda con modifiche non salvate); la scheda aperta sta in `TeamDetail` e non si
+  perde al salvataggio. «Attiva». Polling ogni 5 s finché un turno o un compito è in
   coda o in corso, più un periodo di grazia di ~10 s dopo la fine o dopo un'azione dell'utente che accoda un turno. Niente
   scorrimento orizzontale a 1280 px.
 - Migrazione: `docs/migrations/2026-11-squadre-esecuzione.sql` (additiva e idempotente, nessuna colonna tolta, niente `-post`):

@@ -19,4 +19,5 @@ export const TeamTurnReasonType = {
   pr_closed: 'pr_closed',
   merge_failed: 'merge_failed',
   release_failed: 'release_failed',
+  unknown: 'unknown',
 } as const;

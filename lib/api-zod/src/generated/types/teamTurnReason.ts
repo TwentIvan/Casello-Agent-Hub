@@ -6,14 +6,17 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { TeamTurnReasonOutcome } from './teamTurnReasonOutcome';
+import type { TeamTurnReasonSource } from './teamTurnReasonSource';
 import type { TeamTurnReasonType } from './teamTurnReasonType';
 
 /**
- * Motivo di un turno del capo. `outcome` vale approved|rejected per `decision` e success|failure|none per `ci_finished`; `taskCodeId` è la riga del compito con codice (CI, PR, merge), `workId` il lavoro (rilascio).
+ * Motivo di un turno del capo. `outcome` vale approved|rejected per `decision` e success|failure|none per `ci_finished`; `taskCodeId` è la riga del compito con codice (CI, PR, merge), `workId` il lavoro (rilascio). `unknown` è un motivo salvato che la risposta non sa descrivere (tipo nuovo o campi non validi): `originalType` ne riporta il tipo, così l'attività si legge comunque. `source` (solo `request`) dice chi ha scritto il testo: `user` un messaggio dell'utente al capo, `system` un testo generato da Botcave; assente nei turni più vecchi.
  */
 export interface TeamTurnReason {
   type: TeamTurnReasonType;
+  originalType?: string;
   text?: string;
+  source?: TeamTurnReasonSource;
   taskId?: number;
   number?: number;
   outcome?: TeamTurnReasonOutcome;

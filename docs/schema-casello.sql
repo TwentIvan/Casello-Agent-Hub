@@ -756,12 +756,14 @@ CREATE TABLE IF NOT EXISTS "team_events" (
 	"instance_id" integer NOT NULL,
 	"type" "team_event_type" NOT NULL,
 	"task_id" integer,
+	"turn_id" integer,
 	"bulletin" text NOT NULL,
 	"detail" text,
 	"read_at" timestamp,
 	"created_at" timestamp DEFAULT now() NOT NULL,
 	CONSTRAINT "team_events_instance_id_team_instances_id_fk" FOREIGN KEY ("instance_id") REFERENCES "public"."team_instances"("id") ON DELETE cascade ON UPDATE no action,
-	CONSTRAINT "team_events_task_id_team_tasks_id_fk" FOREIGN KEY ("task_id") REFERENCES "public"."team_tasks"("id") ON DELETE set null ON UPDATE no action
+	CONSTRAINT "team_events_task_id_team_tasks_id_fk" FOREIGN KEY ("task_id") REFERENCES "public"."team_tasks"("id") ON DELETE set null ON UPDATE no action,
+	CONSTRAINT "team_events_turn_id_team_turns_id_fk" FOREIGN KEY ("turn_id") REFERENCES "public"."team_turns"("id") ON DELETE set null ON UPDATE no action
 );
 CREATE INDEX IF NOT EXISTS "team_events_instance_created_idx" ON "team_events" USING btree ("instance_id", "created_at");
 

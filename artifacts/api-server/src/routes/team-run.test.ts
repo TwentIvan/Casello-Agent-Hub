@@ -106,7 +106,7 @@ describe("route dell'esecuzione delle squadre", () => {
     const turns = await db.select().from(teamTurnsTable).where(eq(teamTurnsTable.instanceId, instanceId));
     expect(turns).toHaveLength(1);
     expect(turns[0]!.reasons[0]).toEqual({ type: "activation" });
-    expect(turns[0]!.reasons[1]).toEqual({ type: "request", text: "prima richiesta" });
+    expect(turns[0]!.reasons[1]).toEqual({ type: "request", text: "prima richiesta", source: "user" });
   });
 
   it("tetto della squadra: PUT salva e azzera; negativo → 400; squadra chiusa → 409", async () => {
@@ -132,6 +132,18 @@ describe("route dell'esecuzione delle squadre", () => {
     const turns = await api("GET", `/team-instances/${instanceId}/turns`);
     expect(turns.status, turns.text).toBe(200);
     expect(turns.json.find((t: { status: string }) => t.status === "done").reasons).toEqual(reasons);
+  });
+
+  it("turno con un motivo non riconosciuto: l'attività si legge comunque (niente 500)", async () => {
+    await api("POST", `/team-instances/${instanceId}/activate`);
+    const reasons = [{ type: "work_reopened", workId: 2 }, { type: "activation" }];
+    await db.insert(teamTurnsTable).values({ instanceId, status: "done", reasons: reasons as never });
+    const turns = await api("GET", `/team-instances/${instanceId}/turns`);
+    expect(turns.status, turns.text).toBe(200);
+    expect(turns.json.find((t: { status: string }) => t.status === "done").reasons).toEqual([
+      { type: "unknown", originalType: "work_reopened" },
+      { type: "activation" },
+    ]);
   });
 
   it("compiti con i passi, turni con i passi, eventi e bollettino dell'utente", async () => {

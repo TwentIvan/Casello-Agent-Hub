@@ -1,10 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
-import { Bot, ListChecks } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Bot, ListChecks, Search } from "lucide-react";
 import {
   type TeamInstance,
   type TeamTask,
   type TeamTurn,
-  type TeamTurnReason,
   getGetTeamTaskQueryKey,
   getListTeamTasksQueryKey,
   getListTeamTurnsQueryKey,
@@ -14,9 +13,13 @@ import {
 } from "@workspace/api-client-react";
 import { StepList } from "@/components/runs/run-steps";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiErrorMessage } from "@/lib/api-errors";
 import { formatCost, formatDuration, formatRelative } from "@/lib/format";
+import { ACTIVITY_KIND_LABELS, type ActivityKind, activityLimitNotice, filterActivity } from "@/lib/team-activity";
+import { reasonText } from "@/lib/turn-reasons";
 import { TaskStatusBadge, TurnStatusBadge } from "./team-work-status";
 
 export const TEAM_POLL_MS = 5000;
@@ -71,31 +74,6 @@ export function useTeamWork(teamId: number) {
 
 export type TeamWorkState = ReturnType<typeof useTeamWork>;
 
-function reasonText(r: TeamTurnReason): string {
-  switch (r.type) {
-    case "request":
-      return r.text ? `Richiesta: ${r.text}` : "Richiesta";
-    case "task_finished":
-      return r.taskId != null ? `Compito finito (esecuzione #${r.taskId})` : "Compito finito";
-    case "decision": {
-      const outcome = r.outcome === "approved" ? "approvata" : r.outcome === "rejected" ? "rifiutata" : "decisa";
-      return `Voce n. ${r.number ?? "?"} ${outcome}${r.note ? `: ${r.note}` : ""}`;
-    }
-    case "activation":
-      return "Attivazione della squadra";
-    case "restart":
-      return "Ripresa dopo un riavvio";
-    case "ci_finished":
-      return r.outcome === "success" ? "CI verde" : r.outcome === "failure" ? "CI non superata" : "Nessuna CI sul branch";
-    case "pr_closed":
-      return r.merged ? "PR unita" : "PR chiusa senza merge";
-    case "merge_failed":
-      return r.message ? `Merge non riuscito: ${r.message}` : "Merge non riuscito";
-    case "release_failed":
-      return r.message ? `Porta in produzione non riuscita: ${r.message}` : "Porta in produzione non riuscita";
-  }
-}
-
 const formatTime = (value: string) => new Date(value).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
 
 function tokens(x: { promptTokens: number | null; completionTokens: number | null }): number {
@@ -132,7 +110,7 @@ function TurnEntry({ turn }: { turn: TeamTurn }) {
       {turn.reasons.length > 0 && (
         <ul className="space-y-0.5 pl-6 text-xs text-muted-foreground">
           {turn.reasons.map((r, i) => (
-            <li key={i} className="line-clamp-3 break-words">
+            <li key={i} className="whitespace-pre-wrap break-words">
               {reasonText(r)}
             </li>
           ))}
@@ -182,7 +160,8 @@ function TaskEntry({ team, task, title }: { team: TeamInstance; task: TeamTask; 
           {task.leaseExpiresAt && task.status === "running" && ` · lease fino alle ${formatTime(task.leaseExpiresAt)}`}
           {task.sessionId && (
             <>
-              {" "}· sessione <span className="font-mono">{task.sessionId}</span>
+              {" "}
+              · sessione <span className="font-mono">{task.sessionId}</span>
             </>
           )}
         </p>
@@ -203,9 +182,7 @@ function TaskEntry({ team, task, title }: { team: TeamInstance; task: TeamTask; 
   );
 }
 
-type Entry = { kind: "turn"; at: string; turn: TeamTurn } | { kind: "task"; at: string; task: TeamTask };
-
-/** «Attività»: turni del capo e compiti dei ruoli, dal più recente, con i passi espandibili. */
+/** «Attività»: turni del capo e compiti dei ruoli, dal più recente, con ricerca, filtro per tipo e passi espandibili. */
 export function TeamActivity({
   team,
   work,
@@ -214,13 +191,19 @@ export function TeamActivity({
   team: TeamInstance;
   work: TeamWorkState;
   /** Titoli dei compiti del PLAN per id. */
-  taskTitles: Map<string, string>;
+  taskTitles: ReadonlyMap<string, string>;
 }) {
   const { turns, tasks } = work;
-  const entries: Entry[] = [
-    ...(turns.data ?? []).map((turn): Entry => ({ kind: "turn", at: turn.createdAt, turn })),
-    ...(tasks.data ?? []).map((task): Entry => ({ kind: "task", at: task.createdAt, task })),
-  ].sort((a, b) => b.at.localeCompare(a.at));
+  const [query, setQuery] = useState("");
+  const [kind, setKind] = useState<ActivityKind>("all");
+  const roleNames = useMemo(() => new Map(team.roles.map((r) => [r.key, r.name])), [team.roles]);
+  const entries = useMemo(
+    () => filterActivity(turns.data ?? [], tasks.data ?? [], { kind, query, taskTitles, roleNames }),
+    [turns.data, tasks.data, kind, query, taskTitles, roleNames],
+  );
+  const total = (turns.data?.length ?? 0) + (tasks.data?.length ?? 0);
+  const filtered = kind !== "all" || query.trim() !== "";
+  const limitNotice = activityLimitNotice(turns.data?.length ?? 0, tasks.data?.length ?? 0);
   const error = turns.error ?? tasks.error;
   const loading = !turns.data || !tasks.data;
 
@@ -238,25 +221,57 @@ export function TeamActivity({
           <p className="text-sm text-destructive">Impossibile caricare l'attività: {apiErrorMessage(error)}</p>
         ) : loading ? (
           <Skeleton className="h-16 w-full" />
-        ) : entries.length === 0 ? (
+        ) : total === 0 ? (
           <p className="text-sm text-muted-foreground">
             {team.status === "draft" ? "Nessuna attività: la squadra non è ancora attiva." : "Nessuna attività per ora."}
           </p>
         ) : (
-          <ol className="divide-y">
-            {entries.map((e) =>
-              e.kind === "turn" ? (
-                <TurnEntry key={`turn-${e.turn.id}`} turn={e.turn} />
-              ) : (
-                <TaskEntry
-                  key={`task-${e.task.id}`}
-                  team={team}
-                  task={e.task}
-                  title={taskTitles.get(e.task.planTaskId) ?? null}
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="relative min-w-0 flex-1 basis-56">
+                <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  type="search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Cerca per testo, titolo, ruolo o esito"
+                  aria-label="Cerca nell'attività"
+                  className="pl-8"
                 />
-              ),
+              </div>
+              <Select value={kind} onValueChange={(v) => setKind(v as ActivityKind)}>
+                <SelectTrigger className="w-48" aria-label="Tipo di voce">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {(Object.keys(ACTIVITY_KIND_LABELS) as ActivityKind[]).map((k) => (
+                    <SelectItem key={k} value={k}>
+                      {ACTIVITY_KIND_LABELS[k]}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {filtered && (
+              <p className="text-xs font-mono tabular-nums text-muted-foreground">
+                {entries.length} voci su {total}
+              </p>
             )}
-          </ol>
+            {limitNotice && <p className="text-xs text-muted-foreground">{limitNotice}</p>}
+            {entries.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Nessuna voce corrisponde alla ricerca.</p>
+            ) : (
+              <ol className="divide-y">
+                {entries.map((e) =>
+                  e.kind === "turn" ? (
+                    <TurnEntry key={`turn-${e.turn.id}`} turn={e.turn} />
+                  ) : (
+                    <TaskEntry key={`task-${e.task.id}`} team={team} task={e.task} title={taskTitles.get(e.task.planTaskId) ?? null} />
+                  ),
+                )}
+              </ol>
+            )}
+          </div>
         )}
       </CardContent>
     </Card>

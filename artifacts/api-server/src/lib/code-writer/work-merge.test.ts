@@ -131,6 +131,20 @@ describe("merge automatico sul branch del lavoro", () => {
     expect((await workRow()).headSha).toBe(gh.git.get(REPO)!.refs.get(`heads/${workBranchName}`));
   });
 
+  it("PR che contiene la testa del base: merge vero, il base resta antenato del lavoro", async () => {
+    const git = gh.git.get(REPO)!;
+    // main avanza dopo l'apertura del lavoro; il compito unisce main nel suo branch con un merge vero
+    const mainHead = gh.commitOn(REPO, "main", [git.refs.get("heads/main")!], { "a.txt": "uno", "c.txt": "tre" }, "main avanti");
+    await taskPull({ "b.txt": "due" });
+    prHead = gh.commitOn(REPO, `botcave/${instanceId}-t1`, [prHead, mainHead], { "a.txt": "uno", "b.txt": "due", "c.txt": "tre" }, "Merge di main");
+    await db.update(teamCodeTasksTable).set({ headSha: prHead }).where(eq(teamCodeTasksTable.id, codeId));
+    ciGreen();
+    await watchCodeTasksOnce(at(60_000));
+    expect(gh.pulls.get(REPO)![0]!).toMatchObject({ merged: true, mergeMethod: "merge" });
+    expect(gh.isAncestor(REPO, mainHead, workBranchName)).toBe(true);
+    expect(gh.filesAt(REPO, workBranchName)).toMatchObject({ "a.txt": "uno", "b.txt": "due", "c.txt": "tre" });
+  });
+
   it("PR con uno script -post: unita e il nome finisce nel lavoro", async () => {
     await taskPull({ "docs/migrations/2026-11-18-x-post.sql": "DROP TABLE vecchia;" });
     ciGreen();

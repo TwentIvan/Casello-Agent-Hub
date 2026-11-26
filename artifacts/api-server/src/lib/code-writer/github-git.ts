@@ -220,6 +220,24 @@ export async function compareCommits(r: RepoRef, base: string, head: string): Pr
   };
 }
 
+/**
+ * Vero se `ancestor` è contenuto in `head` (confronto `ancestor...head` con stato `ahead` o `identical`). Riferimenti
+ * sconosciuti (404/422) → falso.
+ */
+export async function containsCommit(r: RepoRef, ancestor: string, head: string): Promise<boolean> {
+  const token = await tokenFor(r, READ);
+  const { status, json } = await call(
+    r,
+    token,
+    "contents: read",
+    { method: "GET", path: repoPath(r, `/compare/${encodeURIComponent(ancestor)}...${encodeURIComponent(head)}`) },
+    [404, 422],
+  );
+  if (status === 404 || status === 422) return false;
+  if (!isObj(json) || typeof json["status"] !== "string") throw badShape(status);
+  return json["status"] === "ahead" || json["status"] === "identical";
+}
+
 export async function getCommitTree(r: RepoRef, sha: string): Promise<string> {
   const token = await tokenFor(r, READ);
   const { status, json } = await call(r, token, "contents: read", { method: "GET", path: repoPath(r, `/git/commits/${encodeURIComponent(sha)}`) });

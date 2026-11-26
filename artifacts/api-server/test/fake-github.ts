@@ -190,6 +190,10 @@ export interface FakeGithub {
   seedRepo(fullName: string, branch: string, files: Record<string, string | { content: string; mode: string }>): string;
   /** File (percorso → testo) del commit a cui punta un branch o uno sha. */
   filesAt(fullName: string, ref: string): Record<string, string>;
+  /** Commit con i file dati (contenuto completo dell'albero) e i genitori dati sul branch indicato; risponde con lo sha. */
+  commitOn(fullName: string, branch: string, parents: string[], files: Record<string, string>, message: string): string;
+  /** Vero se il commit `ancestor` è antenato (o uguale) del branch o sha `ref`. */
+  isAncestor(fullName: string, ancestor: string, ref: string): boolean;
   /** Durata dei token di installazione emessi (default 1 h). */
   tokenTtlMs: number;
   /** Token utente con cui `/login/oauth/authorize` approva subito (null = 404). */
@@ -403,6 +407,24 @@ export async function startFakeGithub(opts: { appId?: string; slug?: string } = 
       const sha = repo ? resolveRef(repo, ref) : null;
       if (!repo || !sha) throw new Error(`ref sconosciuto: ${ref}`);
       return filesOfCommit(repo, sha);
+    },
+    commitOn(fullName, branch, parents, files, message) {
+      const repo = fake.git.get(fullName);
+      if (!repo) throw new Error(`repo sconosciuto: ${fullName}`);
+      const entries: FakeGitTreeEntry[] = Object.entries(files).map(([path, content]) => {
+        const buf = Buffer.from(content, "utf8");
+        const sha = blobSha(buf);
+        repo.blobs.set(sha, buf);
+        return { path, mode: "100644", type: "blob", sha };
+      });
+      const commit = storeCommit(repo, storeTree(repo, entries), parents, message);
+      repo.refs.set(`heads/${branch}`, commit);
+      return commit;
+    },
+    isAncestor(fullName, ancestor, ref) {
+      const repo = fake.git.get(fullName);
+      const sha = repo ? resolveRef(repo, ref) : null;
+      return !!repo && !!sha && isAncestor(repo, ancestor, sha);
     },
     tokenTtlMs: 3_600_000,
     authorizeAs: null,
@@ -729,7 +751,16 @@ export async function startFakeGithub(opts: { appId?: string; slug?: string } = 
       const fullName = access("contents", "read");
       if (!fullName) return;
       const found = fake.comparisons.get(`${fullName}:${decodeURIComponent(cmp[1]!)}`);
-      if (!found) return send(res, 404, NOT_FOUND);
+      if (!found) {
+        // Senza voce preparata: stato del confronto dallo stato Git, se i due riferimenti esistono
+        const repo = gitOf(fullName);
+        const [baseRef, headRef] = decodeURIComponent(cmp[1]!).split("...");
+        const baseSha = repo && baseRef ? resolveRef(repo, baseRef) : null;
+        const headSha = repo && headRef ? resolveRef(repo, headRef) : null;
+        if (!repo || !baseSha || !headSha) return send(res, 404, NOT_FOUND);
+        const status = baseSha === headSha ? "identical" : isAncestor(repo, baseSha, headSha) ? "ahead" : isAncestor(repo, headSha, baseSha) ? "behind" : "diverged";
+        return send(res, 200, { status, total_commits: 0, commits: [], files: [] });
+      }
       return send(res, 200, {
         total_commits: found.commits.length,
         commits: found.commits.map((message, i) => ({ sha: `c${i}`, commit: { message } })),
@@ -762,7 +793,9 @@ export async function startFakeGithub(opts: { appId?: string; slug?: string } = 
         if (!baseSha) return send(res, 422, { message: "Validation Failed" });
         const tree = repo.commits.get(headSha)?.tree;
         if (!tree) return send(res, 422, { message: "Validation Failed" });
-        const sha = storeCommit(repo, tree, [baseSha], typeof b["commit_title"] === "string" ? b["commit_title"] : pull.title);
+        // `merge` registra anche la testa come genitore (merge vero); `squash` e `rebase` no
+        const parents = b["merge_method"] === "squash" || b["merge_method"] === "rebase" ? [baseSha] : [baseSha, headSha];
+        const sha = storeCommit(repo, tree, parents, typeof b["commit_title"] === "string" ? b["commit_title"] : pull.title);
         repo.refs.set(`heads/${pull.base}`, sha);
         pull.state = "closed";
         pull.merged = true;

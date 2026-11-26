@@ -17,7 +17,7 @@ import { redactCredentials } from "../memory/credentials";
 import { getPlan } from "../teams/plan";
 import { internalTool, roleFunctionTools, toolSchemaLookup } from "../teams/role-tools";
 import type { CatalogTool, ToolResult } from "../tools/types";
-import { enqueueCommand, expireOpenCommands, waitCommandResult } from "./commands";
+import { enqueueCommand, expireOpenCommands, waitCommandResult, wakeRunner } from "./commands";
 import { COLLAUDO_MESSAGES } from "./messages";
 import { testModelFor } from "./model";
 import { toDbOutcome, type DeliveredOutcome } from "./outcome";
@@ -330,6 +330,9 @@ export async function runReleaseTest(testId: number, signal?: AbortSignal): Prom
     } catch (writeErr) {
       logger.error({ releaseTestId: testId, errName: errName(writeErr) }, "Errore del collaudatore non registrato");
     }
+  } finally {
+    // Esito o errore scritti: il `next` in attesa del runner risponde subito 410 invece di aspettare 25 s
+    wakeRunner(testId);
   }
 }
 

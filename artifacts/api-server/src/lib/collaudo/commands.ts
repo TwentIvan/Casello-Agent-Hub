@@ -83,19 +83,29 @@ async function takePending(testId: number): Promise<{ id: number; kind: string; 
   return null;
 }
 
-/** Prossimo comando per il runner: attesa lunga fino a `waitMs`, null se non ne arriva nessuno. */
+/** Sveglia il `next` in attesa del runner senza un comando (l'agente ha finito): il runner richiede e riceve 410. */
+export function wakeRunner(testId: number): void {
+  events.emit(testEvent(testId));
+}
+
+/**
+ * Prossimo comando per il runner: attesa lunga fino a `waitMs`, null se non ne arriva nessuno o se un avviso arriva senza
+ * comandi (`wakeRunner`: il chiamante controlla se il collaudo è consegnato).
+ */
 export async function nextCommand(testId: number, waitMs: number, signal?: AbortSignal): Promise<{ id: number; kind: string; args: unknown } | null> {
   const subscription = subscribe(testEvent(testId));
   const deadline = Date.now() + waitMs;
+  let woken = false;
   try {
     for (;;) {
       // Runner già disconnesso: non si prende nulla, il comando resta `pending` per il prossimo `next`
       if (signal?.aborted) return null;
       const found = await takePending(testId);
       if (found) return found;
+      if (woken) return null;
       const left = deadline - Date.now();
       if (left <= 0 || signal?.aborted) return null;
-      await subscription.wait(Math.min(left, RECHECK_MS), signal);
+      woken = await subscription.wait(Math.min(left, RECHECK_MS), signal);
     }
   } finally {
     subscription.close();

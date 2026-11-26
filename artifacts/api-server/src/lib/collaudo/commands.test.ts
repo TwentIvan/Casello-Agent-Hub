@@ -2,7 +2,7 @@ import { beforeEach, afterAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { db, pool, releaseTestCommandsTable } from "@workspace/db";
 import { seedReleaseTest } from "../../../test/collaudo-fixture";
-import { enqueueCommand, nextCommand, releaseCommand, saveCommandResult, waitCommandResult } from "./commands";
+import { enqueueCommand, nextCommand, releaseCommand, saveCommandResult, waitCommandResult, wakeRunner } from "./commands";
 
 let testId: number;
 
@@ -47,6 +47,15 @@ describe("coda dei comandi del collaudo", () => {
     const t0 = Date.now();
     expect((await waiting)?.id).toBe(id);
     expect(Date.now() - t0).toBeLessThan(2_000);
+  });
+
+  it("wakeRunner senza comandi fa tornare subito null a nextCommand", async () => {
+    const waiting = nextCommand(testId, 5_000);
+    await new Promise((r) => setTimeout(r, 50));
+    const t0 = Date.now();
+    wakeRunner(testId);
+    expect(await waiting).toBeNull();
+    expect(Date.now() - t0).toBeLessThan(1_000);
   });
 
   it("saveCommandResult sveglia waitCommandResult", async () => {

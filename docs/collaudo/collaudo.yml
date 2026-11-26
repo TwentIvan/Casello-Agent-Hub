@@ -34,10 +34,12 @@ jobs:
           --health-retries 10
     env:
       BOTCAVE_URL: https://casello.fantamister.cloud
-      PLAYWRIGHT_VERSION: "1.65.1"
+      PLAYWRIGHT_VERSION: "1.65.0"
     steps:
       - name: Maschera il codice
-        run: echo "::add-mask::${{ inputs.codice }}"
+        env:
+          CODICE: ${{ inputs.codice }}
+        run: echo "::add-mask::$CODICE"
 
       - uses: actions/setup-node@v4
         with:
@@ -58,14 +60,17 @@ jobs:
       - name: Installa Playwright e Chromium
         run: |
           set -euo pipefail
-          npx --yes "playwright@$PLAYWRIGHT_VERSION" install --with-deps chromium
-          mkdir -p "$RUNNER_TEMP/pw"
-          cd "$RUNNER_TEMP/pw"
+          # Il programma è ESM e carica "playwright" con import(): lo risolve da node_modules accanto a sé (NODE_PATH non vale)
+          cd "$RUNNER_TEMP/collaudo"
           npm init -y >/dev/null
           npm i --no-audit --no-fund "playwright@$PLAYWRIGHT_VERSION"
+          npx playwright install --with-deps chromium
 
       - name: Esegui il collaudo
         env:
           COLLAUDO_CODICE: ${{ inputs.codice }}
-          NODE_PATH: ${{ runner.temp }}/pw/node_modules
-        run: node "$RUNNER_TEMP/collaudo/casello-collaudo.mjs" --url "$BOTCAVE_URL" --collaudo ${{ inputs.collaudo }}
+          COLLAUDO: ${{ inputs.collaudo }}
+        run: |
+          set -euo pipefail
+          [[ "$COLLAUDO" =~ ^[0-9]+$ ]] || { echo "::error::numero di collaudo non valido"; exit 2; }
+          node "$RUNNER_TEMP/collaudo/casello-collaudo.mjs" --url "$BOTCAVE_URL" --collaudo "$COLLAUDO"

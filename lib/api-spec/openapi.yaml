@@ -9031,7 +9031,7 @@ components:
 
     ReleaseTest:
       type: object
-      required: [id, appId, workId, instanceId, sha, mode, status, outcome, report, problems, notTestable, error, tunnelUrl, tunnelUntil, costUsd, createdAt, startedAt, finishedAt]
+      required: [id, appId, workId, instanceId, sha, mode, status, outcome, report, problems, notTestable, error, tunnelUrl, tunnelUntil, costUsd, autoRejects, createdAt, startedAt, finishedAt]
       properties:
         id:
           type: integer
@@ -9073,6 +9073,10 @@ components:
         tunnelUntil:
           type: ["string", "null"]
           format: date-time
+        autoRejects:
+          type: integer
+          minimum: 0
+          description: Correzioni automatiche già usate dal lavoro (team_works.test_auto_rejects)
         costUsd:
           type: ["number", "null"]
         createdAt:

@@ -152,6 +152,13 @@ describe("elenco e dettaglio dei collaudi", () => {
     expect(none.json.error).toBe("indica workId o appId");
   });
 
+  it("il dettaglio e l'elenco riportano autoRejects del lavoro", async () => {
+    const { testId, workId } = await seed();
+    await db.update(teamWorksTable).set({ testAutoRejects: 2 }).where(eq(teamWorksTable.id, workId));
+    expect((await api("GET", `/release-tests/${testId}`)).json.autoRejects).toBe(2);
+    expect((await api("GET", `/release-tests?workId=${workId}`)).json[0].autoRejects).toBe(2);
+  });
+
   it("dettaglio con passi e file; il link dal vivo scaduto non esce", async () => {
     const { testId } = await seed();
     await db.insert(releaseTestStepsTable).values({ testId, position: 1, type: "tool", toolName: "shell", ok: true, durationMs: 1200 });

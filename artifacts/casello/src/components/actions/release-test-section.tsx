@@ -3,12 +3,11 @@ import { useQueryClient } from "@tanstack/react-query";
 import {
   type QueuedReleaseTest,
   type ReleaseTestDetail,
+  getGetAppQueryKey,
   getGetReleaseTestQueryKey,
   getListPendingActionsQueryKey,
-  getListReleaseTestsQueryKey,
   useGetApp,
   useGetReleaseTest,
-  useListReleaseTests,
   useRelightReleaseTest,
   useSendBackReleaseTest,
 } from "@workspace/api-client-react";
@@ -18,7 +17,7 @@ import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
-import { AUTO_FIX_MAX, autoFixCounter, releaseTestLabel, releaseTestLed, releaseTestOpen, tunnelRemaining } from "@/lib/release-test";
+import { autoFixCounter, releaseTestLabel, releaseTestLed, releaseTestOpen, tunnelRemaining } from "@/lib/release-test";
 
 const POLL_MS = 5_000;
 
@@ -60,11 +59,7 @@ export function ReleaseTestSection({ testId, decisionPending }: { testId: number
     },
   });
   const test = query.data;
-  const app = useGetApp(test?.appId ?? 0, { query: { enabled: !!test, queryKey: ["release-test-app", test?.appId] } });
-  const history = useListReleaseTests(
-    { workId: test?.workId ?? 0 },
-    { query: { enabled: !!test, queryKey: getListReleaseTestsQueryKey({ workId: test?.workId ?? 0 }) } },
-  );
+  const app = useGetApp(test?.appId ?? 0, { query: { enabled: !!test, queryKey: getGetAppQueryKey(test?.appId ?? 0) } });
 
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: getGetReleaseTestQueryKey(testId) });
@@ -96,17 +91,13 @@ export function ReleaseTestSection({ testId, decisionPending }: { testId: number
   const open = releaseTestOpen(test.status);
   const video = test.files.find((f) => f.kind === "video");
   const remaining = test.tunnelUrl && test.tunnelUntil ? tunnelRemaining(test.tunnelUntil, now) : null;
-  const autoFixUsed = Math.min(
-    AUTO_FIX_MAX,
-    Math.max(0, (history.data ?? []).filter((t) => t.mode === "full").length - 1),
-  );
 
   return (
     <div className="space-y-2 rounded-md border border-border p-2 text-sm">
       <p className="text-xs text-ink-muted">Collaudo</p>
       <Led state={releaseTestLed(test)} label={releaseTestLabel(test)} />
       {open && <ActivityLine detail={test} />}
-      {app.data?.testAutoFix && <p className="text-xs text-ink-muted">{autoFixCounter(autoFixUsed)}</p>}
+      {app.data?.testAutoFix && <p className="text-xs text-ink-muted">{autoFixCounter(test.autoRejects)}</p>}
       {test.report && <Markdown>{test.report}</Markdown>}
       {test.problems && test.problems.length > 0 && (
         <ul className="space-y-2">

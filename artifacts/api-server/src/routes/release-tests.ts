@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import {
   GetAppTestRecipeParams,
   GetAppTestRecipeResponse,
@@ -43,7 +43,7 @@ import { toNumberOrNull } from "./serializers";
 const MAX_LIST = 20;
 
 /** Collaudo senza i segreti (hash di codice e token): il link dal vivo solo finché è valido. */
-function publicTest(row: ReleaseTestRow, now: Date = new Date()) {
+function publicTest(row: ReleaseTestRow, autoRejects: number, now: Date = new Date()) {
   const live = row.tunnelUrl !== null && row.tunnelUntil !== null && row.tunnelUntil.getTime() > now.getTime();
   return {
     id: row.id,
@@ -61,10 +61,22 @@ function publicTest(row: ReleaseTestRow, now: Date = new Date()) {
     tunnelUrl: live ? row.tunnelUrl : null,
     tunnelUntil: live ? row.tunnelUntil : null,
     costUsd: toNumberOrNull(row.costUsd),
+    autoRejects,
     createdAt: row.createdAt,
     startedAt: row.startedAt,
     finishedAt: row.finishedAt,
   };
+}
+
+/** Correzioni automatiche usate dai lavori dei collaudi, con una sola query. */
+async function autoRejectsByWork(rows: ReleaseTestRow[]): Promise<Map<number, number>> {
+  const ids = [...new Set(rows.map((r) => r.workId))];
+  if (ids.length === 0) return new Map();
+  const works = await db
+    .select({ id: teamWorksTable.id, rejects: teamWorksTable.testAutoRejects })
+    .from(teamWorksTable)
+    .where(inArray(teamWorksTable.id, ids));
+  return new Map(works.map((w) => [w.id, w.rejects]));
 }
 
 async function loadTest(id: number): Promise<ReleaseTestRow | null> {
@@ -105,7 +117,8 @@ export function createReleaseTestsRouter(): IRouter {
       ...(appId !== undefined ? [eq(releaseTestsTable.appId, appId)] : []),
     ];
     const rows = await db.select().from(releaseTestsTable).where(and(...conditions)).orderBy(desc(releaseTestsTable.id)).limit(MAX_LIST);
-    res.json(ListReleaseTestsResponse.parse(rows.map((r) => publicTest(r))));
+    const rejects = await autoRejectsByWork(rows);
+    res.json(ListReleaseTestsResponse.parse(rows.map((r) => publicTest(r, rejects.get(r.workId) ?? 0))));
   });
 
   router.get("/release-tests/:id", async (req, res) => {
@@ -129,7 +142,7 @@ export function createReleaseTestsRouter(): IRouter {
       .orderBy(asc(releaseTestFilesTable.id));
     res.json(
       GetReleaseTestResponse.parse({
-        ...publicTest(row),
+        ...publicTest(row, (await autoRejectsByWork([row])).get(row.workId) ?? 0),
         steps: steps.map(({ testId: _testId, ...step }) => step),
         files,
         activity: null,
@@ -197,7 +210,7 @@ export function createReleaseTestsRouter(): IRouter {
       res.status(409).json({ error: MSG.relightFailed });
       return;
     }
-    res.status(202).json(ListReleaseTestsResponseItem.parse(publicTest(created)));
+    res.status(202).json(ListReleaseTestsResponseItem.parse(publicTest(created, (await autoRejectsByWork([created])).get(created.workId) ?? 0)));
   });
 
   router.post("/release-tests/:id/send-back", sessionOnly, async (req, res) => {

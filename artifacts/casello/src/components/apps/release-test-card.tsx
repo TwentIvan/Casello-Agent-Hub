@@ -5,6 +5,7 @@ import {
   type TestRecipe,
   getGetAppQueryKey,
   getGetAppTestRecipeQueryKey,
+  getListReleaseTestsQueryKey,
   useGetAppTestRecipe,
   useListReleaseTests,
   useUpdateApp,
@@ -84,7 +85,7 @@ export function ReleaseTestCard({ app }: { app: App }) {
   const { toast } = useToast();
   const [editing, setEditing] = useState(false);
   const recipe = useGetAppTestRecipe(app.id, { query: { queryKey: getGetAppTestRecipeQueryKey(app.id) } });
-  const tests = useListReleaseTests({ appId: app.id }, { query: { queryKey: ["/api/release-tests", { appId: app.id }] } });
+  const tests = useListReleaseTests({ appId: app.id }, { query: { queryKey: getListReleaseTestsQueryKey({ appId: app.id }) } });
   const updateApp = useUpdateApp({
     mutation: {
       onSuccess: () => {

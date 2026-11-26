@@ -3752,6 +3752,10 @@ export const ListReleaseTestsQueryParams = zod.object({
   "appId": zod.coerce.number().optional()
 })
 
+export const listReleaseTestsResponseAutoRejectsMin = 0;
+
+
+
 export const ListReleaseTestsResponseItem = zod.object({
   "id": zod.number(),
   "appId": zod.number(),
@@ -3774,6 +3778,7 @@ export const ListReleaseTestsResponseItem = zod.object({
   "error": zod.string().nullable().describe('Motivo fisso se il collaudo è saltato, fallito o annullato'),
   "tunnelUrl": zod.string().nullable().describe('Link pubblico temporaneo alla prova dal vivo (solo finché è valido)'),
   "tunnelUntil": zod.coerce.date().nullable(),
+  "autoRejects": zod.number().min(listReleaseTestsResponseAutoRejectsMin).describe('Correzioni automatiche già usate dal lavoro (team_works.test_auto_rejects)'),
   "costUsd": zod.number().nullable(),
   "createdAt": zod.coerce.date(),
   "startedAt": zod.coerce.date().nullable(),
@@ -3789,6 +3794,10 @@ export const ListReleaseTestsResponse = zod.array(ListReleaseTestsResponseItem)
 export const GetReleaseTestParams = zod.object({
   "id": zod.coerce.number()
 })
+
+export const getReleaseTestResponseOneAutoRejectsMin = 0;
+
+
 
 export const GetReleaseTestResponse = zod.object({
   "id": zod.number(),
@@ -3812,6 +3821,7 @@ export const GetReleaseTestResponse = zod.object({
   "error": zod.string().nullable().describe('Motivo fisso se il collaudo è saltato, fallito o annullato'),
   "tunnelUrl": zod.string().nullable().describe('Link pubblico temporaneo alla prova dal vivo (solo finché è valido)'),
   "tunnelUntil": zod.coerce.date().nullable(),
+  "autoRejects": zod.number().min(getReleaseTestResponseOneAutoRejectsMin).describe('Correzioni automatiche già usate dal lavoro (team_works.test_auto_rejects)'),
   "costUsd": zod.number().nullable(),
   "createdAt": zod.coerce.date(),
   "startedAt": zod.coerce.date().nullable(),
@@ -3868,6 +3878,10 @@ export const RelightReleaseTestParams = zod.object({
   "id": zod.coerce.number()
 })
 
+export const relightReleaseTestResponseAutoRejectsMin = 0;
+
+
+
 export const RelightReleaseTestResponse = zod.object({
   "id": zod.number(),
   "appId": zod.number(),
@@ -3890,6 +3904,7 @@ export const RelightReleaseTestResponse = zod.object({
   "error": zod.string().nullable().describe('Motivo fisso se il collaudo è saltato, fallito o annullato'),
   "tunnelUrl": zod.string().nullable().describe('Link pubblico temporaneo alla prova dal vivo (solo finché è valido)'),
   "tunnelUntil": zod.coerce.date().nullable(),
+  "autoRejects": zod.number().min(relightReleaseTestResponseAutoRejectsMin).describe('Correzioni automatiche già usate dal lavoro (team_works.test_auto_rejects)'),
   "costUsd": zod.number().nullable(),
   "createdAt": zod.coerce.date(),
   "startedAt": zod.coerce.date().nullable(),

@@ -1503,6 +1503,11 @@ export interface ReleaseTest {
   tunnelUrl: string | null;
   /** @nullable */
   tunnelUntil: string | null;
+  /**
+     * Correzioni automatiche già usate dal lavoro (team_works.test_auto_rejects)
+     * @minimum 0
+     */
+  autoRejects: number;
   /** @nullable */
   costUsd: number | null;
   createdAt: string;

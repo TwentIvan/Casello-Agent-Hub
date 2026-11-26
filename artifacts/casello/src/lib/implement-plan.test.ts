@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AnalysisItem, TeamInstance } from "@workspace/api-client-react";
-import { implementableItems, implementMessage, messageItems, implementTeams, MAX_LEAD_MESSAGE, planTeamRef } from "./implement-plan";
+import { implementableItems, implementMessage, issueBatches, itemsWithoutIssue, messageItems, implementTeams, MAX_LEAD_MESSAGE, planTeamRef } from "./implement-plan";
 
 const item = (id: number, chapter: AnalysisItem["chapter"], status: AnalysisItem["status"]) =>
   ({ id, chapter, status }) as AnalysisItem;
@@ -79,5 +79,24 @@ describe("implementMessage", () => {
     expect(msg.length).toBeLessThanOrEqual(MAX_LEAD_MESSAGE);
     expect(msg).toMatch(/- e altre \d+ voci\n/);
     expect(msg).toContain("…");
+  });
+});
+
+describe("itemsWithoutIssue", () => {
+  it("solo le voci senza issue", () => {
+    const items = [
+      { id: 1, issue: null },
+      { id: 2, issue: { number: 7, state: "open" } },
+      { id: 3 },
+    ] as unknown as AnalysisItem[];
+    expect(itemsWithoutIssue(items)).toEqual([1, 3]);
+  });
+});
+
+describe("issueBatches", () => {
+  it("lotti da 30", () => {
+    const ids = Array.from({ length: 65 }, (_, i) => i + 1);
+    expect(issueBatches(ids).map((b) => b.length)).toEqual([30, 30, 5]);
+    expect(issueBatches([])).toEqual([]);
   });
 });

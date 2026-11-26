@@ -5,7 +5,7 @@
 import express, { Router, type IRouter, type RequestHandler } from "express";
 import { z } from "zod";
 import { currentCollaudo, requireCollaudoToken } from "../lib/collaudo/auth";
-import { nextCommand, saveCommandResult } from "../lib/collaudo/commands";
+import { nextCommand, releaseCommand, saveCommandResult } from "../lib/collaudo/commands";
 import {
   MAX_VIDEO_BYTES,
   PROTOCOL_MESSAGES,
@@ -74,7 +74,11 @@ export function createCollaudoRunnerRouter(): IRouter {
       const controller = new AbortController();
       res.on("close", () => controller.abort());
       const found = await nextCommand(testId, NEXT_WAIT_MS, controller.signal);
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted) {
+        // La connessione è chiusa: un comando già preso non va perso
+        if (found) await releaseCommand(testId, found.id);
+        return;
+      }
       if (!found) {
         if (await isDelivered(testId)) {
           res.status(410).json({ error: PROTOCOL_MESSAGES.delivered });

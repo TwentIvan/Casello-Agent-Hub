@@ -89,6 +89,8 @@ export async function nextCommand(testId: number, waitMs: number, signal?: Abort
   const deadline = Date.now() + waitMs;
   try {
     for (;;) {
+      // Runner già disconnesso: non si prende nulla, il comando resta `pending` per il prossimo `next`
+      if (signal?.aborted) return null;
       const found = await takePending(testId);
       if (found) return found;
       const left = deadline - Date.now();
@@ -98,6 +100,24 @@ export async function nextCommand(testId: number, waitMs: number, signal?: Abort
   } finally {
     subscription.close();
   }
+}
+
+/** Riporta a `pending` un comando consegnato a una connessione ormai chiusa e sveglia il prossimo `next`. */
+export async function releaseCommand(testId: number, commandId: number): Promise<boolean> {
+  const rows = await db
+    .update(releaseTestCommandsTable)
+    .set({ status: "pending", sentAt: null })
+    .where(
+      and(
+        eq(releaseTestCommandsTable.id, commandId),
+        eq(releaseTestCommandsTable.testId, testId),
+        eq(releaseTestCommandsTable.status, "sent"),
+      ),
+    )
+    .returning({ id: releaseTestCommandsTable.id });
+  if (rows.length === 0) return false;
+  events.emit(testEvent(testId));
+  return true;
 }
 
 /** Uscita ripulita: le parole che sembrano credenziali diventano `***`, poi taglio a 8 000 caratteri. */

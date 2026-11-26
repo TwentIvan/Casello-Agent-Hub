@@ -4,6 +4,7 @@
 import { createHash } from "node:crypto";
 import { and, count, eq, isNull } from "drizzle-orm";
 import { db, releaseTestFilesTable, releaseTestsTable } from "@workspace/db";
+import { logger } from "../logger";
 import { COLLAUDO_MESSAGES } from "./messages";
 import { expireOpenCommands } from "./commands";
 import { LEASE_MS, CollaudoProtocolError, claimTest, type ClaimPackage } from "./tokens";
@@ -25,20 +26,23 @@ export const PROTOCOL_MESSAGES = {
   delivered: "collaudo consegnato",
 } as const;
 
-let onTestClaimed: (testId: number, mode: "full" | "relight") => void = () => {};
+type ClaimedHandler = (testId: number, mode: "full" | "relight") => void | Promise<void>;
+let onTestClaimed: ClaimedHandler = () => {};
 
 /** Registra chi riceve l'avviso di un claim riuscito (il Task 6 avvia da qui l'agente collaudatore). */
-export function setOnTestClaimed(fn: (testId: number, mode: "full" | "relight") => void): void {
+export function setOnTestClaimed(fn: ClaimedHandler): void {
   onTestClaimed = fn;
 }
 
 export async function claim(testId: number, code: string): Promise<ClaimPackage | null> {
   const pkg = await claimTest(testId, code);
   if (pkg) {
+    // L'avvio dell'agente non deve far perdere il pacchetto al runner: errori sincroni e rifiuti asincroni si registrano
+    const logFailure = (err: unknown) => logger.error({ testId, errName: err instanceof Error ? err.name : "unknown" }, "Avvio del collaudo dopo il claim non riuscito");
     try {
-      onTestClaimed(testId, pkg.mode);
-    } catch {
-      // l'avvio dell'agente non deve far perdere il pacchetto al runner
+      void Promise.resolve(onTestClaimed(testId, pkg.mode)).catch(logFailure);
+    } catch (err) {
+      logFailure(err);
     }
   }
   return pkg;

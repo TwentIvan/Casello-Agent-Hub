@@ -104,7 +104,7 @@ async function running(): Promise<{ testId: number; token: string }> {
 describe("claim", () => {
   it("codice giusto: pacchetto con token, repository, sha, token del repository ristretto e ricetta", async () => {
     const calls: Array<[number, string]> = [];
-    setOnTestClaimed((id, mode) => calls.push([id, mode]));
+    setOnTestClaimed((id, mode) => void calls.push([id, mode]));
     const { testId } = await seedReleaseTest({ recipe: RECIPE });
     const code = await issueCode(testId);
     const res = await call("/claim", { body: { testId, code } });
@@ -137,6 +137,24 @@ describe("claim", () => {
     expect((await call("/claim", { body: { testId, code: "x".repeat(43) } })).status).toBe(401);
     await db.update(releaseTestsTable).set({ codeExpiresAt: new Date(Date.now() - 1_000) }).where(eq(releaseTestsTable.id, testId));
     expect((await call("/claim", { body: { testId, code } })).status).toBe(401);
+  });
+
+  it("una callback asincrona che rifiuta non dà unhandled rejection e il claim riesce", async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => unhandled.push(reason);
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      setOnTestClaimed(async () => {
+        throw new Error("avvio fallito");
+      });
+      const { testId } = await seedReleaseTest();
+      const code = await issueCode(testId);
+      expect((await call("/claim", { body: { testId, code } })).status).toBe(200);
+      await new Promise((r) => setTimeout(r, 50));
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
   });
 
   it("ricetta non valida → null nel pacchetto", async () => {

@@ -2,7 +2,7 @@ import { beforeEach, afterAll, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { db, pool, releaseTestCommandsTable } from "@workspace/db";
 import { seedReleaseTest } from "../../../test/collaudo-fixture";
-import { enqueueCommand, nextCommand, saveCommandResult, waitCommandResult } from "./commands";
+import { enqueueCommand, nextCommand, releaseCommand, saveCommandResult, waitCommandResult } from "./commands";
 
 let testId: number;
 
@@ -89,5 +89,33 @@ describe("coda dei comandi del collaudo", () => {
     await nextCommand(testId, 0);
     await saveCommandResult(testId, id, { ok: true, output: "riga di testo\n".repeat(2_000) });
     expect((await row(id)).output!.length).toBe(8_000);
+  });
+
+  it("con il segnale già annullato nextCommand non prende il comando", async () => {
+    const id = await enqueueCommand(testId, "shell", {});
+    const controller = new AbortController();
+    controller.abort();
+    expect(await nextCommand(testId, 1_000, controller.signal)).toBeNull();
+    expect((await row(id)).status).toBe("pending");
+  });
+
+  it("releaseCommand riporta a pending un comando sent e lo riconsegna al next dopo", async () => {
+    const id = await enqueueCommand(testId, "shell", { command: "ls" });
+    expect((await nextCommand(testId, 0))?.id).toBe(id);
+    expect(await releaseCommand(testId, id)).toBe(true);
+    expect((await row(id)).status).toBe("pending");
+    expect(await nextCommand(testId, 0)).toEqual({ id, kind: "shell", args: { command: "ls" } });
+    // non tocca un comando già chiuso o di un altro collaudo
+    await saveCommandResult(testId, id, { ok: true, output: "x" });
+    expect(await releaseCommand(testId, id)).toBe(false);
+  });
+
+  it("un next in attesa si sveglia quando un comando viene rilasciato", async () => {
+    const id = await enqueueCommand(testId, "shell", {});
+    await nextCommand(testId, 0);
+    const waiting = nextCommand(testId, 5_000);
+    await new Promise((r) => setTimeout(r, 50));
+    await releaseCommand(testId, id);
+    expect((await waiting)?.id).toBe(id);
   });
 });

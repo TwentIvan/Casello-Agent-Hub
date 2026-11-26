@@ -109,7 +109,7 @@ export function PlanList({ appId, appName }: { appId: number; appName: string })
         )}
       </div>
       {implementOpen && (
-        <ImplementPlanDialog appId={appId} appName={appName} items={plan.data.items} open onOpenChange={setImplementOpen} />
+        <ImplementPlanDialog appId={appId} appName={appName} items={plan.data.items} issuesAvailable={issues.available} open onOpenChange={setImplementOpen} />
       )}
       <ExportDialog analysisId={plan.data.analysisId} open={exportOpen} onOpenChange={setExportOpen} />
       <CreateIssuesDialog

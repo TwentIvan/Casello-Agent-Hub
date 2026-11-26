@@ -3,7 +3,9 @@ import { Link, useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   type AnalysisItem,
+  type PlanIssuesResult,
   type TeamInstance,
+  getGetAppPlanQueryKey,
   getGetTeamInstanceQueryKey,
   getGetTeamPlanQueryKey,
   getGetTeamReadinessQueryKey,
@@ -12,6 +14,7 @@ import {
   getListTeamTemplatesQueryKey,
   getListTeamTurnsQueryKey,
   useActivateTeamInstance,
+  useCreatePlanIssues,
   useCreateTeamInstance,
   useGetTeamReadiness,
   useListTeamInstances,
@@ -40,6 +43,8 @@ import { blockingProblems } from "@/lib/team-readiness";
 import {
   IMPLEMENT_CHAPTERS,
   implementableItems,
+  issueBatches,
+  itemsWithoutIssue,
   messageItems,
   implementMessage,
   implementTeams,
@@ -52,6 +57,8 @@ interface ImplementPlanDialogProps {
   appId: number;
   appName: string;
   items: AnalysisItem[];
+  /** Le issue del piano si possono creare (App collegata a GitHub tramite installazione). */
+  issuesAvailable: boolean;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -60,7 +67,7 @@ interface ImplementPlanDialogProps {
  * «Implementa»: sceglie una squadra dell'App (o ne crea una da un modello) e le affida il piano. Una squadra in bozza
  * si attiva, poi il capo riceve il messaggio con le voci scelte (tutte già spuntate: si tolgono quelle da lasciare) e si apre la sua scheda.
  */
-export function ImplementPlanDialog({ appId, appName, items, open, onOpenChange }: ImplementPlanDialogProps) {
+export function ImplementPlanDialog({ appId, appName, items, issuesAvailable, open, onOpenChange }: ImplementPlanDialogProps) {
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -101,6 +108,7 @@ export function ImplementPlanDialog({ appId, appName, items, open, onOpenChange 
   const create = useCreateTeamInstance();
   const activate = useActivateTeamInstance();
   const send = useSendTeamMessage();
+  const createIssues = useCreatePlanIssues();
 
   const toggle = (id: number, on: boolean) =>
     setExcluded((prev) => {
@@ -110,15 +118,50 @@ export function ImplementPlanDialog({ appId, appName, items, open, onOpenChange 
       return next;
     });
 
+  /**
+   * Crea l'issue delle voci scelte che non ne hanno una: il compito la porta, la PR di rilascio la chiude e la voce del
+   * piano risulta fatta. Un errore non ferma «Implementa»: si avvisa e le voci restano senza issue.
+   * Risponde con i numeri creati (id della voce → numero dell'issue).
+   */
+  const ensureIssues = async (): Promise<Map<number, number>> => {
+    const created = new Map<number, number>();
+    const missing = itemsWithoutIssue(chosen);
+    if (!issuesAvailable || missing.length === 0) return created;
+    let failed = 0;
+    let threw = false;
+    try {
+      for (const batch of issueBatches(missing)) {
+        const res = (await createIssues.mutateAsync({ id: appId, data: { itemIds: batch } })) as PlanIssuesResult;
+        for (const r of res.results) {
+          if (r.outcome === "created" && r.number !== undefined) created.set(r.itemId, r.number);
+          else if (r.outcome === "failed") failed++;
+        }
+      }
+    } catch (error) {
+      threw = true;
+      toast({ variant: "destructive", title: "Issue non create", description: apiErrorMessage(error) });
+    } finally {
+      void queryClient.invalidateQueries({ queryKey: getGetAppPlanQueryKey(appId) });
+    }
+    if (failed > 0 && !threw) {
+      toast({ title: "Issue non create per tutte le voci", description: `${failed} voci restano senza issue: a fine lavoro vanno segnate a mano.` });
+    }
+    return created;
+  };
+
   /** Attiva (se in bozza), manda la richiesta al capo e apre la scheda della squadra. */
-  const hand = async (team: TeamInstance) => {
+  const hand = async (team: TeamInstance, newIssues: ReadonlyMap<number, number>) => {
     if (team.status === "draft") {
       await activate.mutateAsync({ id: team.id });
       void queryClient.invalidateQueries({ queryKey: getGetTeamPlanQueryKey(team.id) });
     }
     const text = implementMessage(
       appName,
-      messageItems(chosen, ordered.length).map((i) => ({ id: i.id, title: itemTitle(i), issueNumber: i.issue?.number ?? null })),
+      messageItems(chosen, ordered.length).map((i) => ({
+        id: i.id,
+        title: itemTitle(i),
+        issueNumber: i.issue?.number ?? newIssues.get(i.id) ?? null,
+      })),
     );
     await send.mutateAsync({ id: team.id, data: { text } });
     void queryClient.invalidateQueries({ queryKey: getGetTeamInstanceQueryKey(team.id) });
@@ -138,6 +181,7 @@ export function ImplementPlanDialog({ appId, appName, items, open, onOpenChange 
     setBusy(true);
     let created: TeamInstance | null = null;
     try {
+      const newIssues = await ensureIssues();
       if (isNew) {
         created = await create.mutateAsync({
           data: { templateId: Number(templateId), name: name.trim(), ref: planTeamRef(appId, appName) },
@@ -155,10 +199,10 @@ export function ImplementPlanDialog({ appId, appName, items, open, onOpenChange 
             return;
           }
         }
-        await hand(created);
+        await hand(created, newIssues);
         return;
       }
-      if (selectedTeam) await hand(selectedTeam);
+      if (selectedTeam) await hand(selectedTeam, newIssues);
     } catch (error) {
       if (created) {
         // La squadra esiste già: un nuovo tentativo deve usarla, non crearne un'altra
@@ -275,6 +319,13 @@ export function ImplementPlanDialog({ appId, appName, items, open, onOpenChange 
                     ? `Tutte le ${ordered.length} voci approvate: togli la spunta a quelle da lasciare.`
                     : `${chosen.length} voci scelte su ${ordered.length}.`}
             </p>
+            {issuesAvailable && itemsWithoutIssue(chosen).length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                {itemsWithoutIssue(chosen).length === 1
+                  ? "1 voce scelta non ha un'issue: Botcave la crea su GitHub prima di affidarla alla squadra, così a fine lavoro la voce risulta fatta."
+                  : `${itemsWithoutIssue(chosen).length} voci scelte non hanno un'issue: Botcave le crea su GitHub prima di affidarle alla squadra, così a fine lavoro risultano fatte.`}
+              </p>
+            )}
             {ordered.length > 0 && (
               <div className="max-h-64 space-y-1 overflow-y-auto rounded-md border p-2">
                 {ordered.map((item) => (

@@ -24,6 +24,24 @@ export function implementableItems(items: AnalysisItem[]): AnalysisItem[] {
   return items.filter((i) => i.status === "approved" && IMPLEMENT_CHAPTERS.includes(i.chapter) && i.issue?.state !== "closed");
 }
 
+/** Voci per richiesta di `POST /apps/:id/plan/issues` (stesso limite di `MAX_ISSUES_PER_REQUEST` della selezione). */
+const ISSUE_BATCH = 30;
+
+/**
+ * Voci scelte che non hanno ancora un'issue: «Implementa» la crea prima di affidarle alla squadra, così il compito porta
+ * l'issue, la PR di rilascio la chiude («closes #n») e la voce del piano risulta fatta.
+ */
+export function itemsWithoutIssue(chosen: AnalysisItem[]): number[] {
+  return chosen.filter((i) => !i.issue).map((i) => i.id);
+}
+
+/** Lotti di id per la creazione delle issue (al più 30 per richiesta). */
+export function issueBatches(ids: number[]): number[][] {
+  const out: number[][] = [];
+  for (let i = 0; i < ids.length; i += ISSUE_BATCH) out.push(ids.slice(i, i + ISSUE_BATCH));
+  return out;
+}
+
 /**
  * Voci da elencare nel messaggio al capo: con tutte le voci scelte nessun elenco (il capo lavora su tutto il piano
  * approvato con `leggi_piano_app`), altrimenti quelle scelte.

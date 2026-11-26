@@ -55,7 +55,7 @@ Prima App su cui si prova: Botcave stessa (App 4), poi The Hub Up.
 
 - Privato, creato dall'utente da un modello (`TwentIvan/botcave-modello-collaudo`, preparato in una PR a parte) con un solo
   workflow fisso: `workflow_dispatch` con input `collaudo` e `codice`, `runs-on: ubuntu-latest`, `timeout-minutes: 80`,
-  servizio Postgres disponibile, passi: scarica `<PUBLIC_APP_URL>/downloads/collaudo/casello-collaudo.mjs` (con verifica sha256
+  servizio Postgres 16 (utente, password e database `postgres`, porta 5432: è la `DATABASE_URL` predefinita del programma), passi: scarica `<PUBLIC_APP_URL>/downloads/collaudo/casello-collaudo.mjs` (con verifica sha256
   dal manifest `collaudo-manifest.json`), installa Playwright con Chromium, avvia il programma. Il programma si aggiorna con
   il deploy di Botcave; il workflow non cambia.
 - Configurazione in Botcave: variabile `COLLAUDO_REPO` (`owner/nome`, facoltativa: senza, i collaudi sono `saltato` con
@@ -81,7 +81,7 @@ Prima App su cui si prova: Botcave stessa (App 4), poi The Hub Up.
 
 ### 4.3 Protocollo (route `/api/collaudo/*`, token d'ambito `collaudo`)
 
-- `POST /api/collaudo/claim {collaudo, codice}` → `{token, repo, sha, repoToken, recipe | null, mode: full|relight}`;
+- `POST /api/collaudo/claim {testId, code}` (pubblica, 10/min per IP) → `{token, repo, sha, repoToken, recipe | null, mode: full|relight}`;
   codice: 32 byte, nel DB solo l'hash, una volta sola, scade dopo 15 minuti. Il token del collaudo scade a fine job (≤ 80
   minuti) ed è revocato al report.
 - `POST /api/collaudo/next` (attesa ≤ 25 s, poi 204) → comando `{id, kind, args}`.
@@ -168,7 +168,9 @@ Prima App su cui si prova: Botcave stessa (App 4), poi The Hub Up.
 - Il runner fa solo connessioni in uscita; Botcave non esegue mai nulla che arrivi dal runner, ne salva solo i risultati.
 - Repository, uscite e pagine sono dati non attendibili per il collaudatore, che non ha strumenti delle App né scritture in
   Botcave oltre a ricetta ed esito. Rischio residuo accettato: un repository ostile può far eseguire comandi sul runner usa e
-  getta ed esporre al più il token del collaudo e il token di lettura dello stesso repository.
+  getta ed esporre al più il token del collaudo e il token di lettura dello stesso repository. Allo stesso modo, sul runner (che
+  ha `sudo`) un comando può leggere la memoria del programma e quindi il token del collaudo: vale solo per quel collaudo ed è
+  revocato al report.
 - Link dal vivo pubblico con indirizzo casuale, 30 minuti, App in modalità sviluppo con dati finti.
 - Log, uscite e resoconto passano da `looksLikeCredential` (`***`) prima di essere salvati; mai token o codici nei log.
 
@@ -188,3 +190,33 @@ Prima App su cui si prova: Botcave stessa (App 4), poi The Hub Up.
 
 Segreti di prova per App; hosting gestito da Botcave; collaudo dei singoli compiti o delle PR; collaudi programmati; App che
 non si avviano su Linux; dati copiati dalla produzione; collaudo dal nodo sul Mac.
+
+## 12. Differenze dal codice
+
+Decisioni prese durante l'implementazione; dove questo documento differisce dal codice vale il codice (descritto in CLAUDE.md,
+«Collaudo del lavoro»).
+
+- **Collaudo `running` fino al report.** Alla consegna dell'agente (`consegna_collaudo`) si scrivono esito, resoconto, problemi e
+  note, ma lo stato resta `running` finché il runner non manda il `report` (dopo i 30 minuti del link): il `report` porta a `done`,
+  oppure a `failed` «collaudo non consegnato» / «collaudo interrotto» senza esito. La correzione automatica parte alla consegna
+  dell'agente, non al report. A consegna avvenuta il `next` in attesa del runner risponde subito 410 (`wakeRunner`).
+- **Modello deciso prima del lancio.** Lo scheduler sceglie il modello (`testModelFor`) prima del `workflow_dispatch`: senza modello
+  usabile o con un tetto raggiunto il collaudo è `skipped` col motivo e nessun job parte.
+- **«Riaccendi» non annulla un collaudo vero.** Un `relight` richiesto con un collaudo `full` aperto per l'App non lo sostituisce:
+  la richiesta risponde 409 «un collaudo è in corso per questa App…». Si riaccende solo l'ultimo collaudo `full` concluso del lavoro,
+  6 volte al giorno per voce.
+- **Rimandi automatici nell'API.** Il contatore `team_works.test_auto_rejects` è esposto come `autoRejects` sui collaudi: la console
+  mostra «correzioni automatiche n di 2» da lì (i rimandi manuali non contano).
+- **Testo del capo.** Il turno `request` del capo dice chi ha rimandato il lavoro: il collaudo («Il collaudo del lavoro N ha trovato
+  problemi: correggi e richiudi il lavoro. Resoconto: …») o l'utente con «Rimanda alla squadra» («L'utente ha rimandato il lavoro N
+  alla squadra dopo il collaudo…»); una sola strada di rifiuto, `rejectReleaseForTest`.
+- **Porta del link senza ricetta.** Se al claim l'App non ha ancora una ricetta (prima prova), il tunnel si apre sull'ultima porta
+  localhost aperta dall'agente con `browser open`: il runner non vede la ricetta salvata dopo il claim.
+- **Forma della ricetta.** `schema` è una lista di comandi shell su una riga (non SQL), `login` è un testo ≤ 200 caratteri o null.
+- **Corpo del claim e route del runner.** Il claim è `{testId, code}` (identificatori in inglese); le route `/api/collaudo/*`
+  stanno nel contratto OpenAPI come `/api/node/*`. Il report `done` senza esito dell'agente chiude `failed` «collaudo non consegnato».
+- **Verifica della configurazione.** «Verifica» in Account controlla repository, installazione dell'App GitHub, presenza del workflow
+  e concessione del permesso `actions: write`, senza un `workflow_dispatch` di prova (consumerebbe minuti e lascerebbe run spurie).
+- **Chiusure da fuori.** Chi annulla un collaudo o lo chiude per tempo scrive stato ed errore prima di fermare l'agente; un `TestRecipe`
+  identico è dichiarato anche in `casello-collaudo` (pacchetti separati, come `casello-nodo`).
+- **Postgres del workflow.** Utente e password `postgres`, per coincidere con la `DATABASE_URL` predefinita del programma.

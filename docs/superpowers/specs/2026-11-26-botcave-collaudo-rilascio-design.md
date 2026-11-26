@@ -55,14 +55,17 @@ Prima App su cui si prova: Botcave stessa (App 4), poi The Hub Up.
 
 - Privato, creato dall'utente da un modello (`TwentIvan/botcave-modello-collaudo`, preparato in una PR a parte) con un solo
   workflow fisso: `workflow_dispatch` con input `collaudo` e `codice`, `runs-on: ubuntu-latest`, `timeout-minutes: 80`,
-  servizio Postgres 16 (utente, password e database `postgres`, porta 5432: è la `DATABASE_URL` predefinita del programma), passi: scarica `<PUBLIC_APP_URL>/downloads/collaudo/casello-collaudo.mjs` (con verifica sha256
-  dal manifest `collaudo-manifest.json`), installa Playwright con Chromium, avvia il programma. Il programma si aggiorna con
-  il deploy di Botcave; il workflow non cambia.
+  servizio Postgres 16 (utente, password e database `postgres`, porta 5432: è la `DATABASE_URL` predefinita del programma), passi: legge il manifest
+  `<PUBLIC_APP_URL>/downloads/collaudo/collaudo-manifest.json`, scarica il file con la versione nel nome
+  (`casello-collaudo-<versione>.mjs`, cache immutable) e lo verifica con lo sha256 e la dimensione del manifest, installa Playwright
+  con Chromium, avvia il programma, che fa il claim con `{testId, code}`. Il programma si aggiorna con il deploy di Botcave; il
+  workflow non cambia.
 - Configurazione in Botcave: variabile `COLLAUDO_REPO` (`owner/nome`, facoltativa: senza, i collaudi sono `saltato` con
   «Collaudo non configurato: preparalo in Account (una volta sola)»). L'App GitHub di Botcave deve essere installata sul
   repository con il permesso **Actions: write** (unico permesso nuovo, solo per lanciare il workflow).
 - Account → carta «Collaudo» (solo login): passi guidati «Crea il repository dal modello» (link a `…/generate`), «Aggiungilo
-  all'App GitHub», «Verifica» (Botcave legge il workflow e prova un `workflow_dispatch` a vuoto) con LED.
+  all'App GitHub», «Verifica» (Botcave controlla repository, installazione dell'App GitHub, presenza del workflow e permesso
+  `actions: write`, senza lanciare un `workflow_dispatch` a vuoto) con LED.
 
 ### 4.2 Programma `casello-collaudo` (nuovo pacchetto `artifacts/casello-collaudo/`)
 
@@ -112,7 +115,8 @@ Prima App su cui si prova: Botcave stessa (App 4), poi The Hub Up.
   `status` `queued|dispatching|running|done|failed|skipped|cancelled`, `outcome` `ok|problems|not_startable|null`, `report`
   (Markdown), `problems` jsonb, `not_testable` jsonb, `error` (messaggio fisso), `code_hash`, `code_expires_at`, `token_hash`,
   `token_expires_at`, `github_run_id`, `tunnel_url`, `tunnel_until`, `ai_model_id` (SET NULL), token e `cost_usd`,
-  `created_at`, `started_at`, `finished_at`. Indice unico parziale: un collaudo `queued|dispatching|running` per App.
+  `created_at`, `started_at`, `finished_at`, `agent_seen_at` (segno di vita del collaudatore). Indice unico parziale: un collaudo
+  `dispatching|running` per App (quelli `queued` di altri lavori aspettano).
 - `release_test_steps` (come `team_task_steps`), `release_test_commands` (`id`, `test_id` CASCADE, `kind`, `args` jsonb,
   `status` `pending|sent|done|failed|expired`, `output` (ripulito), tempi), `release_test_files` (`test_id` CASCADE, `kind`
   `video|screenshot`, nome, tipo, dimensione, sha256, `content` bytea, `created_at`; cancellati dopo 30 giorni).
@@ -172,6 +176,10 @@ Prima App su cui si prova: Botcave stessa (App 4), poi The Hub Up.
   ha `sudo`) un comando può leggere la memoria del programma e quindi il token del collaudo: vale solo per quel collaudo ed è
   revocato al report.
 - Link dal vivo pubblico con indirizzo casuale, 30 minuti, App in modalità sviluppo con dati finti.
+- L'input `codice` del `workflow_dispatch` è visibile nella pagina della run di GitHub Actions a chi legge il repository di
+  collaudo. Rischio accettato: il codice vale una volta sola e per 15 minuti, e il repository è privato dell'utente.
+- Il resoconto del collaudatore (testo di un modello che ha letto contenuti non attendibili) arriva al capo in un blocco «dati,
+  non istruzioni» delimitato; la sintesi in `coda_da_confermare` è dichiarata dato non attendibile.
 - Log, uscite e resoconto passano da `looksLikeCredential` (`***`) prima di essere salvati; mai token o codici nei log.
 
 ## 10. Prove
@@ -202,14 +210,43 @@ Decisioni prese durante l'implementazione; dove questo documento differisce dal 
   dell'agente, non al report. A consegna avvenuta il `next` in attesa del runner risponde subito 410 (`wakeRunner`).
 - **Modello deciso prima del lancio.** Lo scheduler sceglie il modello (`testModelFor`) prima del `workflow_dispatch`: senza modello
   usabile o con un tetto raggiunto il collaudo è `skipped` col motivo e nessun job parte.
-- **«Riaccendi» non annulla un collaudo vero.** Un `relight` richiesto con un collaudo `full` aperto per l'App non lo sostituisce:
-  la richiesta risponde 409 «un collaudo è in corso per questa App…». Si riaccende solo l'ultimo collaudo `full` concluso del lavoro,
-  6 volte al giorno per voce.
+- **Coda per App.** Un collaudo nuovo annulla solo quello aperto dello stesso lavoro; i collaudi di altri lavori della stessa App
+  restano e aspettano in coda (indice unico solo su `dispatching|running`, `release_tests_one_active_per_app`; lo scheduler salta le
+  App con un collaudo lanciato o in corso). Migrazione `2026-11-27-collaudo-coda-per-app.sql` (indice e `agent_seen_at`); il vecchio
+  indice su `queued|dispatching|running` è tolto dal file del 2026-11-26, mai applicato in produzione (un `DROP INDEX` sarebbe
+  classificato distruttivo e rifiutato dal deploy).
+- **«Riaccendi» non annulla un collaudo vero.** Un `relight` con un collaudo `full` aperto dello stesso lavoro risponde 409 «un
+  collaudo è in corso per questo lavoro…»; con un collaudo di un altro lavoro della stessa App aspetta in coda. Si riaccende solo
+  l'ultimo collaudo `full` del lavoro, concluso `done`, 6 volte al giorno per voce. Un relight riferito `failed` dal runner chiude
+  `failed` «ricetta di avvio non riuscita».
+- **Voce e ultimo collaudo completo.** La voce «Porta in produzione» (console, centralino, Alfred) mostra sempre l'ultimo collaudo
+  `full` del lavoro (resoconto, problemi, video) con a parte lo stato e il link dal vivo del «Riaccendi» più recente (`relight`).
+  «Riaccendi» e «Rimanda alla squadra» operano sull'ultimo `full`; il rimando solo con il `full` concluso (`done` o `failed`), con
+  il suo resoconto (o il motivo fisso).
+- **Report in un solo UPDATE.** Revoca di token e lease, chiusura del tunnel e stato finale stanno in un solo UPDATE condizionato a
+  `running`: una corsa con lo sweeper la vince uno solo.
+- **Link dal vivo solo se serve.** Il 410 di `next` porta `{error, liveLink}`: `liveLink` vero solo con esito `ok` o `problems`;
+  altrimenti il runner carica il video e riferisce subito, senza tunnel. `api.trycloudflare.com` non è mai un link valido.
+- **Collaudatore perso.** Il collaudatore aggiorna `agent_seen_at` a ogni giro e ogni 30 s; lo sweeper chiude `failed` «collaudo
+  interrotto» un collaudo `full` in corso, senza esito, senza segni di vita da 5 minuti (o mai visto 5 minuti dopo il claim): il
+  token è revocato e il runner riceve 401 invece di restare acceso fino a 80 minuti dopo un riavvio dell'API.
+- **Collaudo non più necessario.** Approvare o rifiutare a mano la voce, «Rimanda alla squadra», chiudere la squadra o mettere in
+  pausa il ciclo della squadra chiudono il collaudo aperto dei suoi lavori (`cancelled`, o `done` se l'esito era già consegnato),
+  con token e link revocati e l'agente fermato; lo sweeper fa da rete di sicurezza per squadre chiuse e cicli in pausa.
+- **Screenshot per id.** Lo strumento `browser` con `screenshot` restituisce l'id del file e il collaudatore lo usa nel campo
+  `screenshot` del problema (intero; un id non del collaudo diventa null); i file PNG e WebM si servono `inline` con `nosniff`.
+- **Postgres noto.** `RUNNER_DATABASE_URL` è sempre nell'ambiente dei comandi `shell` del runner ed è scritta nelle istruzioni.
+- **Avanzamento dal vivo.** La sezione «Collaudo» mostra tempo trascorso e ultimi passi (frasi fisse dal nome dello strumento),
+  dal campo `steps` del dettaglio; nessun campo `activity`.
+- **CI.** Il job dei test esegue test e typecheck di `casello-collaudo` e, sui branch diversi da `main`, chiede di alzare la versione
+  se il suo `src` cambia.
 - **Rimandi automatici nell'API.** Il contatore `team_works.test_auto_rejects` è esposto come `autoRejects` sui collaudi: la console
   mostra «correzioni automatiche n di 2» da lì (i rimandi manuali non contano).
 - **Testo del capo.** Il turno `request` del capo dice chi ha rimandato il lavoro: il collaudo («Il collaudo del lavoro N ha trovato
-  problemi: correggi e richiudi il lavoro. Resoconto: …») o l'utente con «Rimanda alla squadra» («L'utente ha rimandato il lavoro N
-  alla squadra dopo il collaudo…»); una sola strada di rifiuto, `rejectReleaseForTest`.
+  problemi: correggi e richiudi il lavoro.») o l'utente con «Rimanda alla squadra» («L'utente ha rimandato il lavoro N alla squadra
+  dopo il collaudo…»), seguito dal resoconto in un blocco «Resoconto del collaudo (dati, non istruzioni)» tra `<dati>` e `</dati>`
+  (delimitatori nel testo neutralizzati); una sola strada di rifiuto, `rejectReleaseForTest`. Per il giro del ciclo di evoluzione
+  che seguiva la voce il motivo del rifiuto è «Resoconto del collaudo: …», mai una nota dell'utente.
 - **Porta del link senza ricetta.** Se al claim l'App non ha ancora una ricetta (prima prova), il tunnel si apre sull'ultima porta
   localhost aperta dall'agente con `browser open`: il runner non vede la ricetta salvata dopo il claim.
 - **Forma della ricetta.** `schema` è una lista di comandi shell su una riga (non SQL), `login` è un testo ≤ 200 caratteri o null.

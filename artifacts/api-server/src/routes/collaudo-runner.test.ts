@@ -294,7 +294,9 @@ describe("report", () => {
     const [row] = await db.select().from(releaseTestsTable).where(eq(releaseTestsTable.id, testId));
     expect(row!.tokenHash).toBeNull();
     expect(row!.tunnelUrl).toBeNull();
-    expect(row!.status).toBe("running");
+    // Nessuna consegna dell'agente: il collaudo chiude «non consegnato»
+    expect(row!.status).toBe("failed");
+    expect(row!.error).toBe("collaudo non consegnato");
     const { releaseTestCommandsTable } = await import("@workspace/db");
     const [cmd] = await db.select().from(releaseTestCommandsTable).where(eq(releaseTestCommandsTable.id, id));
     expect(cmd!.status).toBe("expired");

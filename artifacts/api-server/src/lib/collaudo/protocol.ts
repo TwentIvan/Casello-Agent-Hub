@@ -2,7 +2,7 @@
 // con messaggio fisso; mai testo del runner nei messaggi né nei log (solo id).
 
 import { createHash } from "node:crypto";
-import { and, count, eq, isNull } from "drizzle-orm";
+import { and, count, eq, isNotNull, isNull, or } from "drizzle-orm";
 import { db, releaseTestFilesTable, releaseTestsTable } from "@workspace/db";
 import { logger } from "../logger";
 import { COLLAUDO_MESSAGES } from "./messages";
@@ -136,27 +136,46 @@ export async function saveFile(
   return { id: row!.id };
 }
 
+type ReportedHandler = (testId: number) => void | Promise<void>;
+let onTestReported: ReportedHandler = () => {};
+
+/** Registra chi riceve l'avviso di un report del runner (lo scheduler ferma l'agente e lancia il collaudo successivo). */
+export function setOnTestReported(fn: ReportedHandler): void {
+  onTestReported = fn;
+}
+
 /**
- * Report finale del runner: revoca il token e chiude il tunnel e i comandi aperti. Se il runner dichiara `failed` e
- * l'agente non ha consegnato nulla, il collaudo chiude `failed` con un messaggio fisso (mai il testo del runner).
+ * Report finale del runner: revoca il token, chiude il tunnel e i comandi aperti e chiude il collaudo (UPDATE condizionati a
+ * `running`). `done`: con l'esito dell'agente (o con il solo «Riaccendi») il collaudo è `done`; senza esito `failed` con l'errore
+ * già scritto dall'agente o «collaudo non consegnato». `failed`: senza consegna dell'agente `failed` «collaudo interrotto» (mai
+ * il testo del runner); con l'esito già consegnato `done` (si è perso solo il link dal vivo).
  */
 export async function report(testId: number, status: "done" | "failed"): Promise<void> {
+  const now = new Date();
   await db
     .update(releaseTestsTable)
     .set({ tokenHash: null, tokenExpiresAt: null, leaseExpiresAt: null, tunnelUrl: null, tunnelUntil: null })
     .where(eq(releaseTestsTable.id, testId));
-  if (status === "failed") {
-    await db
-      .update(releaseTestsTable)
-      .set({ status: "failed", error: COLLAUDO_MESSAGES.interrupted, finishedAt: new Date() })
-      .where(
-        and(
-          eq(releaseTestsTable.id, testId),
-          eq(releaseTestsTable.status, "running"),
-          isNull(releaseTestsTable.outcome),
-          isNull(releaseTestsTable.error),
-        ),
-      );
-  }
+  const running = and(eq(releaseTestsTable.id, testId), eq(releaseTestsTable.status, "running"));
+  // Esito consegnato o «Riaccendi» (nessun agente): il collaudo è finito
+  await db
+    .update(releaseTestsTable)
+    .set({ status: "done", finishedAt: now })
+    .where(and(running, or(isNotNull(releaseTestsTable.outcome), eq(releaseTestsTable.mode, "relight"))));
+  // Errore già scritto dall'agente (modello, errore interno): resta il suo messaggio
+  await db
+    .update(releaseTestsTable)
+    .set({ status: "failed", finishedAt: now })
+    .where(and(running, isNull(releaseTestsTable.outcome), isNotNull(releaseTestsTable.error)));
+  // Nessuna consegna
+  await db
+    .update(releaseTestsTable)
+    .set({ status: "failed", error: status === "failed" ? COLLAUDO_MESSAGES.interrupted : COLLAUDO_MESSAGES.notDelivered, finishedAt: now })
+    .where(and(running, isNull(releaseTestsTable.outcome), isNull(releaseTestsTable.error)));
   await expireOpenCommands(testId);
+  try {
+    await onTestReported(testId);
+  } catch (err) {
+    logger.error({ testId, errName: err instanceof Error ? err.name : "unknown" }, "Avviso del report del collaudo non riuscito");
+  }
 }

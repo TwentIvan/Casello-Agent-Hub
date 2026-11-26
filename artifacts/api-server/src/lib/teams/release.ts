@@ -182,6 +182,46 @@ export async function rejectRelease(action: PendingActionRow, note: string | nul
   return w.instanceId;
 }
 
+/** Nota del rifiuto di una voce dal collaudo: al più 4 000 caratteri. */
+export const TEST_REJECT_NOTE_MAX = 4_000;
+
+/**
+ * Rifiuto della voce `release` a nome del collaudo (correzione automatica, «Rimanda alla squadra»): come il rifiuto dell'utente,
+ * voce `rejected` con la nota, lavoro di nuovo `open`, turno `request` del capo e avviso del cambio di lavoro, tutto in una
+ * transazione con `onRejected` (es. il conteggio dei rimandi automatici). Voce non più in attesa o lavoro non più in attesa di
+ * «Porta in produzione» → false, nulla scritto.
+ */
+export async function rejectReleaseForTest(
+  actionId: number,
+  note: string,
+  onRejected?: (tx: Tx, instanceId: number) => Promise<void>,
+): Promise<boolean> {
+  const text = note.slice(0, TEST_REJECT_NOTE_MAX);
+  const notRejected = new Error("voce non rifiutata");
+  let instanceId: number;
+  try {
+    instanceId = await db.transaction(async (tx) => {
+      const [rejected] = await tx
+        .update(pendingActionsTable)
+        .set({ status: "rejected", decidedAt: new Date(), decisionNote: text })
+        .where(and(eq(pendingActionsTable.id, actionId), eq(pendingActionsTable.kind, "release"), eq(pendingActionsTable.status, "pending")))
+        .returning();
+      if (!rejected) throw notRejected;
+      const id = await rejectRelease(rejected, text, tx);
+      // Voce in attesa ma lavoro già altrove: niente rifiuto a metà
+      if (id === null) throw notRejected;
+      if (onRejected) await onRejected(tx, id);
+      return id;
+    });
+  } catch (err) {
+    if (err === notRejected) return false;
+    throw err;
+  }
+  notifyTurnQueued(instanceId);
+  notifyWorkChanged(instanceId);
+  return true;
+}
+
 /** Giro della sorveglianza sui lavori `releasing` (al più 20): CI della PR di rilascio, poi merge o esito negativo. */
 export async function watchReleasesOnce(now: Date = new Date()): Promise<void> {
   const rows = await db.select().from(teamWorksTable).where(eq(teamWorksTable.status, "releasing")).limit(20);

@@ -487,3 +487,6 @@ export function resetBugLimits(): void {
   bugIpReportCounter.reset();
   bugMessageCounter.reset();
 }
+
+// Runner di collaudo: scambio del codice monouso, 10 al minuto per IP (route pubblica)
+export const collaudoClaimRateLimit = rateLimit({ limit: 10, windowMs: 60_000 });

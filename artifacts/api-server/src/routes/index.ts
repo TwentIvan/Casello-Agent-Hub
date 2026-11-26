@@ -33,6 +33,7 @@ import { createAccountModelRouter } from "./account-model";
 import { createAccountCharactersRouter } from "./account-characters";
 import { createNodesRouter } from "./nodes";
 import { createNodeRouter } from "./node";
+import { createCollaudoRunnerRouter } from "./collaudo-runner";
 import { createNodePairingAccountRouter, createNodePairingPublicRouter } from "./node-pairing";
 import { createOAuthGrantsRouter } from "./oauth-grants";
 import { createAlfredRouter } from "./alfred";
@@ -56,6 +57,8 @@ router.use(authRouter());
 // Protocollo dei nodi: solo token d'ambito `node` (requireNodeToken), mai sessione né token personali;
 // va prima di requireAuth, che a sua volta rifiuta i token `node` su tutto il resto di /api.
 router.use("/node", requireNodeToken, createNodeRouter());
+// Runner di collaudo: `claim` pubblica (codice monouso), il resto con il token `ctk_…`; prima di requireAuth.
+router.use("/collaudo", createCollaudoRunnerRouter());
 // Abbinamento dei nodi: `start` e `poll` sono pubbliche (il nodo non ha ancora un token), con limiti propri.
 router.use(createNodePairingPublicRouter());
 router.use(requireAuth);

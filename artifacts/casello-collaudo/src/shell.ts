@@ -10,6 +10,8 @@ export const MAX_OUTPUT = 8_000;
 export const MAX_TIMEOUT_SEC = 300;
 export const DEFAULT_TIMEOUT_SEC = 120;
 const KILL_GRACE_MS = 5_000;
+/** Margine per raccogliere l'uscita dopo la fine del processo principale. */
+const OUTPUT_GRACE_MS = 1_000;
 const BACKGROUND_WAIT_MS = 5_000;
 /** Memoria tenuta per l'uscita di un comando: oltre si conserva la coda. */
 const KEEP_CHARS = 64_000;
@@ -112,30 +114,52 @@ function runForeground(cmd: ShellCommand, cwd: string, env: Record<string, strin
     child.stdout?.on("data", append);
     child.stderr?.on("data", append);
     let timedOut = false;
-    let killTimer: NodeJS.Timeout | undefined;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      killGroup(child, "SIGTERM");
-      killTimer = setTimeout(() => killGroup(child, "SIGKILL"), KILL_GRACE_MS);
-    }, timeoutSec * 1000);
-    child.on("error", () => {
-      clearTimeout(timer);
-      resolve({ ok: false, output: SHELL_MESSAGES.spawnFailed });
-    });
-    child.on("close", (code, signal) => {
-      clearTimeout(timer);
-      if (killTimer) clearTimeout(killTimer);
-      if (timedOut) {
-        resolve({ ok: false, output: clip(`${out}${out && !out.endsWith("\n") ? "\n" : ""}${SHELL_MESSAGES.timeout(timeoutSec)}`) });
-        return;
-      }
-      if (code === 0) {
-        resolve({ ok: true, output: clip(out) });
+    let exitCode: number | null = null;
+    let exitSignal: string | null = null;
+    let settled = false;
+    const timers: NodeJS.Timeout[] = [];
+    // Unica risoluzione: un processo uscito dal gruppo (setsid, demone) può tenere aperte le pipe per sempre,
+    // quindi non si aspetta `close` oltre un breve margine dopo `exit`, e dopo timeout + grazia si chiude comunque.
+    const finish = (spawnFailed = false) => {
+      if (settled) return;
+      settled = true;
+      for (const t of timers) clearTimeout(t);
+      child.stdout?.destroy();
+      child.stderr?.destroy();
+      if (spawnFailed) {
+        resolve({ ok: false, output: SHELL_MESSAGES.spawnFailed });
         return;
       }
       const sep = out && !out.endsWith("\n") ? "\n" : "";
-      resolve({ ok: false, output: clip(`${out}${sep}${SHELL_MESSAGES.exitCode(code, signal)}`) });
+      if (timedOut) {
+        resolve({ ok: false, output: clip(`${out}${sep}${SHELL_MESSAGES.timeout(timeoutSec)}`) });
+        return;
+      }
+      if (exitCode === 0) {
+        resolve({ ok: true, output: clip(out) });
+        return;
+      }
+      resolve({ ok: false, output: clip(`${out}${sep}${SHELL_MESSAGES.exitCode(exitCode, exitSignal)}`) });
+    };
+    timers.push(
+      setTimeout(() => {
+        timedOut = true;
+        killGroup(child, "SIGTERM");
+        timers.push(
+          setTimeout(() => {
+            killGroup(child, "SIGKILL");
+            timers.push(setTimeout(() => finish(), OUTPUT_GRACE_MS));
+          }, KILL_GRACE_MS),
+        );
+      }, timeoutSec * 1000),
+    );
+    child.on("error", () => finish(true));
+    child.on("exit", (code, signal) => {
+      exitCode = code;
+      exitSignal = signal;
+      timers.push(setTimeout(() => finish(), OUTPUT_GRACE_MS));
     });
+    child.on("close", () => finish());
   });
 }
 

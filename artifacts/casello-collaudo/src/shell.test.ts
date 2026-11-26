@@ -36,6 +36,22 @@ describe("runShell", () => {
     expect(Date.now() - start).toBeLessThan(4_000);
   });
 
+  it("processo setsid che tiene la pipe aperta: risolve appena esce il comando", async () => {
+    const start = Date.now();
+    const r = await runShell({ command: "perl -e 'use POSIX; setsid(); sleep 8' & echo fatto" }, root);
+    expect(r.ok).toBe(true);
+    expect(r.output).toContain("fatto");
+    expect(Date.now() - start).toBeLessThan(4_000);
+  });
+
+  it("processo setsid con la pipe aperta e timeout: risolve entro timeout + grazia", async () => {
+    const start = Date.now();
+    const r = await runShell({ command: "perl -e 'use POSIX; setsid(); sleep 15' & sleep 10", timeoutSec: 1 }, root);
+    expect(r.ok).toBe(false);
+    expect(r.output).toContain("tempo scaduto");
+    expect(Date.now() - start).toBeLessThan(1_000 + 5_000 + 1_000 + 1_000);
+  }, 15_000);
+
   it("cwd fuori dal repository → rifiutato", async () => {
     const r = await runShell({ command: "pwd", cwd: "../" }, root);
     expect(r.ok).toBe(false);

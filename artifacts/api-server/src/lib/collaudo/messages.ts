@@ -10,6 +10,11 @@ export const COLLAUDO_MESSAGES = {
   interrupted: "collaudo interrotto",
   notDelivered: "collaudo non consegnato",
   internalError: "errore interno nel collaudo",
+  noReport: "collaudo concluso senza resoconto",
+  autoRejectTurn: (work: number, note: string) =>
+    `Il collaudo del lavoro ${work} ha trovato problemi: correggi e richiudi il lavoro. Resoconto: ${note}`,
+  userRejectTurn: (work: number, note: string) =>
+    `L'utente ha rimandato il lavoro ${work} alla squadra dopo il collaudo: correggi e richiudi il lavoro. Resoconto: ${note}`,
   autoFixExhausted: "2 correzioni automatiche non sono bastate",
   invalidRecipe: (detail: string) => `ricetta non valida: ${detail}`,
   dispatchFailed:

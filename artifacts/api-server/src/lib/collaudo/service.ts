@@ -256,7 +256,7 @@ export async function finishReleaseTest(testId: number): Promise<void> {
     logger.info({ releaseTestId: testId, workId: work.id }, "Correzioni automatiche esaurite");
     return;
   }
-  const rejected = await rejectReleaseForTest(item!.id, test.report ?? COLLAUDO_MESSAGES.notDelivered, async (tx) => {
+  const rejected = await rejectReleaseForTest(item!.id, test.report ?? COLLAUDO_MESSAGES.noReport, "auto", async (tx) => {
     await tx
       .update(teamWorksTable)
       .set({ testAutoRejects: sql`${teamWorksTable.testAutoRejects} + 1` })

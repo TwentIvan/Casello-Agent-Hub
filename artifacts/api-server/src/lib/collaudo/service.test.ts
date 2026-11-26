@@ -17,7 +17,7 @@ import { enqueueReleaseItem } from "../actions/queue";
 import { requireCollaudoToken } from "./auth";
 import { COLLAUDO_MESSAGES } from "./messages";
 import { report } from "./protocol";
-import { finishReleaseTest, onTestReported, requestReleaseTest, scheduleReleaseTests, sweepReleaseTests } from "./service";
+import { finishReleaseTest, onTestClaimed, onTestReported, requestReleaseTest, scheduleReleaseTests, sweepReleaseTests } from "./service";
 import { hashSecret } from "./tokens";
 
 // Ciclo di vita del collaudo: lancio con limiti, annullamento, controllo periodico e correzione automatica (PGlite; lancio del
@@ -34,6 +34,27 @@ const modelMock = vi.hoisted(() => ({ skip: null as string | null }));
 vi.mock("./model", () => ({
   testModelFor: vi.fn(async () => (modelMock.skip ? { skip: modelMock.skip } : { aiModelId: 1, resolved: {} })),
 }));
+
+// Collaudatore finto: in «deliver» scrive l'esito e finisce, in «wait» resta acceso finché il segnale non lo ferma
+const agentMock = vi.hoisted(() => ({
+  mode: "deliver" as "deliver" | "wait",
+  outcome: "problems" as "ok" | "problems",
+  calls: [] as { testId: number; signal: AbortSignal | undefined }[],
+}));
+vi.mock("./run-test", async () => {
+  const { db: database, releaseTestsTable: table } = await import("@workspace/db");
+  const { eq: equals } = await import("drizzle-orm");
+  return {
+    runReleaseTest: vi.fn(async (testId: number, signal?: AbortSignal) => {
+      agentMock.calls.push({ testId, signal });
+      if (agentMock.mode === "wait") {
+        await new Promise<void>((resolve) => signal?.addEventListener("abort", () => resolve(), { once: true }));
+        return;
+      }
+      await database.update(table).set({ outcome: agentMock.outcome, report: "Resoconto dell'agente" }).where(equals(table.id, testId));
+    }),
+  };
+});
 
 const savedRepo = process.env["COLLAUDO_REPO"];
 const savedKey = process.env["CASELLO_SECRET_KEY"];
@@ -84,6 +105,9 @@ beforeEach(async () => {
   process.env["COLLAUDO_REPO"] = "ivan/collaudo";
   process.env["CASELLO_SECRET_KEY"] = "a".repeat(64);
   dispatched.length = 0;
+  agentMock.mode = "deliver";
+  agentMock.outcome = "problems";
+  agentMock.calls.length = 0;
   modelMock.skip = null;
   vi.spyOn(console, "log").mockImplementation(() => {});
   await pool.query("TRUNCATE users, apps, team_instances RESTART IDENTITY CASCADE");
@@ -254,7 +278,9 @@ describe("correzione automatica", () => {
         expect(item!.decisionNote).toBe("Resoconto problems");
       }
       const [turn] = await db.select().from(teamTurnsTable).where(eq(teamTurnsTable.instanceId, instanceId));
-      expect(JSON.stringify(turn!.reasons)).toContain("Resoconto problems");
+      const reasons = JSON.stringify(turn!.reasons);
+      expect(reasons).toContain(COLLAUDO_MESSAGES.autoRejectTurn(1, "Resoconto problems"));
+      expect(reasons).not.toContain("L'utente");
       await report(id, "done");
       // Nuova voce: il lavoro torna in attesa di «Porta in produzione»
       const queued = await enqueueReleaseItem({ userId, instanceId, recipient: "ivan/fix", summary: "Porta in produzione", detail: {} });
@@ -296,5 +322,79 @@ describe("correzione automatica", () => {
     const ok = await seedWork("verde", { autoFix: true });
     await finishReleaseTest(await delivered(ok.workId, "ok"));
     expect((await workRow(ok.workId)).status).toBe("awaiting_release");
+  });
+});
+
+/** Attende che la condizione diventi vera (lavoro in background). */
+async function until(check: () => Promise<boolean>): Promise<void> {
+  for (let i = 0; i < 100; i++) {
+    if (await check()) return;
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  throw new Error("condizione non raggiunta");
+}
+
+describe("claim, agente e report", () => {
+  /** Collaudo lanciato e preso dal runner (`running`). */
+  async function claimed(slug: string, opts: { autoFix?: boolean } = {}) {
+    const seeded = await seedWork(slug, opts);
+    const id = (await requestReleaseTest(seeded.workId))!;
+    await scheduleReleaseTests();
+    await db
+      .update(releaseTestsTable)
+      .set({ status: "running", tokenHash: "x", tokenExpiresAt: new Date(Date.now() + 60 * 60_000), leaseExpiresAt: new Date(Date.now() + 60_000) })
+      .where(eq(releaseTestsTable.id, id));
+    return { ...seeded, testId: id };
+  }
+
+  it("mode full: parte l'agente e con esito problems e «Correggi da solo» la voce è rifiutata", async () => {
+    const { testId, workId, itemId, instanceId } = await claimed("agente", { autoFix: true });
+    onTestClaimed(testId, "full");
+    await until(async () => (await workRow(workId)).status === "open");
+    expect(agentMock.calls.map((c) => c.testId)).toEqual([testId]);
+    const [item] = await db.select().from(pendingActionsTable).where(eq(pendingActionsTable.id, itemId));
+    expect(item!.status).toBe("rejected");
+    expect(item!.decisionNote).toBe("Resoconto dell'agente");
+    expect((await workRow(workId)).testAutoRejects).toBe(1);
+    const [turn] = await db.select().from(teamTurnsTable).where(eq(teamTurnsTable.instanceId, instanceId));
+    expect(JSON.stringify(turn!.reasons)).toContain(COLLAUDO_MESSAGES.autoRejectTurn(1, "Resoconto dell'agente"));
+    // Il collaudo resta `running` fino al report del runner
+    expect((await testRow(testId)).status).toBe("running");
+  });
+
+  it("mode relight: nessun agente", async () => {
+    const { testId } = await claimed("riaccendi");
+    onTestClaimed(testId, "relight");
+    await new Promise((r) => setTimeout(r, 50));
+    expect(agentMock.calls).toEqual([]);
+  });
+
+  it("il report del runner ferma l'agente", async () => {
+    agentMock.mode = "wait";
+    const { testId } = await claimed("report");
+    onTestClaimed(testId, "full");
+    await until(async () => agentMock.calls.length === 1);
+    const signal = agentMock.calls[0]!.signal!;
+    expect(signal.aborted).toBe(false);
+    await report(testId, "done");
+    onTestReported(testId);
+    expect(signal.aborted).toBe(true);
+  });
+
+  it("un collaudo più recente ferma l'agente del precedente (stato scritto prima)", async () => {
+    agentMock.mode = "wait";
+    const { testId, workId } = await claimed("sostituito");
+    onTestClaimed(testId, "full");
+    await until(async () => agentMock.calls.length === 1);
+    const signal = agentMock.calls[0]!.signal!;
+    let statusAtAbort: string | null = null;
+    signal.addEventListener("abort", () => {
+      void testRow(testId).then((r) => (statusAtAbort = r.status));
+    });
+    await db.update(teamWorksTable).set({ headSha: "fff9999" }).where(eq(teamWorksTable.id, workId));
+    await requestReleaseTest(workId);
+    expect(signal.aborted).toBe(true);
+    await until(async () => statusAtAbort !== null);
+    expect(statusAtAbort).toBe("cancelled");
   });
 });

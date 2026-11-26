@@ -18,6 +18,7 @@ import { enqueueTurnReason, notifyTurnQueued } from "./turn-queue";
 import { emitEvent } from "./events";
 import { WORK_MESSAGES, workRepo } from "./works";
 import { notifyWorkChanged } from "./work-hooks";
+import { COLLAUDO_MESSAGES } from "../collaudo/messages";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -168,14 +169,21 @@ export async function approveRelease(userId: number, action: PendingActionRow): 
  * Rifiuto dentro la transazione del rifiuto della voce: lavoro di nuovo `open` con la nota (la sorveglianza non lo richiude da
  * sola), turno `request` al capo con la nota. Il chiamante sveglia la coda dei turni dopo il commit.
  */
-export async function rejectRelease(action: PendingActionRow, note: string | null, tx: Tx): Promise<number | null> {
+export async function rejectRelease(
+  action: PendingActionRow,
+  note: string | null,
+  tx: Tx,
+  turnText?: (workNumber: number) => string,
+): Promise<number | null> {
   const [w] = await tx
     .update(teamWorksTable)
     .set({ status: "open", pendingActionId: null, rejectionNote: note ?? RELEASE_MESSAGES.rejectedNoNote, updatedAt: new Date() })
     .where(and(eq(teamWorksTable.pendingActionId, action.id), eq(teamWorksTable.status, "awaiting_release")))
     .returning();
   if (!w) return null;
-  const text = note
+  const text = turnText
+    ? turnText(w.number)
+    : note
     ? `L'utente ha rifiutato «Porta in produzione» del lavoro ${w.number} con questa nota: ${note}. Il lavoro è di nuovo aperto: correggi con compiti sul branch del lavoro, poi chiudi_lavoro.`
     : `L'utente ha rifiutato «Porta in produzione» del lavoro ${w.number} senza nota: chiedigli cosa correggere con segnala.`;
   await enqueueTurnReason(w.instanceId, { type: "request", text, source: "system" }, tx);
@@ -188,12 +196,13 @@ export const TEST_REJECT_NOTE_MAX = 4_000;
 /**
  * Rifiuto della voce `release` a nome del collaudo (correzione automatica, «Rimanda alla squadra»): come il rifiuto dell'utente,
  * voce `rejected` con la nota, lavoro di nuovo `open`, turno `request` del capo e avviso del cambio di lavoro, tutto in una
- * transazione con `onRejected` (es. il conteggio dei rimandi automatici). Voce non più in attesa o lavoro non più in attesa di
- * «Porta in produzione» → false, nulla scritto.
+ * transazione con `onRejected` (es. il conteggio dei rimandi automatici). Il testo per il capo dice chi ha deciso: il collaudo
+ * (`auto`) o l'utente (`user`). Voce non più in attesa o lavoro non più in attesa di «Porta in produzione» → false, nulla scritto.
  */
 export async function rejectReleaseForTest(
   actionId: number,
   note: string,
+  source: "auto" | "user",
   onRejected?: (tx: Tx, instanceId: number) => Promise<void>,
 ): Promise<boolean> {
   const text = note.slice(0, TEST_REJECT_NOTE_MAX);
@@ -207,7 +216,8 @@ export async function rejectReleaseForTest(
         .where(and(eq(pendingActionsTable.id, actionId), eq(pendingActionsTable.kind, "release"), eq(pendingActionsTable.status, "pending")))
         .returning();
       if (!rejected) throw notRejected;
-      const id = await rejectRelease(rejected, text, tx);
+      const turnText = (n: number) => (source === "auto" ? COLLAUDO_MESSAGES.autoRejectTurn(n, text) : COLLAUDO_MESSAGES.userRejectTurn(n, text));
+      const id = await rejectRelease(rejected, text, tx, turnText);
       // Voce in attesa ma lavoro già altrove: niente rifiuto a metà
       if (id === null) throw notRejected;
       if (onRejected) await onRejected(tx, id);

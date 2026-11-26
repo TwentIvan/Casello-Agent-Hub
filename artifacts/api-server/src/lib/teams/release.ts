@@ -4,7 +4,7 @@
 // esito con UPDATE condizionati (lavoro `releasing`, voce `executing`). Log: id, numeri e sha a 7.
 
 import { and, eq } from "drizzle-orm";
-import { db, pendingActionsTable, teamInstancesTable, teamWorksTable, type PendingActionRow, type TeamWork } from "@workspace/db";
+import { db, evolutionRoundsTable, pendingActionsTable, teamInstancesTable, teamWorksTable, type PendingActionRow, type TeamWork } from "@workspace/db";
 import { logger } from "../logger";
 import { userHasInstallation } from "../github/installations";
 import { requestArchitectureRefresh } from "../architecture/scheduler";
@@ -192,6 +192,9 @@ export async function rejectRelease(
   return w.instanceId;
 }
 
+/** Motivo del rifiuto sul giro del ciclo: come la nota dell'utente letta dal ciclo, al più 500 caratteri. */
+const CYCLE_NOTE_MAX = 500;
+
 /** Nota del rifiuto di una voce dal collaudo: al più 4 000 caratteri. */
 export const TEST_REJECT_NOTE_MAX = 4_000;
 
@@ -222,6 +225,11 @@ export async function rejectReleaseForTest(
       const id = await rejectRelease(rejected, text, tx, turnText);
       // Voce in attesa ma lavoro già altrove: niente rifiuto a metà
       if (id === null) throw notRejected;
+      // Giro del ciclo di evoluzione che seguiva la voce: il motivo è il resoconto del collaudo, mai «nota dell'utente»
+      await tx
+        .update(evolutionRoundsTable)
+        .set({ rejectionNote: COLLAUDO_MESSAGES.cycleRejectionNote(text).slice(0, CYCLE_NOTE_MAX) })
+        .where(and(eq(evolutionRoundsTable.pendingActionId, actionId), eq(evolutionRoundsTable.status, "awaiting_release")));
       if (onRejected) await onRejected(tx, id);
       return id;
     });

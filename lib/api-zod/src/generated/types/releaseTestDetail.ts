@@ -6,13 +6,10 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { ReleaseTest } from './releaseTest';
-import type { ReleaseTestActivity } from './releaseTestActivity';
 import type { ReleaseTestFile } from './releaseTestFile';
 import type { TeamStep } from './teamStep';
 
-export type ReleaseTestDetail = ReleaseTest & ({
+export type ReleaseTestDetail = ReleaseTest & {
   steps: TeamStep[];
   files: ReleaseTestFile[];
-  /** Cosa fa l'agente ora; null quando non serve */
-  activity: ReleaseTestActivity | null;
-});
+};

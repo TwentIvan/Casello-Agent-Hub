@@ -89,7 +89,7 @@ export function ReleaseDetail({
         (consoleHref !== undefined ? (
           <ReleaseTestSummary test={releaseTest} consoleHref={consoleHref} />
         ) : (
-          <ReleaseTestSection testId={releaseTest.id} decisionPending={status === "pending"} />
+          <ReleaseTestSection test={releaseTest} decisionPending={status === "pending"} />
         ))}
       <p className="text-ink-muted">
         Approvando, Botcave unisce nel lavoro le novità di {r.baseBranch || "base"}, apre la PR del lavoro e la unisce con un commit di merge solo con la

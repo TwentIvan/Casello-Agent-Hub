@@ -3772,7 +3772,7 @@ export const ListReleaseTestsResponseItem = zod.object({
   "steps": zod.string(),
   "expected": zod.string(),
   "actual": zod.string(),
-  "screenshot": zod.string().nullable().describe('Nome di uno screenshot tra i file del collaudo')
+  "screenshot": zod.number().nullable().describe('Id di uno screenshot tra i file del collaudo')
 })).nullable(),
   "notTestable": zod.array(zod.string()).nullable(),
   "error": zod.string().nullable().describe('Motivo fisso se il collaudo è saltato, fallito o annullato'),
@@ -3815,7 +3815,7 @@ export const GetReleaseTestResponse = zod.object({
   "steps": zod.string(),
   "expected": zod.string(),
   "actual": zod.string(),
-  "screenshot": zod.string().nullable().describe('Nome di uno screenshot tra i file del collaudo')
+  "screenshot": zod.number().nullable().describe('Id di uno screenshot tra i file del collaudo')
 })).nullable(),
   "notTestable": zod.array(zod.string()).nullable(),
   "error": zod.string().nullable().describe('Motivo fisso se il collaudo è saltato, fallito o annullato'),
@@ -3846,20 +3846,12 @@ export const GetReleaseTestResponse = zod.object({
   "name": zod.string(),
   "contentType": zod.string(),
   "size": zod.number()
-})),
-  "activity": zod.union([zod.object({
-  "startedAt": zod.coerce.date(),
-  "items": zod.array(zod.object({
-  "kind": zod.enum(['model', 'tool']),
-  "toolName": zod.string().nullable(),
-  "since": zod.coerce.date()
 }))
-}),zod.null()]).describe('Cosa fa l\'agente ora; null quando non serve')
 }))
 
 
 /**
- * Video WebM o screenshot PNG, con `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff` e `Cache-Control: no-store`. Un file che non è del collaudo → 404.
+ * Video WebM o screenshot PNG, con `Content-Disposition: inline` (si aprono nel browser), `X-Content-Type-Options: nosniff` e `Cache-Control: no-store`. Un file che non è del collaudo → 404.
  * @summary Scarica un file del collaudo
  */
 export const GetReleaseTestFileParams = zod.object({
@@ -3871,7 +3863,7 @@ export const GetReleaseTestFileResponse = zod.unknown()
 
 
 /**
- * Solo con il collaudo `done` e la voce «Porta in produzione» del lavoro ancora in attesa: mette in coda un nuovo collaudo in modalità `relight` (senza agente né modello, serve solo il link dal vivo). Altrimenti 409. Al più 6 al giorno (ora italiana) per voce, poi 429. Il token d'ambito `agent` non può.
+ * Solo sull'ultimo collaudo completo (`full`) del lavoro, `done`, e con la voce «Porta in produzione» ancora in attesa: mette in coda un nuovo collaudo in modalità `relight` (senza agente né modello, serve solo il link dal vivo). Altrimenti 409. Al più 6 al giorno (ora italiana) per voce, poi 429. Il token d'ambito `agent` non può.
  * @summary Riaccende il collaudo per il link dal vivo
  */
 export const RelightReleaseTestParams = zod.object({
@@ -3898,7 +3890,7 @@ export const RelightReleaseTestResponse = zod.object({
   "steps": zod.string(),
   "expected": zod.string(),
   "actual": zod.string(),
-  "screenshot": zod.string().nullable().describe('Nome di uno screenshot tra i file del collaudo')
+  "screenshot": zod.number().nullable().describe('Id di uno screenshot tra i file del collaudo')
 })).nullable(),
   "notTestable": zod.array(zod.string()).nullable(),
   "error": zod.string().nullable().describe('Motivo fisso se il collaudo è saltato, fallito o annullato'),
@@ -3913,7 +3905,7 @@ export const RelightReleaseTestResponse = zod.object({
 
 
 /**
- * Rifiuta la voce «Porta in produzione» con nota = resoconto del collaudo (al più 4 000 caratteri); il lavoro torna aperto e il capo riceve il resoconto. Non conta nelle correzioni automatiche. Solo con il login; voce non più in attesa → 409.
+ * Rifiuta la voce «Porta in produzione» con nota = resoconto del collaudo (al più 4 000 caratteri); il lavoro torna aperto e il capo riceve il resoconto. Solo sull'ultimo collaudo completo (`full`) del lavoro, concluso (`done` o `failed`), di cui usa il resoconto. Non conta nelle correzioni automatiche. Solo con il login; voce non più in attesa, collaudo non concluso o non l'ultimo completo → 409.
  * @summary Rimanda il lavoro alla squadra dopo il collaudo
  */
 export const SendBackReleaseTestParams = zod.object({
@@ -9838,8 +9830,15 @@ export const ListPendingActionsResponse = zod.object({
   "releaseTest": zod.union([zod.object({
   "id": zod.number(),
   "status": zod.enum(['queued', 'dispatching', 'running', 'done', 'failed', 'skipped', 'cancelled']),
-  "outcome": zod.union([zod.literal('ok'),zod.literal('problems'),zod.literal('not_startable'),zod.literal(null)]).nullable()
-}),zod.null()]).optional().describe('Ultimo collaudo del lavoro di una voce `release` (assente per le altre voci)'),
+  "outcome": zod.union([zod.literal('ok'),zod.literal('problems'),zod.literal('not_startable'),zod.literal(null)]).nullable(),
+  "relight": zod.union([zod.object({
+  "id": zod.number(),
+  "status": zod.enum(['queued', 'dispatching', 'running', 'done', 'failed', 'skipped', 'cancelled']),
+  "error": zod.string().nullable().describe('Motivo fisso se la riaccensione non è riuscita'),
+  "tunnelUrl": zod.string().nullable().describe('Link pubblico temporaneo alla prova dal vivo (solo finché è valido)'),
+  "tunnelUntil": zod.coerce.date().nullable()
+}),zod.null()]).describe('«Riaccendi» più recente dopo il collaudo completo, con il suo link dal vivo; null se non ce n\'è')
+}).describe('Ultimo collaudo completo (`full`) del lavoro; «Riaccendi» e «Rimanda alla squadra» operano su questo'),zod.null()]).optional().describe('Ultimo collaudo completo del lavoro di una voce `release` (assente per le altre voci)'),
   "createdAt": zod.coerce.date(),
   "decidedAt": zod.coerce.date().nullable(),
   "finishedAt": zod.coerce.date().nullable()
@@ -9902,8 +9901,15 @@ export const GetPendingActionResponse = zod.object({
   "releaseTest": zod.union([zod.object({
   "id": zod.number(),
   "status": zod.enum(['queued', 'dispatching', 'running', 'done', 'failed', 'skipped', 'cancelled']),
-  "outcome": zod.union([zod.literal('ok'),zod.literal('problems'),zod.literal('not_startable'),zod.literal(null)]).nullable()
-}),zod.null()]).optional().describe('Ultimo collaudo del lavoro di una voce `release` (assente per le altre voci)'),
+  "outcome": zod.union([zod.literal('ok'),zod.literal('problems'),zod.literal('not_startable'),zod.literal(null)]).nullable(),
+  "relight": zod.union([zod.object({
+  "id": zod.number(),
+  "status": zod.enum(['queued', 'dispatching', 'running', 'done', 'failed', 'skipped', 'cancelled']),
+  "error": zod.string().nullable().describe('Motivo fisso se la riaccensione non è riuscita'),
+  "tunnelUrl": zod.string().nullable().describe('Link pubblico temporaneo alla prova dal vivo (solo finché è valido)'),
+  "tunnelUntil": zod.coerce.date().nullable()
+}),zod.null()]).describe('«Riaccendi» più recente dopo il collaudo completo, con il suo link dal vivo; null se non ce n\'è')
+}).describe('Ultimo collaudo completo (`full`) del lavoro; «Riaccendi» e «Rimanda alla squadra» operano su questo'),zod.null()]).optional().describe('Ultimo collaudo completo del lavoro di una voce `release` (assente per le altre voci)'),
   "createdAt": zod.coerce.date(),
   "decidedAt": zod.coerce.date().nullable(),
   "finishedAt": zod.coerce.date().nullable()
@@ -9979,8 +9985,15 @@ export const ApprovePendingActionResponse = zod.object({
   "releaseTest": zod.union([zod.object({
   "id": zod.number(),
   "status": zod.enum(['queued', 'dispatching', 'running', 'done', 'failed', 'skipped', 'cancelled']),
-  "outcome": zod.union([zod.literal('ok'),zod.literal('problems'),zod.literal('not_startable'),zod.literal(null)]).nullable()
-}),zod.null()]).optional().describe('Ultimo collaudo del lavoro di una voce `release` (assente per le altre voci)'),
+  "outcome": zod.union([zod.literal('ok'),zod.literal('problems'),zod.literal('not_startable'),zod.literal(null)]).nullable(),
+  "relight": zod.union([zod.object({
+  "id": zod.number(),
+  "status": zod.enum(['queued', 'dispatching', 'running', 'done', 'failed', 'skipped', 'cancelled']),
+  "error": zod.string().nullable().describe('Motivo fisso se la riaccensione non è riuscita'),
+  "tunnelUrl": zod.string().nullable().describe('Link pubblico temporaneo alla prova dal vivo (solo finché è valido)'),
+  "tunnelUntil": zod.coerce.date().nullable()
+}),zod.null()]).describe('«Riaccendi» più recente dopo il collaudo completo, con il suo link dal vivo; null se non ce n\'è')
+}).describe('Ultimo collaudo completo (`full`) del lavoro; «Riaccendi» e «Rimanda alla squadra» operano su questo'),zod.null()]).optional().describe('Ultimo collaudo completo del lavoro di una voce `release` (assente per le altre voci)'),
   "createdAt": zod.coerce.date(),
   "decidedAt": zod.coerce.date().nullable(),
   "finishedAt": zod.coerce.date().nullable()
@@ -10050,8 +10063,15 @@ export const RejectPendingActionResponse = zod.object({
   "releaseTest": zod.union([zod.object({
   "id": zod.number(),
   "status": zod.enum(['queued', 'dispatching', 'running', 'done', 'failed', 'skipped', 'cancelled']),
-  "outcome": zod.union([zod.literal('ok'),zod.literal('problems'),zod.literal('not_startable'),zod.literal(null)]).nullable()
-}),zod.null()]).optional().describe('Ultimo collaudo del lavoro di una voce `release` (assente per le altre voci)'),
+  "outcome": zod.union([zod.literal('ok'),zod.literal('problems'),zod.literal('not_startable'),zod.literal(null)]).nullable(),
+  "relight": zod.union([zod.object({
+  "id": zod.number(),
+  "status": zod.enum(['queued', 'dispatching', 'running', 'done', 'failed', 'skipped', 'cancelled']),
+  "error": zod.string().nullable().describe('Motivo fisso se la riaccensione non è riuscita'),
+  "tunnelUrl": zod.string().nullable().describe('Link pubblico temporaneo alla prova dal vivo (solo finché è valido)'),
+  "tunnelUntil": zod.coerce.date().nullable()
+}),zod.null()]).describe('«Riaccendi» più recente dopo il collaudo completo, con il suo link dal vivo; null se non ce n\'è')
+}).describe('Ultimo collaudo completo (`full`) del lavoro; «Riaccendi» e «Rimanda alla squadra» operano su questo'),zod.null()]).optional().describe('Ultimo collaudo completo del lavoro di una voce `release` (assente per le altre voci)'),
   "createdAt": zod.coerce.date(),
   "decidedAt": zod.coerce.date().nullable(),
   "finishedAt": zod.coerce.date().nullable()

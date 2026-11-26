@@ -1432,10 +1432,10 @@ export interface ReleaseTestProblem {
   expected: string;
   actual: string;
   /**
-     * Nome di uno screenshot tra i file del collaudo
+     * Id di uno screenshot tra i file del collaudo
      * @nullable
      */
-  screenshot: string | null;
+  screenshot: number | null;
 }
 
 export type ReleaseTestMode = typeof ReleaseTestMode[keyof typeof ReleaseTestMode];
@@ -1533,26 +1533,6 @@ export interface ReleaseTestFile {
   size: number;
 }
 
-export type ReleaseTestActivityItemsItemKind = typeof ReleaseTestActivityItemsItemKind[keyof typeof ReleaseTestActivityItemsItemKind];
-
-
-export const ReleaseTestActivityItemsItemKind = {
-  model: 'model',
-  tool: 'tool',
-} as const;
-
-export type ReleaseTestActivityItemsItem = {
-  kind: ReleaseTestActivityItemsItemKind;
-  /** @nullable */
-  toolName: string | null;
-  since: string;
-};
-
-export interface ReleaseTestActivity {
-  startedAt: string;
-  items: ReleaseTestActivityItemsItem[];
-}
-
 export interface TeamStep {
   id: number;
   position: number;
@@ -1578,12 +1558,10 @@ export interface TeamStep {
   createdAt: string;
 }
 
-export type ReleaseTestDetail = ReleaseTest & ({
+export type ReleaseTestDetail = ReleaseTest & {
   steps: TeamStep[];
   files: ReleaseTestFile[];
-  /** Cosa fa l'agente ora; null quando non serve */
-  activity: ReleaseTestActivity | null;
-});
+};
 
 export interface CollaudoDelivered {
   error: string;
@@ -2546,11 +2524,46 @@ export const QueuedReleaseTestOutcome = {
   not_startable: 'not_startable',
 } as const;
 
+export type QueuedReleaseRelightStatus = typeof QueuedReleaseRelightStatus[keyof typeof QueuedReleaseRelightStatus];
+
+
+export const QueuedReleaseRelightStatus = {
+  queued: 'queued',
+  dispatching: 'dispatching',
+  running: 'running',
+  done: 'done',
+  failed: 'failed',
+  skipped: 'skipped',
+  cancelled: 'cancelled',
+} as const;
+
+export interface QueuedReleaseRelight {
+  id: number;
+  status: QueuedReleaseRelightStatus;
+  /**
+     * Motivo fisso se la riaccensione non è riuscita
+     * @nullable
+     */
+  error: string | null;
+  /**
+     * Link pubblico temporaneo alla prova dal vivo (solo finché è valido)
+     * @nullable
+     */
+  tunnelUrl: string | null;
+  /** @nullable */
+  tunnelUntil: string | null;
+}
+
+/**
+ * Ultimo collaudo completo (`full`) del lavoro; «Riaccendi» e «Rimanda alla squadra» operano su questo
+ */
 export interface QueuedReleaseTest {
   id: number;
   status: QueuedReleaseTestStatus;
   /** @nullable */
   outcome: QueuedReleaseTestOutcome;
+  /** «Riaccendi» più recente dopo il collaudo completo, con il suo link dal vivo; null se non ce n'è */
+  relight: QueuedReleaseRelight | null;
 }
 
 export interface QueuedAction {
@@ -2582,7 +2595,7 @@ export interface QueuedAction {
   decisionNote: string | null;
   /** Voce di piano approvata dal ciclo di evoluzione della squadra, non da un clic */
   decidedByCycle?: boolean;
-  /** Ultimo collaudo del lavoro di una voce `release` (assente per le altre voci) */
+  /** Ultimo collaudo completo del lavoro di una voce `release` (assente per le altre voci) */
   releaseTest?: QueuedReleaseTest | null;
   createdAt: string;
   /** @nullable */

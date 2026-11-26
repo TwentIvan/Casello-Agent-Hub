@@ -42,7 +42,7 @@ export interface QueuedAction {
   decisionNote: string | null;
   /** Voce di piano approvata dal ciclo di evoluzione della squadra, non da un clic */
   decidedByCycle?: boolean;
-  /** Ultimo collaudo del lavoro di una voce `release` (assente per le altre voci) */
+  /** Ultimo collaudo completo del lavoro di una voce `release` (assente per le altre voci) */
   releaseTest?: QueuedReleaseTest | null;
   createdAt: Date;
   /** @nullable */

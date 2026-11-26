@@ -103,6 +103,18 @@ async function pendingReleaseItem(test: ReleaseTestRow, userId: number): Promise
   return { ok: true, actionId: work.actionId };
 }
 
+/** Il collaudo è l'ultimo collaudo completo (`full`) del suo lavoro. */
+async function isLatestFull(test: ReleaseTestRow): Promise<boolean> {
+  if (test.mode !== "full") return false;
+  const [latest] = await db
+    .select({ id: releaseTestsTable.id })
+    .from(releaseTestsTable)
+    .where(and(eq(releaseTestsTable.workId, test.workId), eq(releaseTestsTable.mode, "full")))
+    .orderBy(desc(releaseTestsTable.id))
+    .limit(1);
+  return latest?.id === test.id;
+}
+
 export function createReleaseTestsRouter(): IRouter {
   const router: IRouter = Router();
 
@@ -145,7 +157,6 @@ export function createReleaseTestsRouter(): IRouter {
         ...publicTest(row, (await autoRejectsByWork([row])).get(row.workId) ?? 0),
         steps: steps.map(({ testId: _testId, ...step }) => step),
         files,
-        activity: null,
       }),
     );
   });
@@ -162,7 +173,8 @@ export function createReleaseTestsRouter(): IRouter {
       return;
     }
     res.setHeader("Content-Type", file.contentType);
-    res.setHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(file.name)}"`);
+    // PNG e WebM (tipo letto dai primi byte al caricamento): si aprono nel browser, con nosniff
+    res.setHeader("Content-Disposition", `inline; filename="${encodeURIComponent(file.name)}"`);
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Cache-Control", "no-store");
     res.send(file.content);
@@ -189,13 +201,7 @@ export function createReleaseTestsRouter(): IRouter {
       return;
     }
     // Solo l'ultimo collaudo completo del lavoro si riaccende: uno più vecchio è superato da un collaudo nuovo
-    const [latest] = await db
-      .select({ id: releaseTestsTable.id })
-      .from(releaseTestsTable)
-      .where(and(eq(releaseTestsTable.workId, test.workId), eq(releaseTestsTable.mode, "full")))
-      .orderBy(desc(releaseTestsTable.id))
-      .limit(1);
-    if (latest?.id !== test.id) {
+    if (!(await isLatestFull(test))) {
       res.status(409).json({ error: MSG.relightNotLatest });
       return;
     }
@@ -227,6 +233,15 @@ export function createReleaseTestsRouter(): IRouter {
     }
     if (!item.ok) {
       res.status(409).json({ error: MSG.sendBackGone });
+      return;
+    }
+    // Il resoconto è quello dell'ultimo collaudo completo, concluso
+    if (!(await isLatestFull(test))) {
+      res.status(409).json({ error: MSG.sendBackNotLatest });
+      return;
+    }
+    if (test.status !== "done" && test.status !== "failed") {
+      res.status(409).json({ error: MSG.relightNotDone });
       return;
     }
     const note = test.report ?? test.error ?? COLLAUDO_MESSAGES.noReport;

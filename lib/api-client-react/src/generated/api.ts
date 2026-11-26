@@ -9174,7 +9174,7 @@ export const getGetReleaseTestFileUrl = (id: number,
 }
 
 /**
- * Video WebM o screenshot PNG, con `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff` e `Cache-Control: no-store`. Un file che non è del collaudo → 404.
+ * Video WebM o screenshot PNG, con `Content-Disposition: inline` (si aprono nel browser), `X-Content-Type-Options: nosniff` e `Cache-Control: no-store`. Un file che non è del collaudo → 404.
  * @summary Scarica un file del collaudo
  */
 export const getReleaseTestFile = async (id: number,
@@ -9256,7 +9256,7 @@ export const getRelightReleaseTestUrl = (id: number,) => {
 }
 
 /**
- * Solo con il collaudo `done` e la voce «Porta in produzione» del lavoro ancora in attesa: mette in coda un nuovo collaudo in modalità `relight` (senza agente né modello, serve solo il link dal vivo). Altrimenti 409. Al più 6 al giorno (ora italiana) per voce, poi 429. Il token d'ambito `agent` non può.
+ * Solo sull'ultimo collaudo completo (`full`) del lavoro, `done`, e con la voce «Porta in produzione» ancora in attesa: mette in coda un nuovo collaudo in modalità `relight` (senza agente né modello, serve solo il link dal vivo). Altrimenti 409. Al più 6 al giorno (ora italiana) per voce, poi 429. Il token d'ambito `agent` non può.
  * @summary Riaccende il collaudo per il link dal vivo
  */
 export const relightReleaseTest = async (id: number, options?: RequestInit): Promise<ReleaseTest> => {
@@ -9327,7 +9327,7 @@ export const getSendBackReleaseTestUrl = (id: number,) => {
 }
 
 /**
- * Rifiuta la voce «Porta in produzione» con nota = resoconto del collaudo (al più 4 000 caratteri); il lavoro torna aperto e il capo riceve il resoconto. Non conta nelle correzioni automatiche. Solo con il login; voce non più in attesa → 409.
+ * Rifiuta la voce «Porta in produzione» con nota = resoconto del collaudo (al più 4 000 caratteri); il lavoro torna aperto e il capo riceve il resoconto. Solo sull'ultimo collaudo completo (`full`) del lavoro, concluso (`done` o `failed`), di cui usa il resoconto. Non conta nelle correzioni automatiche. Solo con il login; voce non più in attesa, collaudo non concluso o non l'ultimo completo → 409.
  * @summary Rimanda il lavoro alla squadra dopo il collaudo
  */
 export const sendBackReleaseTest = async (id: number, options?: RequestInit): Promise<void> => {

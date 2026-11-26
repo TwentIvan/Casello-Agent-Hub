@@ -86,8 +86,8 @@ function toQueuedAction(
     errorMessage: action.errorMessage,
     decisionNote: action.decisionNote,
     decidedByCycle: action.decidedByCycle,
-    // Esito del collaudo del lavoro, solo per le voci «Porta in produzione» che ne hanno uno
-    releaseTest: test ? { id: test.id, status: test.status, outcome: test.outcome } : null,
+    // Ultimo collaudo completo del lavoro, solo per le voci «Porta in produzione» che ne hanno uno, con l'ultimo «Riaccendi»
+    releaseTest: test ? { id: test.id, status: test.status, outcome: test.outcome, relight: test.relight } : null,
     createdAt: action.createdAt,
     decidedAt: action.decidedAt,
     finishedAt: action.finishedAt,

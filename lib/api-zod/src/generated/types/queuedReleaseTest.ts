@@ -5,12 +5,18 @@
  * Casello — hub per agentificare applicazioni
  * OpenAPI spec version: 0.1.0
  */
+import type { QueuedReleaseRelight } from './queuedReleaseRelight';
 import type { QueuedReleaseTestOutcome } from './queuedReleaseTestOutcome';
 import type { QueuedReleaseTestStatus } from './queuedReleaseTestStatus';
 
+/**
+ * Ultimo collaudo completo (`full`) del lavoro; «Riaccendi» e «Rimanda alla squadra» operano su questo
+ */
 export interface QueuedReleaseTest {
   id: number;
   status: QueuedReleaseTestStatus;
   /** @nullable */
   outcome: QueuedReleaseTestOutcome;
+  /** «Riaccendi» più recente dopo il collaudo completo, con il suo link dal vivo; null se non ce n'è */
+  relight: QueuedReleaseRelight | null;
 }

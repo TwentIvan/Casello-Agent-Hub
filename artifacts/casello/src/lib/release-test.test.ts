@@ -1,5 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { autoFixCounter, releaseTestLabel, releaseTestLed, releaseTestOpen, tunnelRemaining } from "./release-test";
+import {
+  autoFixCounter,
+  relightLabel,
+  releaseTestElapsed,
+  releaseTestLabel,
+  releaseTestLed,
+  releaseTestOpen,
+  releaseTestProgress,
+  releaseTestStepLine,
+  tunnelRemaining,
+} from "./release-test";
 
 describe("releaseTestLed", () => {
   it("un LED per stato ed esito", () => {
@@ -40,4 +50,28 @@ describe("tunnelRemaining", () => {
 
 describe("autoFixCounter", () => {
   it("n di 2", () => expect(autoFixCounter(1)).toBe("correzioni automatiche 1 di 2"));
+});
+
+describe("avanzamento del collaudo", () => {
+  it("frasi fisse per passo, senza argomenti", () => {
+    expect(releaseTestStepLine({ type: "model", toolName: null })).toBe("Ragiona");
+    expect(releaseTestStepLine({ type: "tool", toolName: "shell", args: { command: "cat .env" } })).toBe("Esegue un comando sul runner");
+    expect(releaseTestStepLine({ type: "tool", toolName: "browser", args: { action: "open", url: "/x" } })).toBe("Apre una pagina nel browser");
+    expect(releaseTestStepLine({ type: "tool", toolName: "browser", args: { action: "altro" } })).toBe("Usa il browser");
+    expect(releaseTestStepLine({ type: "tool", toolName: "salva_ricetta" })).toBe("Salva la ricetta di avvio");
+    expect(releaseTestStepLine({ type: "tool", toolName: "nuovo" })).toBe("Usa nuovo");
+  });
+  it("gli ultimi passi e il tempo trascorso", () => {
+    const steps = Array.from({ length: 7 }, (_, i) => ({ type: "tool", toolName: i % 2 ? "shell" : "consegna_collaudo" }));
+    expect(releaseTestProgress(steps)).toHaveLength(5);
+    expect(releaseTestProgress(steps).at(-1)).toBe("Consegna l'esito");
+    const now = new Date("2026-11-27T10:03:07Z");
+    expect(releaseTestElapsed("2026-11-27T10:00:00Z", now)).toBe("3 min 07 s");
+    expect(releaseTestElapsed("2026-11-27T10:02:20Z", now)).toBe("47 s");
+    expect(releaseTestElapsed(null, now)).toBeNull();
+  });
+  it("stato della riaccensione", () => {
+    expect(relightLabel({ status: "running", error: null })).toBe("Riaccensione in corso");
+    expect(relightLabel({ status: "failed", error: "ricetta di avvio non riuscita" })).toBe("Riaccensione non riuscita: ricetta di avvio non riuscita");
+  });
 });

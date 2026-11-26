@@ -523,7 +523,7 @@ describe("ciclo di evoluzione automatica: flusso completo", () => {
     expect(runNow.status).toBe(202);
     await waitFor(() => chatBodies().filter((b) => !isLeadTurn(b as LeadBody)).length > before, "prima chiamata del secondo giro");
     const prompt2 = userPrompt(chatBodies().filter((b) => !isLeadTurn(b as LeadBody))[before]!);
-    expect(prompt2).toContain("Nota dell'utente sull'ultimo lavoro del ciclo");
+    expect(prompt2).toContain("Motivo del rifiuto dell'ultimo lavoro del ciclo");
     expect(prompt2).toContain("Manca la paginazione");
     await waitFor(async () => (await rounds())[0]?.status !== "analyzing", "fine del secondo giro");
     await waitEvolutionIdleForTests();

@@ -5,6 +5,7 @@ import {
   appArchitectureTable,
   appsTable,
   db,
+  releaseTestFilesTable,
   releaseTestStepsTable,
   releaseTestsTable,
   teamCodeTasksTable,
@@ -73,7 +74,8 @@ const ProblemSchema = z.object({
   passi: z.string().trim().min(1).max(4_000),
   atteso: z.string().trim().min(1).max(2_000),
   ottenuto: z.string().trim().min(1).max(2_000),
-  screenshot: z.string().trim().min(1).max(200).optional(),
+  // Id del file restituito dallo strumento `browser` con action screenshot (anche come testo di sole cifre)
+  screenshot: z.union([z.number().int().positive(), z.string().trim().regex(/^\d{1,12}$/).transform(Number)]).optional(),
 });
 
 const DeliverySchema = z.object({
@@ -90,7 +92,8 @@ export interface TestProblem {
   steps: string;
   expected: string;
   actual: string;
-  screenshot: string | null;
+  /** Id dello screenshot tra i file del collaudo. */
+  screenshot: number | null;
 }
 
 interface Delivery {
@@ -150,7 +153,7 @@ export const DELIVER_TOOL = internalTool("consegna_collaudo", "Chiude il collaud
           passi: { type: "string", description: "Passi per riprodurlo" },
           atteso: { type: "string" },
           ottenuto: { type: "string" },
-          screenshot: { type: "string", description: "Nome dello screenshot (facoltativo)" },
+          screenshot: { type: "integer", description: "Id dello screenshot, cioè l'uscita di `browser` con action screenshot (facoltativo)" },
         },
         required: ["titolo", "passi", "atteso", "ottenuto"],
       },
@@ -211,10 +214,21 @@ function toDelivery(data: z.infer<typeof DeliverySchema>): Delivery {
       steps: clean(p.passi),
       expected: clean(p.atteso),
       actual: clean(p.ottenuto),
-      screenshot: p.screenshot ? clean(p.screenshot) : null,
+      screenshot: p.screenshot ?? null,
     })),
     notTestable: data.nonProvabile.map(clean),
   };
+}
+
+/** Tiene solo gli id degli screenshot caricati da questo collaudo (un id inventato diventa null). */
+async function withKnownScreenshots(testId: number, problems: TestProblem[]): Promise<TestProblem[]> {
+  if (!problems.some((p) => p.screenshot !== null)) return problems;
+  const files = await db
+    .select({ id: releaseTestFilesTable.id })
+    .from(releaseTestFilesTable)
+    .where(and(eq(releaseTestFilesTable.testId, testId), eq(releaseTestFilesTable.kind, "screenshot")));
+  const known = new Set(files.map((f) => f.id));
+  return problems.map((p) => (p.screenshot !== null && !known.has(p.screenshot) ? { ...p, screenshot: null } : p));
 }
 
 /** Salva la ricetta come versione nuova dell'App (sorgente `agent`); restituisce la versione. */
@@ -315,12 +329,13 @@ export async function runReleaseTest(testId: number, signal?: AbortSignal): Prom
 
     await expireOpenCommands(testId);
     if (delivery) {
+      const problems = await withKnownScreenshots(testId, delivery.problems);
       await db
         .update(releaseTestsTable)
         .set({
           outcome: toDbOutcome(delivery.outcome),
           report: delivery.report,
-          problems: delivery.problems,
+          problems,
           notTestable: delivery.notTestable,
           error: null,
           ...usageColumns(usage),

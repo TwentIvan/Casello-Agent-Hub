@@ -123,7 +123,7 @@ async function seed(opts: { owner?: number } = {}) {
       status: "done",
       outcome: "problems",
       report: "# Esito\nIl pulsante Salva non risponde.\n",
-      problems: [{ task: "t1", title: "Salva non risponde", steps: "Apri e premi", expected: "Salva", actual: "Niente", screenshot: "salva.png" }],
+      problems: [{ task: "t1", title: "Salva non risponde", steps: "Apri e premi", expected: "Salva", actual: "Niente", screenshot: 1 }],
       notTestable: ["Invio email"],
       tokenHash: "segreto-hash",
       codeHash: "altro-hash",
@@ -168,12 +168,12 @@ describe("elenco e dettaglio dei collaudi", () => {
     expect(res.json).toMatchObject({
       id: testId,
       report: expect.stringContaining("Salva non risponde"),
-      problems: [{ title: "Salva non risponde", screenshot: "salva.png" }],
+      problems: [{ title: "Salva non risponde", screenshot: 1 }],
       notTestable: ["Invio email"],
       tunnelUrl: null,
       tunnelUntil: null,
-      activity: null,
     });
+    expect(res.json).not.toHaveProperty("activity");
     expect(res.json.steps).toHaveLength(1);
     expect(res.json.steps[0]).toMatchObject({ position: 1, type: "tool", toolName: "shell", ok: true });
     expect(res.json.steps[0]).not.toHaveProperty("testId");
@@ -197,7 +197,8 @@ describe("elenco e dettaglio dei collaudi", () => {
     const res = await realFetch(`${base}/api/release-tests/${testId}/files/${file!.id}`);
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("image/png");
-    expect(res.headers.get("content-disposition")).toContain("attachment");
+    // Si apre nel browser (miniatura e video), sempre con nosniff
+    expect(res.headers.get("content-disposition")).toMatch(/^inline;/);
     expect(res.headers.get("x-content-type-options")).toBe("nosniff");
     expect(res.headers.get("cache-control")).toBe("no-store");
     expect(Buffer.from(await res.arrayBuffer()).equals(PNG)).toBe(true);
@@ -236,11 +237,11 @@ describe("Riaccendi", () => {
       .returning();
     const res = await api("POST", `/release-tests/${testId}/relight`);
     expect(res.status).toBe(409);
-    expect(res.json.error).toBe("«Riaccendi» vale solo per l'ultimo collaudo del lavoro");
+    expect(res.json.error).toBe("«Riaccendi» vale solo per l'ultimo collaudo completo del lavoro");
     expect((await db.select().from(releaseTestsTable).where(eq(releaseTestsTable.id, fresh!.id)))[0]!.status).toBe("running");
   });
 
-  it("un collaudo full in corso di un'altra squadra della stessa App non si annulla: 409", async () => {
+  it("un collaudo full in corso di un'altra squadra della stessa App non si annulla: il relight aspetta in coda", async () => {
     const { testId, appId } = await seed();
     const [other] = await db
       .insert(teamInstancesTable)
@@ -262,8 +263,8 @@ describe("Riaccendi", () => {
     } finally {
       delete process.env["COLLAUDO_REPO"];
     }
-    expect(res.status).toBe(409);
-    expect(res.json.error).toBe("un collaudo è in corso per questa App: riprova quando finisce");
+    expect(res.status, res.text).toBe(202);
+    expect(res.json).toMatchObject({ mode: "relight", status: "queued" });
     expect((await db.select().from(releaseTestsTable).where(eq(releaseTestsTable.id, running!.id)))[0]!.status).toBe("running");
   });
 
@@ -310,6 +311,21 @@ describe("Rimanda alla squadra", () => {
     const again = await api("POST", `/release-tests/${testId}/send-back`);
     expect(again.status).toBe(409);
     expect(again.json.error).toBe("la voce «Porta in produzione» è già stata decisa");
+  });
+
+  it("solo l'ultimo collaudo completo, concluso: un relight o un collaudo in corso → 409", async () => {
+    const { testId, workId, appId, instanceId } = await seed();
+    const [relight] = await db.insert(releaseTestsTable).values({ appId, workId, instanceId, sha: "def5678", mode: "relight", status: "done" }).returning();
+    const onRelight = await api("POST", `/release-tests/${relight!.id}/send-back`);
+    expect(onRelight.status).toBe(409);
+    expect(onRelight.json.error).toBe("«Rimanda alla squadra» vale solo per l'ultimo collaudo completo del lavoro");
+    await db.update(releaseTestsTable).set({ status: "running" }).where(eq(releaseTestsTable.id, testId));
+    const running = await api("POST", `/release-tests/${testId}/send-back`);
+    expect(running.status).toBe(409);
+    expect(running.json.error).toBe("il collaudo non è concluso: aspetta la fine");
+    // Un collaudo completo non riuscito si rimanda con il suo motivo
+    await db.update(releaseTestsTable).set({ status: "failed", report: null, error: "collaudo interrotto" }).where(eq(releaseTestsTable.id, testId));
+    expect((await api("POST", `/release-tests/${testId}/send-back`)).status).toBe(204);
   });
 
   it("voce di un altro utente → 404, collaudo inesistente → 404", async () => {
@@ -379,9 +395,30 @@ describe("«Da confermare» e configurazione", () => {
     const res = await api("GET", "/pending-actions");
     expect(res.status, res.text).toBe(200);
     const item = res.json.actions.find((a: { number: number }) => a.number === itemNumber);
-    expect(item.releaseTest).toEqual({ id: testId, status: "done", outcome: "problems" });
+    expect(item.releaseTest).toEqual({ id: testId, status: "done", outcome: "problems", relight: null });
     const detail = await api("GET", `/pending-actions/${itemNumber}`);
-    expect(detail.json.releaseTest).toEqual({ id: testId, status: "done", outcome: "problems" });
+    expect(detail.json.releaseTest).toEqual({ id: testId, status: "done", outcome: "problems", relight: null });
+  });
+
+  it("dopo «Riaccendi» la voce porta ancora il collaudo completo, con il relight e il suo link dal vivo a parte", async () => {
+    const { itemNumber, testId, workId, appId, instanceId } = await seed();
+    const until = new Date(Date.now() + 10 * 60_000);
+    const [relight] = await db
+      .insert(releaseTestsTable)
+      .values({ appId, workId, instanceId, sha: "def5678", mode: "relight", status: "running", tunnelUrl: "https://vivo.trycloudflare.com", tunnelUntil: until })
+      .returning();
+    const detail = await api("GET", `/pending-actions/${itemNumber}`);
+    expect(detail.json.releaseTest).toEqual({
+      id: testId,
+      status: "done",
+      outcome: "problems",
+      relight: { id: relight!.id, status: "running", error: null, tunnelUrl: "https://vivo.trycloudflare.com", tunnelUntil: until.toISOString() },
+    });
+    // «Riaccendi» si chiede ancora sul collaudo completo; il centralino riassume sempre il completo
+    await db.update(releaseTestsTable).set({ status: "failed", error: "ricetta di avvio non riuscita", tunnelUrl: null, tunnelUntil: null }).where(eq(releaseTestsTable.id, relight!.id));
+    expect((await api("POST", `/release-tests/${testId}/relight`)).status).toBe(202);
+    const { pendingQueue } = await import("../lib/teams/centralino");
+    expect((await pendingQueue(userId)).actions[0]).toMatchObject({ releaseTest: { outcome: "problems", summary: "Esito" } });
   });
 
   it("coda del centralino con l'esito e la sintesi del resoconto", async () => {

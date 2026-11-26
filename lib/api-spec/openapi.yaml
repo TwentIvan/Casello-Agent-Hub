@@ -3022,8 +3022,8 @@ paths:
       tags: [collaudo]
       summary: Scarica un file del collaudo
       description: >-
-        Video WebM o screenshot PNG, con `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff` e
-        `Cache-Control: no-store`. Un file che non è del collaudo → 404.
+        Video WebM o screenshot PNG, con `Content-Disposition: inline` (si aprono nel browser), `X-Content-Type-Options:
+        nosniff` e `Cache-Control: no-store`. Un file che non è del collaudo → 404.
       parameters:
         - $ref: "#/components/parameters/IdParam"
         - name: fileId
@@ -3050,7 +3050,7 @@ paths:
       tags: [collaudo]
       summary: Riaccende il collaudo per il link dal vivo
       description: >-
-        Solo con il collaudo `done` e la voce «Porta in produzione» del lavoro ancora in attesa: mette in coda un nuovo
+        Solo sull'ultimo collaudo completo (`full`) del lavoro, `done`, e con la voce «Porta in produzione» ancora in attesa: mette in coda un nuovo
         collaudo in modalità `relight` (senza agente né modello, serve solo il link dal vivo). Altrimenti 409. Al più 6 al
         giorno (ora italiana) per voce, poi 429. Il token d'ambito `agent` non può.
       parameters:
@@ -3080,8 +3080,9 @@ paths:
       summary: Rimanda il lavoro alla squadra dopo il collaudo
       description: >-
         Rifiuta la voce «Porta in produzione» con nota = resoconto del collaudo (al più 4 000 caratteri); il lavoro torna
-        aperto e il capo riceve il resoconto. Non conta nelle correzioni automatiche. Solo con il login; voce non più in
-        attesa → 409.
+        aperto e il capo riceve il resoconto. Solo sull'ultimo collaudo completo (`full`) del lavoro, concluso (`done` o
+        `failed`), di cui usa il resoconto. Non conta nelle correzioni automatiche. Solo con il login; voce non più in
+        attesa, collaudo non concluso o non l'ultimo completo → 409.
       parameters:
         - $ref: "#/components/parameters/IdParam"
       responses:
@@ -9027,8 +9028,8 @@ components:
         actual:
           type: string
         screenshot:
-          type: ["string", "null"]
-          description: Nome di uno screenshot tra i file del collaudo
+          type: ["integer", "null"]
+          description: Id di uno screenshot tra i file del collaudo
 
     ReleaseTest:
       type: object
@@ -9106,33 +9107,11 @@ components:
         size:
           type: integer
 
-    ReleaseTestActivity:
-      type: object
-      required: [startedAt, items]
-      properties:
-        startedAt:
-          type: string
-          format: date-time
-        items:
-          type: array
-          items:
-            type: object
-            required: [kind, toolName, since]
-            properties:
-              kind:
-                type: string
-                enum: [model, tool]
-              toolName:
-                type: ["string", "null"]
-              since:
-                type: string
-                format: date-time
-
     ReleaseTestDetail:
       allOf:
         - $ref: "#/components/schemas/ReleaseTest"
         - type: object
-          required: [steps, files, activity]
+          required: [steps, files]
           properties:
             steps:
               type: array
@@ -9142,11 +9121,6 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/ReleaseTestFile"
-            activity:
-              description: Cosa fa l'agente ora; null quando non serve
-              oneOf:
-                - $ref: "#/components/schemas/ReleaseTestActivity"
-                - type: "null"
 
     CollaudoDelivered:
       type: object
@@ -10179,7 +10153,7 @@ components:
           type: boolean
           description: Voce di piano approvata dal ciclo di evoluzione della squadra, non da un clic
         releaseTest:
-          description: Ultimo collaudo del lavoro di una voce `release` (assente per le altre voci)
+          description: Ultimo collaudo completo del lavoro di una voce `release` (assente per le altre voci)
           oneOf:
             - $ref: "#/components/schemas/QueuedReleaseTest"
             - type: "null"
@@ -10195,7 +10169,8 @@ components:
 
     QueuedReleaseTest:
       type: object
-      required: [id, status, outcome]
+      description: Ultimo collaudo completo (`full`) del lavoro; «Riaccendi» e «Rimanda alla squadra» operano su questo
+      required: [id, status, outcome, relight]
       properties:
         id:
           type: integer
@@ -10205,6 +10180,30 @@ components:
         outcome:
           type: ["string", "null"]
           enum: [ok, problems, not_startable, null]
+        relight:
+          description: «Riaccendi» più recente dopo il collaudo completo, con il suo link dal vivo; null se non ce n'è
+          oneOf:
+            - $ref: "#/components/schemas/QueuedReleaseRelight"
+            - type: "null"
+
+    QueuedReleaseRelight:
+      type: object
+      required: [id, status, error, tunnelUrl, tunnelUntil]
+      properties:
+        id:
+          type: integer
+        status:
+          type: string
+          enum: [queued, dispatching, running, done, failed, skipped, cancelled]
+        error:
+          type: ["string", "null"]
+          description: Motivo fisso se la riaccensione non è riuscita
+        tunnelUrl:
+          type: ["string", "null"]
+          description: Link pubblico temporaneo alla prova dal vivo (solo finché è valido)
+        tunnelUntil:
+          type: ["string", "null"]
+          format: date-time
 
     QueuedProposal:
       type: object

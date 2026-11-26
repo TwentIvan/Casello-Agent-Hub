@@ -17,8 +17,8 @@ export interface ReleaseTestProblem {
   expected: string;
   actual: string;
   /**
-     * Nome di uno screenshot tra i file del collaudo
+     * Id di uno screenshot tra i file del collaudo
      * @nullable
      */
-  screenshot: string | null;
+  screenshot: number | null;
 }

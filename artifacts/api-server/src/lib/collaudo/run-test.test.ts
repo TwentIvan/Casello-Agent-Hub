@@ -8,6 +8,7 @@ import {
   db,
   pool,
   releaseTestCommandsTable,
+  releaseTestFilesTable,
   releaseTestStepsTable,
   releaseTestsTable,
   teamInstancesTable,
@@ -180,6 +181,28 @@ describe("collaudatore", () => {
     expect(steps.filter((s) => s.type === "tool").map((s) => s.toolName)).toEqual(["shell", "browser", "salva_ricetta", "consegna_collaudo"]);
     // Dopo la consegna il ciclo si ferma: nessuna chiamata al modello in più
     expect(fake.requests.filter((r) => r.path === "/v1/chat/completions")).toHaveLength(4);
+  });
+
+  it("lo screenshot di un problema è l'id del file del collaudo; un id inventato diventa null", async () => {
+    const [file] = await db
+      .insert(releaseTestFilesTable)
+      .values({ testId, kind: "screenshot", name: "screenshot-1.png", contentType: "image/png", size: 1, sha256: "a", content: Buffer.from([1]) })
+      .returning();
+    const problem = { titolo: "Rotto", passi: "Apri", atteso: "Ok", ottenuto: "Errore" };
+    script = [
+      call("consegna_collaudo", {
+        esito: "problemi",
+        resoconto: "Due problemi.",
+        problemi: [
+          { ...problem, screenshot: file!.id },
+          { ...problem, screenshot: String(file!.id) },
+          { ...problem, screenshot: 999_999 },
+        ],
+      }),
+    ];
+    await runReleaseTest(testId);
+    const row = await testRow();
+    expect((row.problems as { screenshot: number | null }[]).map((p) => p.screenshot)).toEqual([file!.id, file!.id, null]);
   });
 
   it("resoconto e problemi ripuliti dalle credenziali (anche nei passi)", async () => {

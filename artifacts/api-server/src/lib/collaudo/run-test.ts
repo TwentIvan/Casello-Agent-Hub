@@ -49,18 +49,18 @@ const BROWSER_ACTIONS = ["open", "click", "fill", "press", "snapshot", "screensh
 const ShellArgs = z
   .object({
     command: z.string().trim().min(1).max(4_000),
-    cwd: z.string().trim().min(1).max(300).optional(),
-    timeoutSec: z.number().int().min(1).optional(),
-    background: z.boolean().optional(),
+    cwd: z.string().trim().min(1).max(300).nullish(),
+    timeoutSec: z.number().int().min(1).nullish(),
+    background: z.boolean().nullish(),
   })
   .strict();
 
 const BrowserArgs = z
   .object({
     action: z.enum(BROWSER_ACTIONS),
-    url: z.string().min(1).max(2_000).optional(),
-    selector: z.string().min(1).max(500).optional(),
-    text: z.string().max(2_000).optional(),
+    url: z.string().min(1).max(2_000).nullish(),
+    selector: z.string().min(1).max(500).nullish(),
+    text: z.string().max(2_000).nullish(),
   })
   .strict();
 
@@ -171,6 +171,11 @@ const MESSAGES = {
   alreadyDelivered: "collaudo già consegnato",
   unknown: "strumento non disponibile",
 } as const;
+
+/** Argomenti senza i campi null o assenti (molti provider mandano `"cwd": null`). */
+function withoutNulls(args: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(args).filter(([, v]) => v !== null && v !== undefined));
+}
 
 function errName(err: unknown): string {
   return err instanceof Error ? err.name : typeof err;
@@ -315,6 +320,9 @@ export async function runReleaseTest(testId: number, signal?: AbortSignal): Prom
           ...usageColumns(usage),
         })
         .where(eq(releaseTestsTable.id, testId));
+    } else if (signal?.aborted) {
+      // Interrotto da fuori (tempo scaduto, collaudo chiuso): il motivo lo scrive chi ha annullato, qui solo l'uso
+      await db.update(releaseTestsTable).set(usageColumns(usage)).where(eq(releaseTestsTable.id, testId));
     } else {
       await db.update(releaseTestsTable).set({ error: COLLAUDO_MESSAGES.notDelivered, ...usageColumns(usage) }).where(eq(releaseTestsTable.id, testId));
     }
@@ -364,12 +372,12 @@ async function runCollaudoLoop(input: LoopInput): Promise<Delivery | null> {
         if (typeof args.timeoutSec === "number" && args.timeoutSec > MAX_SHELL_TIMEOUT_SEC) return { ok: false, content: MESSAGES.shellTimeout };
         const parsed = ShellArgs.safeParse(args);
         if (!parsed.success) return { ok: false, content: MESSAGES.invalidShell };
-        return runCommand("shell", parsed.data);
+        return runCommand("shell", withoutNulls(parsed.data));
       }
       case BROWSER_TOOL.name: {
         const parsed = BrowserArgs.safeParse(args);
         if (!parsed.success) return { ok: false, content: MESSAGES.invalidBrowser };
-        return runCommand("browser", parsed.data);
+        return runCommand("browser", withoutNulls(parsed.data));
       }
       case SAVE_RECIPE_TOOL.name: {
         const checked = validateRecipe(args.ricetta);

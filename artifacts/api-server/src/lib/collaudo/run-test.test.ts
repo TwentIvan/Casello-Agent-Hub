@@ -248,6 +248,30 @@ describe("collaudatore", () => {
     expect(toolMsgs(16).at(-1)!.content).toContain("Fase di avvio esaurita");
   });
 
+  it("shell con cwd null: accodato senza la chiave cwd", async () => {
+    script = [call("shell", { command: "ls", cwd: null, timeoutSec: null }), call("consegna_collaudo", { esito: "ok", resoconto: "ok" })];
+    await runReleaseTest(testId);
+    expect(runner.received).toEqual([{ kind: "shell", args: { command: "ls" } }]);
+  });
+
+  it("interrotto da fuori senza consegna: error di chi ha annullato intatto, uso registrato", async () => {
+    await db.update(releaseTestsTable).set({ error: COLLAUDO_MESSAGES.timeout }).where(eq(releaseTestsTable.id, testId));
+    const abort = new AbortController();
+    // Il runner finto si ferma: il comando resta in attesa finché il segnale non annulla
+    await runner.stop();
+    runner = { received: [], stop: async () => {} };
+    script = [call("shell", { command: "sleep 10" })];
+    const running = runReleaseTest(testId, abort.signal);
+    await new Promise((r) => setTimeout(r, 300));
+    abort.abort();
+    await running;
+    const row = await testRow();
+    expect(row.error).toBe(COLLAUDO_MESSAGES.timeout);
+    expect(row.outcome).toBeNull();
+    expect(row.aiModelId).toBe(aiModelId);
+    expect(row.promptTokens).toBe(1000);
+  });
+
   it("capo senza modello: error e nessuna chiamata al modello", async () => {
     await db.update(teamInstancesTable).set({ roles: [{ ...lead(aiModelId), aiModelId: null }] }).where(eq(teamInstancesTable.id, instanceId));
     await runReleaseTest(testId);

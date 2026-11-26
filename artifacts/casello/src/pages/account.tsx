@@ -17,6 +17,7 @@ import { CentralinoModelCard } from "@/components/account/centralino-model-card"
 import { DefaultModelCard } from "@/components/account/default-model-card";
 import { ApiTokensSection } from "@/components/account/api-tokens-section";
 import { MemoriesSection } from "@/components/account/memories-section";
+import { CollaudoSetupCard } from "@/components/account/collaudo-setup-card";
 import { NodesSection } from "@/components/account/nodes-section";
 import { OAuthGrantsSection } from "@/components/account/oauth-grants-section";
 import { AuditEventsSection } from "@/components/account/audit-events-section";
@@ -230,6 +231,7 @@ export default function AccountPage() {
           <ApiTokensSection />
           <OAuthGrantsSection />
           <NodesSection />
+          <CollaudoSetupCard />
           <AuditEventsSection />
           {githubLinked && <InstallationsCard githubEnabled={me.data.githubEnabled} />}
         </>

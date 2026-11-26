@@ -1,11 +1,24 @@
+import type { QueuedReleaseTest } from "@workspace/api-client-react";
 import { Led } from "@/components/brand/led";
+import { ReleaseTestSection, ReleaseTestSummary } from "@/components/actions/release-test-section";
 import { readReleaseArgs, releaseStatusText } from "@/lib/work-status";
 
 /**
  * Voce «Porta in produzione» di un lavoro su branch unico: versione di prova, compiti con issue e PR unite, script `-post` da
  * applicare su Neon dopo il deploy. Approvando, Botcave apre la PR del lavoro verso il base e la unisce con la CI verde.
  */
-export function ReleaseDetail({ args, status }: { args: unknown; status: string }) {
+export function ReleaseDetail({
+  args,
+  status,
+  releaseTest,
+  consoleHref,
+}: {
+  args: unknown;
+  status: string;
+  releaseTest?: QueuedReleaseTest | null;
+  /** Presente nel pannello incorporato (senza cookie): solo l'esito e il rimando alla console. */
+  consoleHref?: string;
+}) {
   const r = readReleaseArgs(args);
   const waiting = releaseStatusText(status);
   return (
@@ -72,6 +85,12 @@ export function ReleaseDetail({ args, status }: { args: unknown; status: string 
           </ul>
         </div>
       )}
+      {releaseTest &&
+        (consoleHref !== undefined ? (
+          <ReleaseTestSummary test={releaseTest} consoleHref={consoleHref} />
+        ) : (
+          <ReleaseTestSection testId={releaseTest.id} decisionPending={status === "pending"} />
+        ))}
       <p className="text-ink-muted">
         Approvando, Botcave unisce nel lavoro le novità di {r.baseBranch || "base"}, apre la PR del lavoro e la unisce con un commit di merge solo con la
         CI verde. Rifiutando con una nota il lavoro torna alla squadra.

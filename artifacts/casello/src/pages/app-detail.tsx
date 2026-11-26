@@ -13,6 +13,7 @@ import { BotNamesCard } from "@/components/apps/bot-names-card";
 import { PageActionsCard } from "@/components/apps/page-actions-card";
 import { AppArchitectureCard } from "@/components/apps/app-architecture-card";
 import { FirstDeployCard } from "@/components/apps/first-deploy-card";
+import { ReleaseTestCard } from "@/components/apps/release-test-card";
 import { EvolutionCard } from "@/components/apps/evolution-card";
 import { ToolCatalog } from "@/components/apps/tool-catalog";
 import { StatusBadge } from "@/components/status-badge";
@@ -79,6 +80,7 @@ export default function AppDetailPage() {
           <AppSourcesCard app={app.data} />
           <AppArchitectureCard app={app.data} />
           <EvolutionCard app={app.data} />
+          <ReleaseTestCard app={app.data} />
           <BugReportsCard app={app.data} />
           <BotNamesCard app={app.data} />
           <PageActionsCard app={app.data} />

@@ -202,6 +202,8 @@ export async function rejectAction(userId: number, number: number, note: string 
     if (releaseInstance !== null) {
       notifyTurnQueued(releaseInstance);
       notifyWorkChanged(releaseInstance);
+      // Voce rifiutata a mano: il collaudo del lavoro non serve più (import dinamico: il collaudo importa le squadre)
+      await (await import("../collaudo/service")).cancelReleaseTestsQuietly(releaseInstance);
     }
     if (row.kind === "merge") {
       await notifyMergeRejected(row).catch((err: unknown) =>

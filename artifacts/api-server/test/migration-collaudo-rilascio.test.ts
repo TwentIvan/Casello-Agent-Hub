@@ -5,8 +5,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8");
 const SCRIPT = "../../../docs/migrations/2026-11-26-collaudo-rilascio.sql";
+const QUEUE_SCRIPT = "../../../docs/migrations/2026-11-27-collaudo-coda-per-app.sql";
 
-describe("migrazione 2026-11-26-collaudo-rilascio", () => {
+describe("migrazioni 2026-11-26-collaudo-rilascio e 2026-11-27-collaudo-coda-per-app", () => {
   let db: PGlite;
 
   beforeAll(async () => {
@@ -15,6 +16,8 @@ describe("migrazione 2026-11-26-collaudo-rilascio", () => {
     // Lo script si applica due volte, anche sopra lo schema che già lo contiene
     await db.exec(read(SCRIPT));
     await db.exec(read(SCRIPT));
+    await db.exec(read(QUEUE_SCRIPT));
+    await db.exec(read(QUEUE_SCRIPT));
     await db.exec(`
       INSERT INTO apps (name, slug, base_url) VALUES ('App', 'app', 'https://app.example.com');
       INSERT INTO team_instances (name, ref_app_id, ref_type, ref_id, ref_title, roles)
@@ -32,17 +35,20 @@ describe("migrazione 2026-11-26-collaudo-rilascio", () => {
     db.exec(`INSERT INTO release_tests (app_id, work_id, instance_id, sha, status)
       SELECT a.id, w.id, w.instance_id, 'abc', '${status}' FROM apps a, team_works w LIMIT 1`);
 
-  it("due collaudi aperti per la stessa App violano l'indice unico", async () => {
+  it("più collaudi in coda per la stessa App, uno solo lanciato o in corso", async () => {
     await insert("queued");
-    await expect(insert("queued")).rejects.toThrow(/release_tests_one_open_per_app/);
-    await expect(insert("running")).rejects.toThrow(/release_tests_one_open_per_app/);
+    await insert("queued");
+    await insert("running");
+    await expect(insert("running")).rejects.toThrow(/release_tests_one_active_per_app/);
+    await expect(insert("dispatching")).rejects.toThrow(/release_tests_one_active_per_app/);
   });
 
-  it("un collaudo chiuso e uno aperto per la stessa App convivono", async () => {
+  it("collaudi chiusi accanto a quelli aperti; segno di vita dell'agente vuoto", async () => {
     await insert("done");
     await insert("failed");
-    const r = await db.query<any>("SELECT status FROM release_tests ORDER BY id");
-    expect(r.rows.map((x) => x.status)).toEqual(["queued", "done", "failed"]);
+    const r = await db.query<any>("SELECT status, agent_seen_at FROM release_tests ORDER BY id");
+    expect(r.rows.map((x) => x.status)).toEqual(["queued", "queued", "running", "done", "failed"]);
+    expect(r.rows.every((x) => x.agent_seen_at === null)).toBe(true);
   });
 
   it("i valori predefiniti delle colonne nuove", async () => {

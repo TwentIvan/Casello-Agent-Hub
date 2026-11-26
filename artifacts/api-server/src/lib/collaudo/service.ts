@@ -33,7 +33,24 @@ export const MAX_ACTIVE_TESTS = 3;
 export const FILE_RETENTION_MS = 30 * 24 * 60 * 60_000;
 
 const OPEN = ["queued", "dispatching", "running"] as const;
+/** Senza un agente vivo da 5 minuti un collaudo `full` in corso e senza esito si chiude «collaudo interrotto». */
+export const AGENT_LOST_MS = 5 * 60_000;
+
+/** Segreti e link di un collaudo che si chiude: codice, token, lease e tunnel. */
+const CLOSED_SECRETS = {
+  codeHash: null,
+  codeExpiresAt: null,
+  tokenHash: null,
+  tokenExpiresAt: null,
+  leaseExpiresAt: null,
+  tunnelUrl: null,
+  tunnelUntil: null,
+} as const;
 const errName = (err: unknown) => (err instanceof Error ? err.name : "unknown");
+const isUniqueViolation = (err: unknown): boolean => {
+  const e = err as { code?: unknown; cause?: { code?: unknown } } | null;
+  return e?.code === "23505" || e?.cause?.code === "23505";
+};
 
 // Collaudatori in esecuzione in questo processo, per fermarli quando il collaudo si chiude da fuori
 const agents = new Map<number, AbortController>();
@@ -54,8 +71,9 @@ function scheduleInBackground(): void {
 }
 
 /**
- * Chiede il collaudo del lavoro alla sua testa. Idempotente per (lavoro, sha, modo) aperto; un altro collaudo aperto della
- * stessa App (altro lavoro, altra testa o altro modo) si annulla, tranne un collaudo `full` aperto davanti a un `relight` (null). Senza repository di collaudo nasce `skipped`.
+ * Chiede il collaudo del lavoro alla sua testa. Idempotente per (lavoro, sha, modo) aperto; un altro collaudo aperto dello
+ * stesso lavoro (altra testa o altro modo) si annulla, tranne un collaudo `full` aperto davanti a un `relight` (null). I collaudi
+ * aperti di altri lavori della stessa App restano: questo aspetta in coda. Senza repository di collaudo nasce `skipped`.
  */
 export async function requestReleaseTest(workId: number, mode: "full" | "relight" = "full"): Promise<number | null> {
   const [work] = await db
@@ -79,31 +97,21 @@ export async function requestReleaseTest(workId: number, mode: "full" | "relight
   const result = await db.transaction(async (tx) => {
     // La riga dell'App serializza le richieste di collaudo della stessa App
     await tx.select({ id: appsTable.id }).from(appsTable).where(eq(appsTable.id, work.appId)).for("update");
-    const [open] = await tx
+    const open = await tx
       .select()
       .from(releaseTestsTable)
-      .where(and(eq(releaseTestsTable.appId, work.appId), inArray(releaseTestsTable.status, [...OPEN])))
-      .limit(1);
-    if (open && open.workId === workId && open.sha === sha && open.mode === mode) return { id: open.id, cancelled: null };
-    // «Riaccendi» non toglie mai di mezzo un collaudo vero in corso (di questo lavoro o di un'altra squadra dell'App)
-    if (open && mode === "relight" && open.mode === "full") return null;
-    let cancelled: number | null = null;
-    if (open) {
+      .where(and(eq(releaseTestsTable.workId, workId), inArray(releaseTestsTable.status, [...OPEN])));
+    const same = open.find((o) => o.sha === sha && o.mode === mode);
+    if (same) return { id: same.id, cancelled: [] as number[] };
+    // «Riaccendi» non toglie mai di mezzo un collaudo vero in corso del lavoro
+    if (mode === "relight" && open.some((o) => o.mode === "full")) return null;
+    const cancelled: number[] = [];
+    for (const o of open) {
       await tx
         .update(releaseTestsTable)
-        .set({
-          status: "cancelled",
-          finishedAt: new Date(),
-          codeHash: null,
-          codeExpiresAt: null,
-          tokenHash: null,
-          tokenExpiresAt: null,
-          leaseExpiresAt: null,
-          tunnelUrl: null,
-          tunnelUntil: null,
-        })
-        .where(eq(releaseTestsTable.id, open.id));
-      cancelled = open.id;
+        .set({ status: "cancelled", finishedAt: new Date(), ...CLOSED_SECRETS })
+        .where(eq(releaseTestsTable.id, o.id));
+      cancelled.push(o.id);
     }
     const [row] = await tx
       .insert(releaseTestsTable)
@@ -113,17 +121,52 @@ export async function requestReleaseTest(workId: number, mode: "full" | "relight
   });
 
   if (result === null) {
-    logger.info({ workId, mode }, "Riaccendi rifiutato: collaudo in corso per l'App");
+    logger.info({ workId, mode }, "Riaccendi rifiutato: collaudo in corso per il lavoro");
     return null;
   }
-  if (result.cancelled !== null) {
-    stopTestAgent(result.cancelled);
-    await expireOpenCommands(result.cancelled);
-    logger.info({ releaseTestId: result.cancelled, replacedBy: result.id }, "Collaudo annullato da uno più recente");
+  for (const id of result.cancelled) {
+    stopTestAgent(id);
+    await expireOpenCommands(id);
+    logger.info({ releaseTestId: id, replacedBy: result.id }, "Collaudo annullato da uno più recente");
   }
   logger.info({ releaseTestId: result.id, workId, sha: sha.slice(0, 7), mode }, "Collaudo in coda");
   scheduleInBackground();
   return result.id;
+}
+
+/**
+ * Chiude i collaudi aperti dei lavori della squadra quando non servono più (voce «Porta in produzione» decisa a mano, squadra
+ * chiusa, ciclo della squadra in pausa): senza esito diventano `cancelled`, con l'esito già consegnato (resta acceso solo il link
+ * dal vivo) `done`. Token e link revocati nello stesso UPDATE condizionato, poi l'agente si ferma: il runner riceve 401.
+ */
+export async function cancelReleaseTestsOfInstance(instanceId: number): Promise<number[]> {
+  const rows = await db
+    .update(releaseTestsTable)
+    .set({
+      status: sql`case when ${releaseTestsTable.outcome} is not null then 'done' else 'cancelled' end::release_test_status`,
+      finishedAt: new Date(),
+      ...CLOSED_SECRETS,
+    })
+    .where(and(eq(releaseTestsTable.instanceId, instanceId), inArray(releaseTestsTable.status, [...OPEN])))
+    .returning({ id: releaseTestsTable.id });
+  for (const { id } of rows) {
+    stopTestAgent(id);
+    await expireOpenCommands(id);
+  }
+  if (rows.length > 0) {
+    logger.info({ instanceId, closed: rows.length }, "Collaudi non più necessari chiusi");
+    scheduleInBackground();
+  }
+  return rows.map((r) => r.id);
+}
+
+/** Come cancelReleaseTestsOfInstance, senza far risalire gli errori (si chiama dopo un commit già riuscito). */
+export async function cancelReleaseTestsQuietly(instanceId: number): Promise<void> {
+  try {
+    await cancelReleaseTestsOfInstance(instanceId);
+  } catch (err) {
+    logger.error({ instanceId, errName: errName(err) }, "Chiusura dei collaudi non riuscita");
+  }
 }
 
 let scheduling: Promise<void> | null = null;
@@ -158,18 +201,31 @@ async function scheduleOnce(): Promise<void> {
       .from(releaseTestsTable)
       .where(inArray(releaseTestsTable.status, ["dispatching", "running"]));
     if (n >= MAX_ACTIVE_TESTS) return;
+    // Le App con un collaudo già lanciato o in corso si saltano: i loro collaudi aspettano in coda
     const [next] = await db
       .select()
       .from(releaseTestsTable)
-      .where(eq(releaseTestsTable.status, "queued"))
+      .where(
+        and(
+          eq(releaseTestsTable.status, "queued"),
+          sql`not exists (select 1 from release_tests active where active.app_id = ${releaseTestsTable.appId} and active.status in ('dispatching', 'running'))`,
+        ),
+      )
       .orderBy(releaseTestsTable.createdAt, releaseTestsTable.id)
       .limit(1);
     if (!next) return;
-    const claimed = await db
-      .update(releaseTestsTable)
-      .set({ status: "dispatching" })
-      .where(and(eq(releaseTestsTable.id, next.id), eq(releaseTestsTable.status, "queued")))
-      .returning({ id: releaseTestsTable.id });
+    let claimed: { id: number }[];
+    try {
+      claimed = await db
+        .update(releaseTestsTable)
+        .set({ status: "dispatching" })
+        .where(and(eq(releaseTestsTable.id, next.id), eq(releaseTestsTable.status, "queued")))
+        .returning({ id: releaseTestsTable.id });
+    } catch (err) {
+      // Un altro processo ha lanciato nel frattempo un collaudo della stessa App (indice unico): al giro dopo si salta
+      if (isUniqueViolation(err)) continue;
+      throw err;
+    }
     if (claimed.length === 0) continue;
     dispatchingHere.add(next.id);
     try {
@@ -274,7 +330,8 @@ export async function finishReleaseTest(testId: number): Promise<void> {
 
 /**
  * Controllo periodico: codice non scambiato entro 15 minuti → `failed` «runner non partito…»; token scaduto → «tempo del
- * collaudo scaduto»; lease scaduta → «collaudo interrotto». Con l'esito già consegnato il collaudo chiude `done` (si è perso
+ * collaudo scaduto»; lease scaduta o collaudatore senza segni di vita da 5 minuti → «collaudo interrotto» (token revocato: il
+ * runner riceve 401 e si ferma). Con l'esito già consegnato il collaudo chiude `done` (si è perso
  * solo il link dal vivo). Poi via i file più vecchi di 30 giorni.
  */
 export async function sweepReleaseTests(now: Date = new Date()): Promise<void> {
@@ -291,13 +348,24 @@ export async function sweepReleaseTests(now: Date = new Date()): Promise<void> {
     )
     .returning({ id: releaseTestsTable.id });
 
+  // Agente collaudatore perso (riavvio o deploy dell'API): nessun segno di vita da 5 minuti su un collaudo `full` senza esito
+  const agentLostBefore = new Date(now.getTime() - AGENT_LOST_MS);
+  const agentLost = and(
+    eq(releaseTestsTable.mode, "full"),
+    isNull(releaseTestsTable.outcome),
+    isNull(releaseTestsTable.error),
+    or(
+      lt(releaseTestsTable.agentSeenAt, agentLostBefore),
+      and(isNull(releaseTestsTable.agentSeenAt), lt(releaseTestsTable.startedAt, agentLostBefore)),
+    ),
+  );
   const expired = await db
     .select({ id: releaseTestsTable.id, outcome: releaseTestsTable.outcome, tokenExpiresAt: releaseTestsTable.tokenExpiresAt })
     .from(releaseTestsTable)
     .where(
       and(
         eq(releaseTestsTable.status, "running"),
-        or(lt(releaseTestsTable.tokenExpiresAt, now), lt(releaseTestsTable.leaseExpiresAt, now), isNull(releaseTestsTable.tokenExpiresAt)),
+        or(lt(releaseTestsTable.tokenExpiresAt, now), lt(releaseTestsTable.leaseExpiresAt, now), isNull(releaseTestsTable.tokenExpiresAt), agentLost),
       ),
     );
   const closed: number[] = [];
@@ -323,6 +391,22 @@ export async function sweepReleaseTests(now: Date = new Date()): Promise<void> {
     stopTestAgent(row.id);
     await expireOpenCommands(row.id);
   }
+
+  // Rete di sicurezza: collaudi aperti di squadre chiuse o con il ciclo di evoluzione in pausa (gli avvisi diretti possono mancare)
+  const stale = await db
+    .selectDistinct({ instanceId: releaseTestsTable.instanceId })
+    .from(releaseTestsTable)
+    .innerJoin(teamInstancesTable, eq(teamInstancesTable.id, releaseTestsTable.instanceId))
+    .where(
+      and(
+        inArray(releaseTestsTable.status, [...OPEN]),
+        or(
+          eq(teamInstancesTable.status, "closed"),
+          sql`exists (select 1 from evolution_cycles c where c.team_instance_id = ${releaseTestsTable.instanceId} and c.status = 'paused')`,
+        ),
+      ),
+    );
+  for (const { instanceId } of stale) await cancelReleaseTestsOfInstance(instanceId);
 
   await db.delete(releaseTestFilesTable).where(lt(releaseTestFilesTable.createdAt, new Date(now.getTime() - FILE_RETENTION_MS)));
 

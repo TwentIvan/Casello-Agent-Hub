@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import {
   appsTable,
   db,
+  evolutionCyclesTable,
   pendingActionsTable,
   pool,
   releaseTestFilesTable,
@@ -13,11 +14,21 @@ import {
   teamWorksTable,
 } from "@workspace/db";
 import { ensureUser } from "../../../test/team-node-fixture";
+import { rejectAction } from "../actions/decide";
 import { enqueueReleaseItem } from "../actions/queue";
+import { closeInstance } from "../teams/instances";
 import { requireCollaudoToken } from "./auth";
 import { COLLAUDO_MESSAGES } from "./messages";
 import { report } from "./protocol";
-import { finishReleaseTest, onTestClaimed, onTestReported, requestReleaseTest, scheduleReleaseTests, sweepReleaseTests } from "./service";
+import {
+  cancelReleaseTestsOfInstance,
+  finishReleaseTest,
+  onTestClaimed,
+  onTestReported,
+  requestReleaseTest,
+  scheduleReleaseTests,
+  sweepReleaseTests,
+} from "./service";
 import { hashSecret } from "./tokens";
 
 // Ciclo di vita del collaudo: lancio con limiti, annullamento, controllo periodico e correzione automatica (PGlite; lancio del
@@ -64,11 +75,14 @@ const testRow = async (id: number) => (await db.select().from(releaseTestsTable)
 const workRow = async (id: number) => (await db.select().from(teamWorksTable).where(eq(teamWorksTable.id, id)))[0]!;
 
 /** App con squadra attiva e lavoro in attesa di «Porta in produzione» con la sua voce `release`. */
-async function seedWork(slug: string, opts: { autoFix?: boolean; headSha?: string } = {}) {
-  const [app] = await db
-    .insert(appsTable)
-    .values({ name: slug, slug, baseUrl: `https://${slug}.example.com`, sourceType: "github", sourceRepo: `ivan/${slug}`, sourceInstallationId: 7, testAutoFix: opts.autoFix ?? false })
-    .returning();
+async function seedWork(slug: string, opts: { autoFix?: boolean; headSha?: string; appId?: number } = {}) {
+  const [app] =
+    opts.appId !== undefined
+      ? [{ id: opts.appId }]
+      : await db
+          .insert(appsTable)
+          .values({ name: slug, slug, baseUrl: `https://${slug}.example.com`, sourceType: "github", sourceRepo: `ivan/${slug}`, sourceInstallationId: 7, testAutoFix: opts.autoFix ?? false })
+          .returning();
   const [instance] = await db
     .insert(teamInstancesTable)
     .values({ name: `Squadra ${slug}`, refAppId: app!.id, refType: "piano", refId: "1", refTitle: "Piano", roles: [], status: "active", createdBy: userId, activatedBy: userId })
@@ -256,6 +270,85 @@ describe("ciclo di vita del collaudo", () => {
     await requireCollaudoToken({ headers: { authorization: `Bearer ${token}` }, get: () => undefined } as never, res as never, next);
     expect(res.statusCode).toBe(401);
     expect(next).not.toHaveBeenCalled();
+  });
+
+  it("un collaudo di un altro lavoro della stessa App resta e aspetta in coda, poi parte", async () => {
+    const first = await seedWork("coda-app");
+    const second = await seedWork("coda-app-2", { appId: first.appId });
+    const a = (await requestReleaseTest(first.workId))!;
+    await scheduleReleaseTests();
+    expect((await testRow(a)).status).toBe("dispatching");
+    const b = (await requestReleaseTest(second.workId))!;
+    await scheduleReleaseTests();
+    // Il primo non si annulla; il secondo aspetta perché l'App ha già un collaudo lanciato
+    expect((await testRow(a)).status).toBe("dispatching");
+    expect((await testRow(b)).status).toBe("queued");
+    expect(dispatched).toEqual([a]);
+    await db.update(releaseTestsTable).set({ status: "running", outcome: "ok" }).where(eq(releaseTestsTable.id, a));
+    await report(a, "done");
+    await scheduleReleaseTests();
+    expect((await testRow(b)).status).toBe("dispatching");
+    expect(dispatched).toEqual([a, b]);
+  });
+
+  it("collaudatore senza segni di vita da 5 minuti: interrotto e token revocato", async () => {
+    const lost = await seedWork("agente-perso");
+    const alive = await seedWork("agente-vivo");
+    const neverSeen = await seedWork("agente-mai-visto");
+    const ids = [lost, alive, neverSeen].map(() => 0);
+    for (const [i, w] of [lost, alive, neverSeen].entries()) ids[i] = (await requestReleaseTest(w.workId))!;
+    await scheduleReleaseTests();
+    const now = Date.now();
+    const running = { status: "running" as const, tokenHash: "t", tokenExpiresAt: new Date(now + 60 * 60_000), leaseExpiresAt: new Date(now + 60_000) };
+    await db.update(releaseTestsTable).set({ ...running, startedAt: new Date(now - 20 * 60_000), agentSeenAt: new Date(now - 6 * 60_000) }).where(eq(releaseTestsTable.id, ids[0]!));
+    await db.update(releaseTestsTable).set({ ...running, startedAt: new Date(now - 20 * 60_000), agentSeenAt: new Date(now - 60_000) }).where(eq(releaseTestsTable.id, ids[1]!));
+    await db.update(releaseTestsTable).set({ ...running, startedAt: new Date(now - 6 * 60_000), agentSeenAt: null }).where(eq(releaseTestsTable.id, ids[2]!));
+    await sweepReleaseTests(new Date(now));
+    expect(await testRow(ids[0]!)).toMatchObject({ status: "failed", error: COLLAUDO_MESSAGES.interrupted, tokenHash: null });
+    expect((await testRow(ids[1]!)).status).toBe("running");
+    expect(await testRow(ids[2]!)).toMatchObject({ status: "failed", error: COLLAUDO_MESSAGES.interrupted, tokenHash: null });
+  });
+
+  it("collaudi non più necessari: senza esito annullati, con l'esito consegnato chiusi done", async () => {
+    agentMock.mode = "wait";
+    const a = await seedWork("non-serve");
+    const id = (await requestReleaseTest(a.workId))!;
+    await scheduleReleaseTests();
+    await db
+      .update(releaseTestsTable)
+      .set({ status: "running", tokenHash: "x", tokenExpiresAt: new Date(Date.now() + 60 * 60_000), leaseExpiresAt: new Date(Date.now() + 60_000) })
+      .where(eq(releaseTestsTable.id, id));
+    onTestClaimed(id, "full");
+    await until(async () => agentMock.calls.length === 1);
+    expect(await cancelReleaseTestsOfInstance(a.instanceId)).toEqual([id]);
+    expect(await testRow(id)).toMatchObject({ status: "cancelled", tokenHash: null, tunnelUrl: null });
+    expect(agentMock.calls[0]!.signal!.aborted).toBe(true);
+
+    const b = await seedWork("consegnato");
+    const done = await delivered(b.workId, "ok");
+    await db.update(releaseTestsTable).set({ tunnelUrl: "https://x.trycloudflare.com", tunnelUntil: new Date(Date.now() + 60_000) }).where(eq(releaseTestsTable.id, done));
+    await cancelReleaseTestsOfInstance(b.instanceId);
+    expect(await testRow(done)).toMatchObject({ status: "done", outcome: "ok", tunnelUrl: null });
+  });
+
+  it("voce rifiutata a mano, squadra chiusa, ciclo in pausa: il collaudo aperto si annulla", async () => {
+    const rejected = await seedWork("rifiutata");
+    const r = (await requestReleaseTest(rejected.workId))!;
+    const [item] = await db.select().from(pendingActionsTable).where(eq(pendingActionsTable.id, rejected.itemId));
+    expect((await rejectAction(userId, item!.number, null)).ok).toBe(true);
+    expect((await testRow(r)).status).toBe("cancelled");
+
+    const closed = await seedWork("chiusa");
+    const c = (await requestReleaseTest(closed.workId))!;
+    await closeInstance(closed.instanceId);
+    expect((await testRow(c)).status).toBe("cancelled");
+
+    // Ciclo in pausa senza avviso diretto: lo chiude il controllo periodico
+    const paused = await seedWork("ciclo");
+    const p = (await requestReleaseTest(paused.workId))!;
+    await db.insert(evolutionCyclesTable).values({ appId: paused.appId, status: "paused", monthlyBudgetUsd: "10", teamInstanceId: paused.instanceId });
+    await sweepReleaseTests();
+    expect((await testRow(p)).status).toBe("cancelled");
   });
 
   it("senza COLLAUDO_REPO: saltato «non configurato»", async () => {

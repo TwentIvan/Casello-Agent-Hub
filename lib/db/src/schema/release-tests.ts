@@ -46,6 +46,8 @@ export const releaseTestsTable = pgTable(
     tokenHash: text("token_hash"),
     tokenExpiresAt: timestamp("token_expires_at"),
     leaseExpiresAt: timestamp("lease_expires_at"),
+    // Ultimo segno di vita del collaudatore (almeno ogni 60 s mentre lavora)
+    agentSeenAt: timestamp("agent_seen_at"),
     githubRunId: text("github_run_id"),
     tunnelUrl: text("tunnel_url"),
     tunnelUntil: timestamp("tunnel_until"),
@@ -60,10 +62,10 @@ export const releaseTestsTable = pgTable(
     finishedAt: timestamp("finished_at"),
   },
   (table) => [
-    // Un solo collaudo aperto per App
-    uniqueIndex("release_tests_one_open_per_app")
+    // Un solo collaudo lanciato o in corso per App (quelli in coda aspettano)
+    uniqueIndex("release_tests_one_active_per_app")
       .on(table.appId)
-      .where(sql`${table.status} in ('queued', 'dispatching', 'running')`),
+      .where(sql`${table.status} in ('dispatching', 'running')`),
     index("release_tests_status_created_idx").on(table.status, table.createdAt),
     index("release_tests_work_idx").on(table.workId),
   ],

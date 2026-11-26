@@ -135,6 +135,8 @@ export async function approveRelease(userId: number, action: PendingActionRow): 
       throw err;
     });
   if (!claimed) return { ok: false, status: 409, message: RELEASE_MESSAGES.notReady };
+  // Voce decisa: il collaudo del lavoro non serve più (import dinamico: il collaudo importa questo modulo)
+  await (await import("../collaudo/service")).cancelReleaseTestsQuietly(work.instanceId);
 
   try {
     const merged = await mergeBranches(ctx.ref, {
@@ -229,6 +231,8 @@ export async function rejectReleaseForTest(
   }
   notifyTurnQueued(instanceId);
   notifyWorkChanged(instanceId);
+  // «Rimanda alla squadra» (a mano): un «Riaccendi» ancora aperto non serve più
+  if (source === "user") await (await import("../collaudo/service")).cancelReleaseTestsQuietly(instanceId);
   return true;
 }
 

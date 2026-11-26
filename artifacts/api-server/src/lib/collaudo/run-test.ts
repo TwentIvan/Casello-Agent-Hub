@@ -33,6 +33,9 @@ import { saveTestRecipe } from "./recipe-store";
 export const COLLAUDO_LIMITS: LoopLimits = { maxRounds: 40, maxActiveMs: 2_400_000, maxTokens: 300_000 };
 export { MAX_START_ROUNDS } from "./prompts";
 
+/** Segno di vita del collaudatore (`agent_seen_at`): a ogni giro e durante le attese, almeno ogni 60 s. */
+export const AGENT_SEEN_MS = 30_000;
+
 /** Attesa massima del risultato di un comando del runner. */
 export const COMMAND_WAIT_MS = 6 * 60_000;
 /** Timeout massimo di un comando `shell`. */
@@ -254,6 +257,15 @@ function usageColumns(usage: LoopUsage) {
 export async function runReleaseTest(testId: number, signal?: AbortSignal): Promise<void> {
   const usage = newUsage();
   let aiModelId: number | null = null;
+  const markSeen = () =>
+    db
+      .update(releaseTestsTable)
+      .set({ agentSeenAt: new Date() })
+      .where(and(eq(releaseTestsTable.id, testId), eq(releaseTestsTable.status, "running")))
+      .catch((err: unknown) => logger.warn({ releaseTestId: testId, errName: errName(err) }, "Segno di vita del collaudatore non registrato"));
+  await markSeen();
+  const heartbeat = setInterval(() => void markSeen(), AGENT_SEEN_MS);
+  heartbeat.unref();
   try {
     const [test] = await db.select().from(releaseTestsTable).where(eq(releaseTestsTable.id, testId)).limit(1);
     if (!test) return;
@@ -285,6 +297,7 @@ export async function runReleaseTest(testId: number, signal?: AbortSignal): Prom
       resolved: model.resolved,
       usage,
       hasRecipe: recipe !== null,
+      onRound: () => void markSeen(),
       messages: [
         { role: "system", content: COLLAUDO_INSTRUCTIONS },
         ...contextMessages({
@@ -331,6 +344,7 @@ export async function runReleaseTest(testId: number, signal?: AbortSignal): Prom
       logger.error({ releaseTestId: testId, errName: errName(writeErr) }, "Errore del collaudatore non registrato");
     }
   } finally {
+    clearInterval(heartbeat);
     // Esito o errore scritti: il `next` in attesa del runner risponde subito 410 invece di aspettare 25 s
     wakeRunner(testId);
   }
@@ -343,6 +357,8 @@ interface LoopInput {
   resolved: Parameters<typeof modelChatDeps>[0]["resolved"];
   usage: LoopUsage;
   hasRecipe: boolean;
+  /** A ogni giro del modello (segno di vita). */
+  onRound?: () => void;
   messages: ChatCompletionMessageParam[];
   signal?: AbortSignal;
 }
@@ -415,6 +431,7 @@ async function runCollaudoLoop(input: LoopInput): Promise<Delivery | null> {
   const deps: LoopDeps = {
     chat: async (messages, opts) => {
       rounds++;
+      input.onRound?.();
       return chat(messages, opts);
     },
     tools: TOOLS,

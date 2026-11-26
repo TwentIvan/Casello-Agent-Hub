@@ -2012,6 +2012,7 @@ CREATE TABLE IF NOT EXISTS "release_tests" (
 	"token_hash" text,
 	"token_expires_at" timestamp,
 	"lease_expires_at" timestamp,
+	"agent_seen_at" timestamp,
 	"github_run_id" text,
 	"tunnel_url" text,
 	"tunnel_until" timestamp,
@@ -2030,7 +2031,7 @@ CREATE TABLE IF NOT EXISTS "release_tests" (
 );
 
 -- Un solo collaudo aperto per App
-CREATE UNIQUE INDEX IF NOT EXISTS "release_tests_one_open_per_app" ON "release_tests" USING btree ("app_id") WHERE "release_tests"."status" in ('queued', 'dispatching', 'running');
+CREATE UNIQUE INDEX IF NOT EXISTS "release_tests_one_active_per_app" ON "release_tests" USING btree ("app_id") WHERE "release_tests"."status" in ('dispatching', 'running');
 CREATE INDEX IF NOT EXISTS "release_tests_status_created_idx" ON "release_tests" USING btree ("status", "created_at");
 CREATE INDEX IF NOT EXISTS "release_tests_work_idx" ON "release_tests" USING btree ("work_id");
 

@@ -277,6 +277,8 @@ async function pauseCycle(cycleId: number, reason: string): Promise<void> {
     logger.warn({ cycleId, reason }, "Ciclo di evoluzione in pausa");
     const [cycle] = await db.select({ teamInstanceId: evolutionCyclesTable.teamInstanceId }).from(evolutionCyclesTable).where(eq(evolutionCyclesTable.id, cycleId)).limit(1);
     if (cycle) await cycleEvent(cycle, `Ciclo di evoluzione in pausa: ${reason}`);
+    // Ciclo in pausa: il collaudo aperto del lavoro della squadra non serve più
+    if (cycle?.teamInstanceId != null) await (await import("../collaudo/service")).cancelReleaseTestsQuietly(cycle.teamInstanceId);
   }
 }
 
@@ -918,6 +920,7 @@ export async function stopCycle(appId: number): Promise<EvolutionCycle> {
       tasks: cancelled.map((id) => ({ id, status: "failed" as const, outcome: EVOLUTION_MESSAGES.cyclePaused })),
     });
   }
+  if (updated.teamInstanceId !== null) await (await import("../collaudo/service")).cancelReleaseTestsQuietly(updated.teamInstanceId);
   logger.info({ cycleId: cycle.id, rounds: analysisIds.length, tasks: cancelled.length }, "Ciclo di evoluzione fermato");
   return updated;
 }

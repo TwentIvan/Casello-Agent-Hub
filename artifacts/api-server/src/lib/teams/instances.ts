@@ -366,6 +366,8 @@ export async function closeInstance(id: number): Promise<InstanceView> {
   if (cancelled.length > 0) {
     await patchPlan(id, { tasks: cancelled.map((taskId) => ({ id: taskId, status: "failed" as const, outcome: CLOSE_MESSAGES.taskCancelled })) });
   }
+  // Squadra chiusa: i collaudi aperti dei suoi lavori non servono più (import dinamico: il collaudo importa le squadre)
+  await (await import("../collaudo/service")).cancelReleaseTestsQuietly(id);
   return getInstance(id);
 }
 

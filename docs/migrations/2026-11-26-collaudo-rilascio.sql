@@ -66,8 +66,7 @@ CREATE TABLE IF NOT EXISTS "release_tests" (
 	CONSTRAINT "release_tests_ai_model_id_ai_models_id_fk" FOREIGN KEY ("ai_model_id") REFERENCES "public"."ai_models"("id") ON DELETE set null ON UPDATE no action
 );
 
--- Un solo collaudo aperto per App
-CREATE UNIQUE INDEX IF NOT EXISTS "release_tests_one_open_per_app" ON "release_tests" USING btree ("app_id") WHERE "release_tests"."status" in ('queued', 'dispatching', 'running');
+-- Un solo collaudo lanciato o in corso per App: è in docs/migrations/2026-11-27-collaudo-coda-per-app.sql
 CREATE INDEX IF NOT EXISTS "release_tests_status_created_idx" ON "release_tests" USING btree ("status", "created_at");
 CREATE INDEX IF NOT EXISTS "release_tests_work_idx" ON "release_tests" USING btree ("work_id");
 

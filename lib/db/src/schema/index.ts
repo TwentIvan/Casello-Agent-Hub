@@ -54,3 +54,4 @@ export * from "./audit-events";
 export * from "./fleet-policy";
 export * from "./run-messages";
 export * from "./chat-attachments";
+export * from "./release-tests";

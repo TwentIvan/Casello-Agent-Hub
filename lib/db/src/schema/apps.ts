@@ -55,6 +55,10 @@ export const appsTable = pgTable(
     // Versione di prova (lavoro su branch unico): branch riscritto da Botcave a ogni lavoro e indirizzo dove la CI/Coolify lo pubblica
     stagingBranch: text("staging_branch"),
     stagingUrl: text("staging_url"),
+    // Collaudo dei lavori: ricetta corrente (versioni in `app_test_recipes`) e correzione automatica dei problemi
+    testRecipe: jsonb("test_recipe"),
+    testRecipeVersion: integer("test_recipe_version").notNull().default(0),
+    testAutoFix: boolean("test_auto_fix").notNull().default(false),
     bugReportsEnabled: boolean("bug_reports_enabled").notNull().default(false),
     bugReportsDailyLimit: integer("bug_reports_daily_limit").notNull().default(20),
     identitySecretEnc: text("identity_secret_enc"),

@@ -2,6 +2,9 @@
 
 import type { TestRecipe } from "./recipe";
 
+/** Postgres del runner di collaudo (servizio del workflow), nell'ambiente dei comandi `shell` come RUNNER_DATABASE_URL. */
+export const RUNNER_DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/postgres";
+
 /** Giri della fase di avvio: oltre, senza una ricetta salvata o usata, si consegna `non_avviabile`. */
 export const MAX_START_ROUNDS = 15;
 
@@ -17,7 +20,7 @@ export const COLLAUDO_INSTRUCTIONS = [
   "Fase 1, avvio (al più " + MAX_START_ROUNDS + " giri):",
   "- con una ricetta salvata eseguila (install, build, schema, servizi in background, poi controlla readyPath);",
   "- senza ricetta scoprila leggendo il repository con `shell` (package.json, README, file di esempio delle variabili, docker-compose) e la sintesi dell'architettura se c'è; poi avvia l'App e, appena risponde, salvala con `salva_ricetta`;",
-  "- un Postgres locale è disponibile se la ricetta lo chiede (postgres: true); nella ricetta niente credenziali reali, solo valori di prova;",
+  "- il runner ha un Postgres locale: nei comandi `shell` la variabile RUNNER_DATABASE_URL vale " + RUNNER_DATABASE_URL + " (usala come DATABASE_URL e per lo schema); nella ricetta metti postgres: true e niente credenziali reali, solo valori di prova;",
   "- se dopo " + MAX_START_ROUNDS + " giri l'App non parte, consegna `non_avviabile` con il motivo nel resoconto.",
   "",
   "Fase 2, prova:",

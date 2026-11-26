@@ -13,7 +13,7 @@ export type ClaimPackage = {
 };
 
 export type RunnerCommand = { id: number; kind: string; args: Record<string, unknown> };
-export type NextResult = { type: "command"; command: RunnerCommand } | { type: "none" } | { type: "delivered" };
+export type NextResult = { type: "command"; command: RunnerCommand } | { type: "none" } | { type: "delivered"; liveLink: boolean };
 export type FileKind = "screenshot" | "video";
 
 /** Collaudo chiuso, annullato o codice rifiutato: si ferma tutto, senza report. */
@@ -91,8 +91,14 @@ export class CollaudoClient {
     const res = await this.call("next", { timeoutMs: NEXT_TIMEOUT_MS, signal });
     if (res.status === 204) return { type: "none" };
     if (res.status === 410) {
-      await res.body?.cancel();
-      return { type: "delivered" };
+      // `liveLink` falso (nessun esito da provare dal vivo): niente tunnel; senza il campo vale il comportamento di prima
+      let liveLink = true;
+      try {
+        liveLink = ((await res.json()) as { liveLink?: unknown })?.liveLink !== false;
+      } catch {
+        // corpo non JSON: resta vero
+      }
+      return { type: "delivered", liveLink };
     }
     await this.expect(res, 200);
     const cmd = (await res.json()) as RunnerCommand;

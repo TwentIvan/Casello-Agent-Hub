@@ -14,7 +14,8 @@ export const CLOUDFLARED_SHA256 = "51f7c68b57ed7269164075d7e789efce5b59355982f06
 const MAX_BINARY_BYTES = 100 * 1024 * 1024;
 const DOWNLOAD_TIMEOUT_MS = 120_000;
 const URL_TIMEOUT_MS = 60_000;
-const TUNNEL_URL = /https:\/\/[a-z0-9-]+\.trycloudflare\.com/;
+// Mai `api.trycloudflare.com` (compare nei log di cloudflared, non è il quick tunnel)
+const TUNNEL_URL = /https:\/\/(?!api\.)[a-z0-9-]+\.trycloudflare\.com/;
 
 export type Tunnel = { url: string; close(): void };
 

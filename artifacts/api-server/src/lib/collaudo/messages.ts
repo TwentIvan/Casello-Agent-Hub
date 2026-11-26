@@ -11,6 +11,7 @@ export const COLLAUDO_MESSAGES = {
   notDelivered: "collaudo non consegnato",
   internalError: "errore interno nel collaudo",
   noReport: "collaudo concluso senza resoconto",
+  recipeFailed: "ricetta di avvio non riuscita",
   autoRejectTurn: (work: number, note: string) =>
     `Il collaudo del lavoro ${work} ha trovato problemi: correggi e richiudi il lavoro. Resoconto: ${note}`,
   userRejectTurn: (work: number, note: string) =>
@@ -30,7 +31,7 @@ export const RELEASE_TEST_ROUTE_MESSAGES = {
   itemNotFound: "voce «Porta in produzione» non trovata",
   relightNotDone: "il collaudo non è concluso: aspetta la fine",
   itemNotPending: "la voce «Porta in produzione» non è più in attesa",
-  relightFailed: "un collaudo è in corso per questa App: riprova quando finisce",
+  relightFailed: "un collaudo è in corso per questo lavoro: riprova quando finisce",
   relightNotLatest: "«Riaccendi» vale solo per l'ultimo collaudo del lavoro",
   relightLimit: "limite di «Riaccendi» di oggi raggiunto: riprova domani",
   sendBackGone: "la voce «Porta in produzione» è già stata decisa",

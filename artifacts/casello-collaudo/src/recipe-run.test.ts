@@ -3,7 +3,7 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
-import { runRecipe, type TestRecipe } from "./recipe-run";
+import { RUNNER_DATABASE_URL, recipeEnv, runRecipe, type TestRecipe } from "./recipe-run";
 import { stopBackground } from "./shell";
 
 let root: string;
@@ -58,5 +58,14 @@ describe("runRecipe", () => {
     });
     expect(r.ok).toBe(false);
     expect(r.output).toContain("muto");
+  });
+});
+
+describe("recipeEnv", () => {
+  const base: TestRecipe = { install: [], build: [], services: [], postgres: false, schema: [], env: { A: "1" }, startUrl: "/", login: null };
+  it("RUNNER_DATABASE_URL sempre; DATABASE_URL solo con postgres e se la ricetta non la dà", () => {
+    expect(recipeEnv(base)).toEqual({ RUNNER_DATABASE_URL, A: "1" });
+    expect(recipeEnv({ ...base, postgres: true })).toEqual({ RUNNER_DATABASE_URL, A: "1", DATABASE_URL: RUNNER_DATABASE_URL });
+    expect(recipeEnv({ ...base, postgres: true, env: { DATABASE_URL: "postgres://altro" } }).DATABASE_URL).toBe("postgres://altro");
   });
 });

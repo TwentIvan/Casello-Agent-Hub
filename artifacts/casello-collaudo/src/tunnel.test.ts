@@ -28,6 +28,13 @@ describe("startTunnel", () => {
     t.close();
   });
 
+  it("salta api.trycloudflare.com e prende l'indirizzo del tunnel", async () => {
+    const bin = await fakeBin('echo "ERR richiesta a https://api.trycloudflare.com/tunnel" >&2; echo "INF |  https://gamma-7.trycloudflare.com  |" >&2; sleep 30');
+    const t = await startTunnel(bin, 4321, 5_000);
+    expect(t.url).toBe("https://gamma-7.trycloudflare.com");
+    t.close();
+  });
+
   it("processo che esce senza indirizzo → errore", async () => {
     const bin = await fakeBin("echo nulla; exit 1");
     await expect(startTunnel(bin, 4321, 5_000)).rejects.toThrow("il tunnel non ha dato un indirizzo");

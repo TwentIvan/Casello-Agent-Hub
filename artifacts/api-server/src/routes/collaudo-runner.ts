@@ -11,7 +11,7 @@ import {
   MAX_VIDEO_BYTES,
   PROTOCOL_MESSAGES,
   claim,
-  isDelivered,
+  deliveryState,
   ping,
   report,
   saveFile,
@@ -66,10 +66,13 @@ export function createCollaudoRunnerRouter(): IRouter {
     "/next",
     handled(async (req, res) => {
       const { testId } = currentCollaudo(req);
-      if (await isDelivered(testId)) {
-        res.status(410).json({ error: PROTOCOL_MESSAGES.delivered });
-        return;
-      }
+      // Collaudo consegnato: 410 con `liveLink` (vero solo con un esito da provare dal vivo)
+      const delivered = async (): Promise<boolean> => {
+        const state = await deliveryState(testId);
+        if (state.delivered) res.status(410).json({ error: PROTOCOL_MESSAGES.delivered, liveLink: state.liveLink });
+        return state.delivered;
+      };
+      if (await delivered()) return;
       const controller = new AbortController();
       res.on("close", () => controller.abort());
       const found = await nextCommand(testId, NEXT_WAIT_MS, controller.signal);
@@ -79,10 +82,7 @@ export function createCollaudoRunnerRouter(): IRouter {
         return;
       }
       if (!found) {
-        if (await isDelivered(testId)) {
-          res.status(410).json({ error: PROTOCOL_MESSAGES.delivered });
-          return;
-        }
+        if (await delivered()) return;
         res.status(204).end();
         return;
       }

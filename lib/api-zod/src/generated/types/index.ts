@@ -203,6 +203,7 @@ export * from './collaudoClaimPackageMode';
 export * from './collaudoCommand';
 export * from './collaudoCommandKind';
 export * from './collaudoCommandResult';
+export * from './collaudoDelivered';
 export * from './collaudoFileSaved';
 export * from './collaudoReport';
 export * from './collaudoReportStatus';

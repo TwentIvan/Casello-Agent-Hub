@@ -5,7 +5,7 @@
 import path from "node:path";
 import { runBrowser, type BrowserDriver } from "./browser";
 import { CollaudoClosedError, CollaudoHttpError, type ClaimPackage, type CollaudoClient, type RunnerCommand } from "./client";
-import { recipeEnv, runRecipe as defaultRunRecipe, type RecipeRunResult, type TestRecipe } from "./recipe-run";
+import { RUNNER_DATABASE_URL, recipeEnv, runRecipe as defaultRunRecipe, type RecipeRunResult, type TestRecipe } from "./recipe-run";
 import { runShell, stopBackground } from "./shell";
 import type { Tunnel } from "./tunnel";
 
@@ -127,7 +127,8 @@ export async function runCollaudo(testId: number, code: string, deps: LoopDeps):
       }
       appPort = r.port;
     } else {
-      const shellEnv = pkg.recipe ? recipeEnv(pkg.recipe) : {};
+      // RUNNER_DATABASE_URL sempre: il collaudatore conosce il Postgres del runner anche senza ricetta
+      const shellEnv = pkg.recipe ? recipeEnv(pkg.recipe) : { RUNNER_DATABASE_URL };
       const execute = async (cmd: RunnerCommand): Promise<{ ok: boolean; output: string }> => {
         if (cmd.kind === "shell") {
           const a = cmd.args;
@@ -158,6 +159,7 @@ export async function runCollaudo(testId: number, code: string, deps: LoopDeps):
       };
 
       let failures = 0;
+      let liveLink = true;
       for (;;) {
         if (closed) return "closed";
         let next;
@@ -176,7 +178,10 @@ export async function runCollaudo(testId: number, code: string, deps: LoopDeps):
           await sleep(Math.min(2_000 * 2 ** (failures - 1), 30_000), stop.signal);
           continue;
         }
-        if (next.type === "delivered") break;
+        if (next.type === "delivered") {
+          liveLink = next.liveLink;
+          break;
+        }
         if (next.type === "none") continue;
         const cmd = next.command;
         const result = await execute(cmd);
@@ -215,6 +220,10 @@ export async function runCollaudo(testId: number, code: string, deps: LoopDeps):
             log("video non caricato");
           }
         }
+      }
+      if (!liveLink) {
+        log("nessun esito da provare dal vivo: niente link");
+        return await finish("done");
       }
     }
 

@@ -115,6 +115,7 @@ import type {
   CollaudoClaimPackage,
   CollaudoCommand,
   CollaudoCommandResult,
+  CollaudoDelivered,
   CollaudoFileSaved,
   CollaudoReport,
   CollaudoSetup,
@@ -9767,7 +9768,7 @@ export const getCollaudoNextUrl = () => {
 }
 
 /**
- * Solo con il token del collaudo. Attende fino a 25 secondi un comando dell'agente; 204 se non ne arriva, 410 se il collaudo ha già l'esito (il runner passa al link dal vivo).
+ * Solo con il token del collaudo. Attende fino a 25 secondi un comando dell'agente; 204 se non ne arriva, 410 se il collaudo ha già l'esito o l'errore: con `liveLink` vero (esito ok o problemi) il runner apre il link dal vivo, altrimenti riferisce subito senza tunnel.
  * @summary Il runner chiede il prossimo comando
  */
 export const collaudoNext = async ( options?: RequestInit): Promise<CollaudoCommand | void> => {
@@ -9784,7 +9785,7 @@ export const collaudoNext = async ( options?: RequestInit): Promise<CollaudoComm
 
 
 
-export const getCollaudoNextMutationOptions = <TError = ErrorType<UnauthorizedResponse | ErrorResponse>,
+export const getCollaudoNextMutationOptions = <TError = ErrorType<UnauthorizedResponse | CollaudoDelivered>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof collaudoNext>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof collaudoNext>>, TError,void, TContext> => {
 
@@ -9813,12 +9814,12 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type CollaudoNextMutationResult = NonNullable<Awaited<ReturnType<typeof collaudoNext>>>
 
-    export type CollaudoNextMutationError = ErrorType<UnauthorizedResponse | ErrorResponse>
+    export type CollaudoNextMutationError = ErrorType<UnauthorizedResponse | CollaudoDelivered>
 
     /**
  * @summary Il runner chiede il prossimo comando
  */
-export const useCollaudoNext = <TError = ErrorType<UnauthorizedResponse | ErrorResponse>,
+export const useCollaudoNext = <TError = ErrorType<UnauthorizedResponse | CollaudoDelivered>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof collaudoNext>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
  ): UseMutationResult<
         Awaited<ReturnType<typeof collaudoNext>>,

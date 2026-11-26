@@ -212,13 +212,19 @@ describe("comandi e risultati", () => {
     await db.update(releaseTestsTable).set({ outcome: "ok" }).where(eq(releaseTestsTable.id, testId));
     const res = await call("/next", { token });
     expect(res.status).toBe(410);
-    expect(res.json.error).toBe("collaudo consegnato");
+    expect(res.json).toEqual({ error: "collaudo consegnato", liveLink: true });
   });
 
-  it("next → 410 anche con un errore registrato", async () => {
+  it("next → 410 senza link dal vivo con un errore registrato o con l'App non avviabile", async () => {
     const { testId, token } = await running();
     await db.update(releaseTestsTable).set({ error: "collaudo interrotto" }).where(eq(releaseTestsTable.id, testId));
-    expect((await call("/next", { token })).status).toBe(410);
+    const failed = await call("/next", { token });
+    expect(failed.status).toBe(410);
+    expect(failed.json.liveLink).toBe(false);
+    await db.update(releaseTestsTable).set({ error: null, outcome: "not_startable" }).where(eq(releaseTestsTable.id, testId));
+    expect((await call("/next", { token })).json).toEqual({ error: "collaudo consegnato", liveLink: false });
+    await db.update(releaseTestsTable).set({ outcome: "problems" }).where(eq(releaseTestsTable.id, testId));
+    expect((await call("/next", { token })).json.liveLink).toBe(true);
   });
 
   it("ping rinnova la lease", async () => {
@@ -234,7 +240,7 @@ describe("tunnel", () => {
   it("indirizzo fuori da trycloudflare.com → 400", async () => {
     const { token } = await running();
     const until = new Date(Date.now() + 10 * 60_000).toISOString();
-    for (const url of ["https://evil.example", "http://a.trycloudflare.com", "https://trycloudflare.com.evil.example", "https://a.trycloudflare.com@evil.example"]) {
+    for (const url of ["https://evil.example", "http://a.trycloudflare.com", "https://trycloudflare.com.evil.example", "https://a.trycloudflare.com@evil.example", "https://api.trycloudflare.com"]) {
       expect((await call("/tunnel", { token, body: { url, until } })).status, url).toBe(400);
     }
   });
@@ -300,6 +306,31 @@ describe("report", () => {
     const { releaseTestCommandsTable } = await import("@workspace/db");
     const [cmd] = await db.select().from(releaseTestCommandsTable).where(eq(releaseTestCommandsTable.id, id));
     expect(cmd!.status).toBe("expired");
+  });
+
+  it("«Riaccendi»: done → done; failed → failed «ricetta di avvio non riuscita»", async () => {
+    const ok = await running();
+    await db.update(releaseTestsTable).set({ mode: "relight" }).where(eq(releaseTestsTable.id, ok.testId));
+    expect((await call("/report", { token: ok.token, body: { status: "done" } })).status).toBe(204);
+    const [done] = await db.select().from(releaseTestsTable).where(eq(releaseTestsTable.id, ok.testId));
+    expect(done).toMatchObject({ status: "done", error: null, tokenHash: null });
+
+    const ko = await running();
+    await db.update(releaseTestsTable).set({ mode: "relight" }).where(eq(releaseTestsTable.id, ko.testId));
+    expect((await call("/report", { token: ko.token, body: { status: "failed" } })).status).toBe(204);
+    const [failed] = await db.select().from(releaseTestsTable).where(eq(releaseTestsTable.id, ko.testId));
+    expect(failed).toMatchObject({ status: "failed", error: "ricetta di avvio non riuscita", tokenHash: null, leaseExpiresAt: null });
+  });
+
+  it("esito consegnato e report failed → done, errore dell'agente conservato senza esito", async () => {
+    const a = await running();
+    await db.update(releaseTestsTable).set({ outcome: "ok" }).where(eq(releaseTestsTable.id, a.testId));
+    await call("/report", { token: a.token, body: { status: "failed" } });
+    expect((await db.select().from(releaseTestsTable).where(eq(releaseTestsTable.id, a.testId)))[0]).toMatchObject({ status: "done", error: null });
+    const b = await running();
+    await db.update(releaseTestsTable).set({ error: "errore interno nel collaudo" }).where(eq(releaseTestsTable.id, b.testId));
+    await call("/report", { token: b.token, body: { status: "done" } });
+    expect((await db.select().from(releaseTestsTable).where(eq(releaseTestsTable.id, b.testId)))[0]).toMatchObject({ status: "failed", error: "errore interno nel collaudo" });
   });
 
   it("failed senza consegna dell'agente → collaudo failed con messaggio fisso", async () => {

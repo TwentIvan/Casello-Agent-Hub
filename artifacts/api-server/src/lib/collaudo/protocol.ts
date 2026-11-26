@@ -2,7 +2,7 @@
 // con messaggio fisso; mai testo del runner nei messaggi né nei log (solo id).
 
 import { createHash } from "node:crypto";
-import { and, count, eq, isNotNull, isNull, or } from "drizzle-orm";
+import { and, count, eq, sql } from "drizzle-orm";
 import { db, releaseTestFilesTable, releaseTestsTable } from "@workspace/db";
 import { logger } from "../logger";
 import { COLLAUDO_MESSAGES } from "./messages";
@@ -48,13 +48,18 @@ export async function claim(testId: number, code: string): Promise<ClaimPackage 
   return pkg;
 }
 
-/** Il collaudo ha già l'esito o l'errore: l'agente ha finito e il runner passa al link dal vivo. */
-export async function isDelivered(testId: number): Promise<boolean> {
+/**
+ * Il collaudo ha già l'esito o l'errore: l'agente ha finito. `liveLink` è vero solo con un esito da provare dal vivo (`ok` o
+ * `problems`): altrimenti il runner riferisce subito, senza tunnel.
+ */
+export async function deliveryState(testId: number): Promise<{ delivered: boolean; liveLink: boolean }> {
   const [row] = await db
     .select({ outcome: releaseTestsTable.outcome, error: releaseTestsTable.error })
     .from(releaseTestsTable)
     .where(eq(releaseTestsTable.id, testId));
-  return !row || row.outcome !== null || row.error !== null;
+  if (!row) return { delivered: true, liveLink: false };
+  const delivered = row.outcome !== null || row.error !== null;
+  return { delivered, liveLink: row.outcome === "ok" || row.outcome === "problems" };
 }
 
 /** Rinnova la lease di 5 minuti. */
@@ -64,7 +69,8 @@ export async function ping(testId: number): Promise<Date> {
   return leaseExpiresAt;
 }
 
-const TUNNEL_URL = /^https:\/\/[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\.trycloudflare\.com\/?$/;
+// Mai `api.trycloudflare.com` (l'API di Cloudflare, non un quick tunnel)
+const TUNNEL_URL = /^https:\/\/(?!api\.)[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*\.trycloudflare\.com\/?$/;
 
 /** Indirizzo e scadenza del link dal vivo (`until` ≤ ora + 31 minuti). */
 export async function setTunnel(testId: number, url: string, until: string): Promise<void> {
@@ -145,33 +151,33 @@ export function setOnTestReported(fn: ReportedHandler): void {
 }
 
 /**
- * Report finale del runner: revoca il token, chiude il tunnel e i comandi aperti e chiude il collaudo (UPDATE condizionati a
- * `running`). `done`: con l'esito dell'agente (o con il solo «Riaccendi») il collaudo è `done`; senza esito `failed` con l'errore
- * già scritto dall'agente o «collaudo non consegnato». `failed`: senza consegna dell'agente `failed` «collaudo interrotto» (mai
- * il testo del runner); con l'esito già consegnato `done` (si è perso solo il link dal vivo).
+ * Report finale del runner: in un solo UPDATE condizionato a `running` revoca token e lease, chiude il tunnel e decide lo stato
+ * (una corsa con lo sweeper la vince uno solo). Esito dell'agente consegnato → `done` (si è perso al più il link dal vivo).
+ * «Riaccendi» (nessun agente): `done` con `done`, `failed` «ricetta di avvio non riuscita» con `failed`. Altrimenti `failed`:
+ * con l'errore già scritto dall'agente resta il suo, senza consegna «collaudo interrotto» (`failed`) o «collaudo non
+ * consegnato» (`done`); mai il testo del runner. Poi si chiudono i comandi aperti.
  */
 export async function report(testId: number, status: "done" | "failed"): Promise<void> {
-  const now = new Date();
+  const t = releaseTestsTable;
+  const relightOk = status === "done";
+  const fallback = status === "failed" ? COLLAUDO_MESSAGES.interrupted : COLLAUDO_MESSAGES.notDelivered;
   await db
-    .update(releaseTestsTable)
-    .set({ tokenHash: null, tokenExpiresAt: null, leaseExpiresAt: null, tunnelUrl: null, tunnelUntil: null })
-    .where(eq(releaseTestsTable.id, testId));
-  const running = and(eq(releaseTestsTable.id, testId), eq(releaseTestsTable.status, "running"));
-  // Esito consegnato o «Riaccendi» (nessun agente): il collaudo è finito
-  await db
-    .update(releaseTestsTable)
-    .set({ status: "done", finishedAt: now })
-    .where(and(running, or(isNotNull(releaseTestsTable.outcome), eq(releaseTestsTable.mode, "relight"))));
-  // Errore già scritto dall'agente (modello, errore interno): resta il suo messaggio
-  await db
-    .update(releaseTestsTable)
-    .set({ status: "failed", finishedAt: now })
-    .where(and(running, isNull(releaseTestsTable.outcome), isNotNull(releaseTestsTable.error)));
-  // Nessuna consegna
-  await db
-    .update(releaseTestsTable)
-    .set({ status: "failed", error: status === "failed" ? COLLAUDO_MESSAGES.interrupted : COLLAUDO_MESSAGES.notDelivered, finishedAt: now })
-    .where(and(running, isNull(releaseTestsTable.outcome), isNull(releaseTestsTable.error)));
+    .update(t)
+    .set({
+      status: sql`case when ${t.outcome} is not null then 'done' when ${t.mode} = 'relight' and ${relightOk}::boolean then 'done' else 'failed' end::release_test_status`,
+      error: sql`case
+        when ${t.outcome} is not null then ${t.error}
+        when ${t.mode} = 'relight' then (case when ${relightOk}::boolean then null else ${COLLAUDO_MESSAGES.recipeFailed}::text end)
+        when ${t.error} is not null then ${t.error}
+        else ${fallback}::text end`,
+      finishedAt: new Date(),
+      tokenHash: null,
+      tokenExpiresAt: null,
+      leaseExpiresAt: null,
+      tunnelUrl: null,
+      tunnelUntil: null,
+    })
+    .where(and(eq(t.id, testId), eq(t.status, "running")));
   await expireOpenCommands(testId);
   try {
     await onTestReported(testId);

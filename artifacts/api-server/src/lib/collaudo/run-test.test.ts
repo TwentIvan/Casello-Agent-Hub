@@ -152,6 +152,11 @@ describe("collaudatore", () => {
     expect(row.notTestable).toEqual(["Pagamenti: servizio esterno spento"]);
     expect(row.error).toBeNull();
     expect(row.aiModelId).toBe(aiModelId);
+    // Segno di vita del collaudatore per lo sweeper
+    expect(row.agentSeenAt).not.toBeNull();
+    // Il collaudatore conosce il Postgres del runner
+    const system = (fake.requests[0]!.body as { messages: { role: string; content: string }[] }).messages[0]!;
+    expect(system.content).toContain("RUNNER_DATABASE_URL vale postgresql://postgres:postgres@localhost:5432/postgres");
     expect(row.promptTokens).toBe(4000);
     expect(row.completionTokens).toBe(2000);
     // 4000 × 1 $/M + 2000 × 2 $/M

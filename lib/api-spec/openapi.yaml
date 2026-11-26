@@ -3220,7 +3220,8 @@ paths:
       summary: Il runner chiede il prossimo comando
       description: >-
         Solo con il token del collaudo. Attende fino a 25 secondi un comando dell'agente; 204 se non ne arriva, 410 se il
-        collaudo ha già l'esito (il runner passa al link dal vivo).
+        collaudo ha già l'esito o l'errore: con `liveLink` vero (esito ok o problemi) il runner apre il link dal vivo,
+        altrimenti riferisce subito senza tunnel.
       responses:
         "200":
           description: Comando da eseguire
@@ -3237,7 +3238,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorResponse"
+                $ref: "#/components/schemas/CollaudoDelivered"
 
   /collaudo/results/{commandId}:
     post:
@@ -9146,6 +9147,16 @@ components:
               oneOf:
                 - $ref: "#/components/schemas/ReleaseTestActivity"
                 - type: "null"
+
+    CollaudoDelivered:
+      type: object
+      required: [error, liveLink]
+      properties:
+        error:
+          type: string
+        liveLink:
+          type: boolean
+          description: Vero solo con un esito da provare dal vivo (ok o problemi)
 
     CollaudoClaim:
       type: object

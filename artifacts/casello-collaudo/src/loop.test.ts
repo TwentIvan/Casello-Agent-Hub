@@ -132,6 +132,41 @@ describe("runCollaudo", () => {
     expect(log).toEqual(["screenshot", "close", "tunnel chiuso"]);
   });
 
+  it("410 senza link dal vivo: video caricato, report done subito, nessun tunnel", async () => {
+    handler = (c) => {
+      if (c.path === "/api/collaudo/claim") return { status: 200, json: { token: "ctk_prova", repo: "o/r", sha: "a".repeat(40), repoToken: "ghs_x", recipe: RECIPE, mode: "full" } };
+      if (c.path === "/api/collaudo/next") {
+        return calls.filter((x) => x.path === "/api/collaudo/next").length === 1
+          ? { status: 200, json: { id: 1, kind: "browser", args: { action: "open", url: "/" } } }
+          : { status: 410, json: { error: "collaudo consegnato", liveLink: false } };
+      }
+      if (c.path === "/api/collaudo/files") return { status: 201, json: { id: 99 } };
+      return { status: 204 };
+    };
+    let opened = false;
+    const outcome = await runCollaudo(7, "codice-monouso-prova-1234", deps({ openTunnel: async () => ((opened = true), { url: "https://x.trycloudflare.com", close: () => {} }), tunnelMs: 60_000 }));
+    expect(outcome).toBe("done");
+    expect(opened).toBe(false);
+    expect(paths()).not.toContain("/api/collaudo/tunnel");
+    expect(calls.filter((c) => c.path === "/api/collaudo/files").map((c) => c.headers["x-file-kind"])).toEqual(["video"]);
+    expect(json(calls.at(-1)!)).toEqual({ status: "done" });
+  });
+
+  it("i comandi shell hanno sempre RUNNER_DATABASE_URL, anche senza ricetta", async () => {
+    const commands = [{ id: 1, kind: "shell", args: { command: "echo $RUNNER_DATABASE_URL" } }];
+    handler = (c) => {
+      if (c.path === "/api/collaudo/claim") return { status: 200, json: { token: "ctk_prova", repo: "o/r", sha: "a".repeat(40), repoToken: "ghs_x", recipe: null, mode: "full" } };
+      if (c.path === "/api/collaudo/next") {
+        const cmd = commands.shift();
+        return cmd ? { status: 200, json: cmd } : { status: 410, json: { error: "collaudo consegnato", liveLink: false } };
+      }
+      return { status: 204 };
+    };
+    expect(await runCollaudo(7, "codice-monouso-prova-1234", deps({}))).toBe("done");
+    const result = calls.find((c) => c.path === "/api/collaudo/results/1")!;
+    expect(json(result)).toEqual({ ok: true, output: "postgresql://postgres:postgres@localhost:5432/postgres\n" });
+  });
+
   it("un 401 sulla next → fine senza report", async () => {
     handler = (c) => {
       if (c.path === "/api/collaudo/claim") return { status: 200, json: { token: "ctk_prova", repo: "o/r", sha: "a".repeat(40), repoToken: "ghs_x", recipe: null, mode: "full" } };

@@ -4072,7 +4072,7 @@ export const CollaudoClaimResponse = zod.object({
 
 
 /**
- * Solo con il token del collaudo. Attende fino a 25 secondi un comando dell'agente; 204 se non ne arriva, 410 se il collaudo ha già l'esito (il runner passa al link dal vivo).
+ * Solo con il token del collaudo. Attende fino a 25 secondi un comando dell'agente; 204 se non ne arriva, 410 se il collaudo ha già l'esito o l'errore: con `liveLink` vero (esito ok o problemi) il runner apre il link dal vivo, altrimenti riferisce subito senza tunnel.
  * @summary Il runner chiede il prossimo comando
  */
 export const CollaudoNextResponse = zod.object({

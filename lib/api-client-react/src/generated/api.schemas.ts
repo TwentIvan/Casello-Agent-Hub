@@ -1585,6 +1585,12 @@ export type ReleaseTestDetail = ReleaseTest & ({
   activity: ReleaseTestActivity | null;
 });
 
+export interface CollaudoDelivered {
+  error: string;
+  /** Vero solo con un esito da provare dal vivo (ok o problemi) */
+  liveLink: boolean;
+}
+
 export interface CollaudoClaim {
   /** @minimum 1 */
   testId: number;

@@ -24,9 +24,12 @@ const READY_POLL_MS = 1_000;
 /** Postgres del servizio del workflow del repository di collaudo. */
 export const RUNNER_DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/postgres";
 
-/** Ambiente dei comandi dell'App: quello della ricetta, più DATABASE_URL se serve Postgres e la ricetta non lo dà. */
+/**
+ * Ambiente dei comandi dell'App: RUNNER_DATABASE_URL (sempre), quello della ricetta, più DATABASE_URL se serve Postgres e la
+ * ricetta non lo dà.
+ */
 export function recipeEnv(recipe: TestRecipe): Record<string, string> {
-  const env = { ...recipe.env };
+  const env: Record<string, string> = { RUNNER_DATABASE_URL, ...recipe.env };
   if (recipe.postgres && env.DATABASE_URL === undefined) env.DATABASE_URL = RUNNER_DATABASE_URL;
   return env;
 }

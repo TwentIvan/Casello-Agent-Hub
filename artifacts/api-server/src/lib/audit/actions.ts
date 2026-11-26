@@ -175,6 +175,8 @@ export const AUDIT_ROUTES: AuditRoute[] = [
       detail: {
         serviceSecretChanged: field(body, "serviceSecret") !== undefined,
         sourceTokenChanged: field(body, "sourceToken") !== undefined,
+        // Correzione automatica dei problemi del collaudo: acceso o spento (solo il valore, mai altro)
+        ...(typeof field(body, "testAutoFix") === "boolean" ? { testAutoFix: field(body, "testAutoFix") as boolean } : {}),
       },
     }),
   },
@@ -193,6 +195,10 @@ export const AUDIT_ROUTES: AuditRoute[] = [
     }),
   },
   { method: "POST", pattern: re("/app-bootstraps"), action: "app_bootstrap.create", objectType: "app_bootstrap", extract: ({ payload }) => ({ objectId: idOf(field(payload, "id")) }) },
+  // Collaudo dei lavori: «Riaccendi», «Rimanda alla squadra» e ricetta di avvio (mai il contenuto della ricetta né dei resoconti)
+  { method: "POST", pattern: re(`/release-tests/${n}/relight`), action: "release_test.relight", objectType: "release_test" },
+  { method: "POST", pattern: re(`/release-tests/${n}/send-back`), action: "release_test.send_back", objectType: "release_test" },
+  { method: "PUT", pattern: re(`/apps/${n}/test-recipe`), action: "app.test_recipe.update", objectType: "app" },
   { method: "DELETE", pattern: re(`/agents/${n}`), action: "agent.delete", objectType: "agent" },
   { method: "DELETE", pattern: re(`/apps/${n}/tools/${n}`), action: "app_tool.delete", objectType: "app_tool", extract: ({ params }) => ({ objectId: params[1] ?? null }) },
   // Inneschi: segreti dei webhook

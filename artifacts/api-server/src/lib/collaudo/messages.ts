@@ -20,3 +20,17 @@ export const COLLAUDO_MESSAGES = {
   dispatchFailed:
     "lancio del collaudo non riuscito: controlla il repository di collaudo in Account",
 } as const;
+
+/** Messaggi delle route pubbliche del collaudo (`/api/release-tests`, ricetta e configurazione). */
+export const RELEASE_TEST_ROUTE_MESSAGES = {
+  testNotFound: "collaudo non trovato",
+  fileNotFound: "file non trovato",
+  appNotFound: "App non trovata",
+  needFilter: "indica workId o appId",
+  itemNotFound: "voce «Porta in produzione» non trovata",
+  relightNotDone: "il collaudo non è concluso: aspetta la fine",
+  itemNotPending: "la voce «Porta in produzione» non è più in attesa",
+  relightFailed: "collaudo non avviabile: riprova più tardi",
+  relightLimit: "limite di «Riaccendi» di oggi raggiunto: riprova domani",
+  sendBackGone: "la voce «Porta in produzione» è già stata decisa",
+} as const;

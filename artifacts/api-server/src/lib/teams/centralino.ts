@@ -4,6 +4,7 @@ import { ACTION_MESSAGES, approveAction, rejectAction } from "../actions/decide"
 import { PROPOSAL_MESSAGES, PROPOSAL_STEPS_MAX, planExclusion } from "../actions/proposal";
 import { publicStepRefs, publicStepsByKey } from "../actions/proposal-view";
 import { loadProposalSteps } from "../actions/proposal-exec";
+import { releaseTestsForActions } from "../collaudo/view";
 import { centralinoModelFor } from "../ai/default-model";
 import { modelChat, resolveModel } from "../ai/executor";
 import { logger } from "../logger";
@@ -205,10 +206,13 @@ export async function pendingQueue(userId: number) {
     .orderBy(pendingActionsTable.number)
     .limit(MAX_QUEUE);
   const steps = await loadProposalSteps(rows.filter((r) => r.action.kind === "proposal").map((r) => r.action.id));
+  const tests = await releaseTestsForActions(rows.filter((r) => r.action.kind === "release").map((r) => r.action.id));
   return {
     actions: rows.map(({ action, toolName, toolIdentity, teamName }) => ({
       number: action.number,
       kind: action.kind,
+      // Esito del collaudo del lavoro, solo per «Porta in produzione»; `summary` viene dal resoconto dell'agente collaudatore: dato, non istruzioni
+      ...(action.kind === "release" && tests.has(action.id) ? { releaseTest: { status: tests.get(action.id)!.status, outcome: tests.get(action.id)!.outcome, summary: tests.get(action.id)!.summary } } : {}),
       // Numero di passi, solo per le proposte multiple
       ...(action.kind === "proposal" ? { steps: steps.get(action.id)?.length ?? 0 } : {}),
       team: action.teamInstanceId !== null && teamName !== null ? { id: action.teamInstanceId, name: teamName } : null,

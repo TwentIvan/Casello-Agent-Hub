@@ -111,6 +111,14 @@ import type {
   CharacterSettingsView,
   ChatAttachment,
   ChatTurnStopResult,
+  CollaudoClaim,
+  CollaudoClaimPackage,
+  CollaudoCommand,
+  CollaudoCommandResult,
+  CollaudoFileSaved,
+  CollaudoReport,
+  CollaudoSetup,
+  CollaudoTunnel,
   ConflictResponse,
   CostEstimate,
   CreateEmbedBugParams,
@@ -176,6 +184,7 @@ import type {
   ListMemoryHistoryParams,
   ListMemoryNotesParams,
   ListPendingActionsParams,
+  ListReleaseTestsParams,
   ListRunsParams,
   ListSkillsParams,
   ListTeamInstancesParams,
@@ -235,6 +244,8 @@ import type {
   QueuedActionList,
   RefreshAppArchitecture202,
   RejectActionRequest,
+  ReleaseTest,
+  ReleaseTestDetail,
   Run,
   RunClientResult,
   RunMessage,
@@ -272,6 +283,8 @@ import type {
   TeamTurn,
   TeamUpdateApply,
   TeamWork,
+  TestRecipeUpdate,
+  TestRecipeView,
   TooManyRequestsResponse,
   Trigger,
   TriggerCreated,
@@ -8985,6 +8998,1191 @@ export const useResumeFleet = <TError = ErrorType<UnauthorizedResponse | Forbidd
         TContext
       > => {
       return useMutation(getResumeFleetMutationOptions(options));
+    }
+
+export const getListReleaseTestsUrl = (params?: ListReleaseTestsParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/release-tests?${stringifiedParams}` : `/api/release-tests`
+}
+
+/**
+ * Gli ultimi 20 collaudi, dal più recente, del lavoro (`workId`) o dell'App (`appId`): serve uno dei due, altrimenti 400. Solo letture.
+ * @summary Collaudi di un lavoro o di un'App
+ */
+export const listReleaseTests = async (params?: ListReleaseTestsParams, options?: RequestInit): Promise<ReleaseTest[]> => {
+
+  return customFetch<ReleaseTest[]>(getListReleaseTestsUrl(params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListReleaseTestsQueryKey = (params?: ListReleaseTestsParams,) => {
+    return [
+    `/api/release-tests`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getListReleaseTestsQueryOptions = <TData = Awaited<ReturnType<typeof listReleaseTests>>, TError = ErrorType<BadRequestResponse | UnauthorizedResponse>>(params?: ListReleaseTestsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listReleaseTests>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListReleaseTestsQueryKey(params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listReleaseTests>>> = ({ signal }) => listReleaseTests(params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listReleaseTests>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListReleaseTestsQueryResult = NonNullable<Awaited<ReturnType<typeof listReleaseTests>>>
+export type ListReleaseTestsQueryError = ErrorType<BadRequestResponse | UnauthorizedResponse>
+
+
+/**
+ * @summary Collaudi di un lavoro o di un'App
+ */
+
+export function useListReleaseTests<TData = Awaited<ReturnType<typeof listReleaseTests>>, TError = ErrorType<BadRequestResponse | UnauthorizedResponse>>(
+ params?: ListReleaseTestsParams, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listReleaseTests>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListReleaseTestsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetReleaseTestUrl = (id: number,) => {
+
+
+
+
+  return `/api/release-tests/${id}`
+}
+
+/**
+ * Esito, resoconto, problemi, passi dell'agente collaudatore e metadati dei file (video e screenshot).
+ * @summary Dettaglio di un collaudo
+ */
+export const getReleaseTest = async (id: number, options?: RequestInit): Promise<ReleaseTestDetail> => {
+
+  return customFetch<ReleaseTestDetail>(getGetReleaseTestUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetReleaseTestQueryKey = (id: number,) => {
+    return [
+    `/api/release-tests/${id}`
+    ] as const;
+    }
+
+
+export const getGetReleaseTestQueryOptions = <TData = Awaited<ReturnType<typeof getReleaseTest>>, TError = ErrorType<UnauthorizedResponse | NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getReleaseTest>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetReleaseTestQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getReleaseTest>>> = ({ signal }) => getReleaseTest(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getReleaseTest>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetReleaseTestQueryResult = NonNullable<Awaited<ReturnType<typeof getReleaseTest>>>
+export type GetReleaseTestQueryError = ErrorType<UnauthorizedResponse | NotFoundResponse>
+
+
+/**
+ * @summary Dettaglio di un collaudo
+ */
+
+export function useGetReleaseTest<TData = Awaited<ReturnType<typeof getReleaseTest>>, TError = ErrorType<UnauthorizedResponse | NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getReleaseTest>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetReleaseTestQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getGetReleaseTestFileUrl = (id: number,
+    fileId: number,) => {
+
+
+
+
+  return `/api/release-tests/${id}/files/${fileId}`
+}
+
+/**
+ * Video WebM o screenshot PNG, con `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff` e `Cache-Control: no-store`. Un file che non è del collaudo → 404.
+ * @summary Scarica un file del collaudo
+ */
+export const getReleaseTestFile = async (id: number,
+    fileId: number, options?: RequestInit): Promise<Blob> => {
+
+  return customFetch<Blob>(getGetReleaseTestFileUrl(id,fileId),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetReleaseTestFileQueryKey = (id: number,
+    fileId: number,) => {
+    return [
+    `/api/release-tests/${id}/files/${fileId}`
+    ] as const;
+    }
+
+
+export const getGetReleaseTestFileQueryOptions = <TData = Awaited<ReturnType<typeof getReleaseTestFile>>, TError = ErrorType<UnauthorizedResponse | NotFoundResponse>>(id: number,
+    fileId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getReleaseTestFile>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetReleaseTestFileQueryKey(id,fileId);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getReleaseTestFile>>> = ({ signal }) => getReleaseTestFile(id,fileId, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined && fileId !== null && fileId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getReleaseTestFile>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetReleaseTestFileQueryResult = NonNullable<Awaited<ReturnType<typeof getReleaseTestFile>>>
+export type GetReleaseTestFileQueryError = ErrorType<UnauthorizedResponse | NotFoundResponse>
+
+
+/**
+ * @summary Scarica un file del collaudo
+ */
+
+export function useGetReleaseTestFile<TData = Awaited<ReturnType<typeof getReleaseTestFile>>, TError = ErrorType<UnauthorizedResponse | NotFoundResponse>>(
+ id: number,
+    fileId: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getReleaseTestFile>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetReleaseTestFileQueryOptions(id,fileId,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getRelightReleaseTestUrl = (id: number,) => {
+
+
+
+
+  return `/api/release-tests/${id}/relight`
+}
+
+/**
+ * Solo con il collaudo `done` e la voce «Porta in produzione» del lavoro ancora in attesa: mette in coda un nuovo collaudo in modalità `relight` (senza agente né modello, serve solo il link dal vivo). Altrimenti 409. Al più 6 al giorno (ora italiana) per voce, poi 429. Il token d'ambito `agent` non può.
+ * @summary Riaccende il collaudo per il link dal vivo
+ */
+export const relightReleaseTest = async (id: number, options?: RequestInit): Promise<ReleaseTest> => {
+
+  return customFetch<ReleaseTest>(getRelightReleaseTestUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getRelightReleaseTestMutationOptions = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof relightReleaseTest>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof relightReleaseTest>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['relightReleaseTest'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof relightReleaseTest>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  relightReleaseTest(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RelightReleaseTestMutationResult = NonNullable<Awaited<ReturnType<typeof relightReleaseTest>>>
+
+    export type RelightReleaseTestMutationError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Riaccende il collaudo per il link dal vivo
+ */
+export const useRelightReleaseTest = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof relightReleaseTest>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof relightReleaseTest>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getRelightReleaseTestMutationOptions(options));
+    }
+
+export const getSendBackReleaseTestUrl = (id: number,) => {
+
+
+
+
+  return `/api/release-tests/${id}/send-back`
+}
+
+/**
+ * Rifiuta la voce «Porta in produzione» con nota = resoconto del collaudo (al più 4 000 caratteri); il lavoro torna aperto e il capo riceve il resoconto. Non conta nelle correzioni automatiche. Solo con il login; voce non più in attesa → 409.
+ * @summary Rimanda il lavoro alla squadra dopo il collaudo
+ */
+export const sendBackReleaseTest = async (id: number, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getSendBackReleaseTestUrl(id),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getSendBackReleaseTestMutationOptions = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendBackReleaseTest>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof sendBackReleaseTest>>, TError,{id: number}, TContext> => {
+
+const mutationKey = ['sendBackReleaseTest'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof sendBackReleaseTest>>, {id: number}> = (props) => {
+          const {id} = props ?? {};
+
+          return  sendBackReleaseTest(id,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SendBackReleaseTestMutationResult = NonNullable<Awaited<ReturnType<typeof sendBackReleaseTest>>>
+
+    export type SendBackReleaseTestMutationError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse>
+
+    /**
+ * @summary Rimanda il lavoro alla squadra dopo il collaudo
+ */
+export const useSendBackReleaseTest = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse | NotFoundResponse | ConflictResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof sendBackReleaseTest>>, TError,{id: number}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof sendBackReleaseTest>>,
+        TError,
+        {id: number},
+        TContext
+      > => {
+      return useMutation(getSendBackReleaseTestMutationOptions(options));
+    }
+
+export const getGetAppTestRecipeUrl = (id: number,) => {
+
+
+
+
+  return `/api/apps/${id}/test-recipe`
+}
+
+/**
+ * Ricetta corrente (null se non ancora scoperta), versione, origine e elenco delle versioni.
+ * @summary Ricetta di avvio del collaudo di un'App
+ */
+export const getAppTestRecipe = async (id: number, options?: RequestInit): Promise<TestRecipeView> => {
+
+  return customFetch<TestRecipeView>(getGetAppTestRecipeUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetAppTestRecipeQueryKey = (id: number,) => {
+    return [
+    `/api/apps/${id}/test-recipe`
+    ] as const;
+    }
+
+
+export const getGetAppTestRecipeQueryOptions = <TData = Awaited<ReturnType<typeof getAppTestRecipe>>, TError = ErrorType<UnauthorizedResponse | NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAppTestRecipe>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetAppTestRecipeQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getAppTestRecipe>>> = ({ signal }) => getAppTestRecipe(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getAppTestRecipe>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetAppTestRecipeQueryResult = NonNullable<Awaited<ReturnType<typeof getAppTestRecipe>>>
+export type GetAppTestRecipeQueryError = ErrorType<UnauthorizedResponse | NotFoundResponse>
+
+
+/**
+ * @summary Ricetta di avvio del collaudo di un'App
+ */
+
+export function useGetAppTestRecipe<TData = Awaited<ReturnType<typeof getAppTestRecipe>>, TError = ErrorType<UnauthorizedResponse | NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getAppTestRecipe>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetAppTestRecipeQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getUpdateAppTestRecipeUrl = (id: number,) => {
+
+
+
+
+  return `/api/apps/${id}/test-recipe`
+}
+
+/**
+ * Valida la ricetta come lo strumento `salva_ricetta` (comandi su una riga fino a 500 caratteri, al più 20 passi, porte 1..65535, nessuna credenziale) e salva una versione nuova con origine `user`. Il token d'ambito `agent` non può.
+ * @summary Salva la ricetta di avvio del collaudo
+ */
+export const updateAppTestRecipe = async (id: number,
+    testRecipeUpdate: TestRecipeUpdate, options?: RequestInit): Promise<TestRecipeView> => {
+
+  return customFetch<TestRecipeView>(getUpdateAppTestRecipeUrl(id),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(testRecipeUpdate)
+  }
+);}
+
+
+
+
+export const getUpdateAppTestRecipeMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAppTestRecipe>>, TError,{id: number;data: BodyType<TestRecipeUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof updateAppTestRecipe>>, TError,{id: number;data: BodyType<TestRecipeUpdate>}, TContext> => {
+
+const mutationKey = ['updateAppTestRecipe'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateAppTestRecipe>>, {id: number;data: BodyType<TestRecipeUpdate>}> = (props) => {
+          const {id,data} = props ?? {};
+
+          return  updateAppTestRecipe(id,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateAppTestRecipeMutationResult = NonNullable<Awaited<ReturnType<typeof updateAppTestRecipe>>>
+    export type UpdateAppTestRecipeMutationBody = BodyType<TestRecipeUpdate>
+    export type UpdateAppTestRecipeMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>
+
+    /**
+ * @summary Salva la ricetta di avvio del collaudo
+ */
+export const useUpdateAppTestRecipe = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | ForbiddenResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateAppTestRecipe>>, TError,{id: number;data: BodyType<TestRecipeUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof updateAppTestRecipe>>,
+        TError,
+        {id: number;data: BodyType<TestRecipeUpdate>},
+        TContext
+      > => {
+      return useMutation(getUpdateAppTestRecipeMutationOptions(options));
+    }
+
+export const getGetCollaudoSetupUrl = () => {
+
+
+
+
+  return `/api/collaudo/setup`
+}
+
+/**
+ * Cosa manca per collaudare: repository di collaudo, App GitHub installata, workflow presente, permesso `actions: write`. Legge da GitHub, mai in scrittura. Solo con il login.
+ * @summary Stato della configurazione del collaudo
+ */
+export const getCollaudoSetup = async ( options?: RequestInit): Promise<CollaudoSetup> => {
+
+  return customFetch<CollaudoSetup>(getGetCollaudoSetupUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCollaudoSetupQueryKey = () => {
+    return [
+    `/api/collaudo/setup`
+    ] as const;
+    }
+
+
+export const getGetCollaudoSetupQueryOptions = <TData = Awaited<ReturnType<typeof getCollaudoSetup>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse>>( options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCollaudoSetup>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCollaudoSetupQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCollaudoSetup>>> = ({ signal }) => getCollaudoSetup({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCollaudoSetup>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type GetCollaudoSetupQueryResult = NonNullable<Awaited<ReturnType<typeof getCollaudoSetup>>>
+export type GetCollaudoSetupQueryError = ErrorType<UnauthorizedResponse | ForbiddenResponse>
+
+
+/**
+ * @summary Stato della configurazione del collaudo
+ */
+
+export function useGetCollaudoSetup<TData = Awaited<ReturnType<typeof getCollaudoSetup>>, TError = ErrorType<UnauthorizedResponse | ForbiddenResponse>>(
+  options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof getCollaudoSetup>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getGetCollaudoSetupQueryOptions(options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getVerifyCollaudoSetupUrl = () => {
+
+
+
+
+  return `/api/collaudo/setup/verify`
+}
+
+/**
+ * Rilegge da GitHub lo stato della configurazione (dopo che l'utente ha sistemato qualcosa). Solo con il login.
+ * @summary Ricontrolla la configurazione del collaudo
+ */
+export const verifyCollaudoSetup = async ( options?: RequestInit): Promise<CollaudoSetup> => {
+
+  return customFetch<CollaudoSetup>(getVerifyCollaudoSetupUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getVerifyCollaudoSetupMutationOptions = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof verifyCollaudoSetup>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof verifyCollaudoSetup>>, TError,void, TContext> => {
+
+const mutationKey = ['verifyCollaudoSetup'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof verifyCollaudoSetup>>, void> = () => {
+
+
+          return  verifyCollaudoSetup(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type VerifyCollaudoSetupMutationResult = NonNullable<Awaited<ReturnType<typeof verifyCollaudoSetup>>>
+
+    export type VerifyCollaudoSetupMutationError = ErrorType<UnauthorizedResponse | ForbiddenResponse>
+
+    /**
+ * @summary Ricontrolla la configurazione del collaudo
+ */
+export const useVerifyCollaudoSetup = <TError = ErrorType<UnauthorizedResponse | ForbiddenResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof verifyCollaudoSetup>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof verifyCollaudoSetup>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getVerifyCollaudoSetupMutationOptions(options));
+    }
+
+export const getCollaudoClaimUrl = () => {
+
+
+
+
+  return `/api/collaudo/claim`
+}
+
+/**
+ * Protocollo del runner di collaudo (GitHub Actions): pubblica, senza login. Scambia il codice monouso (15 minuti) con il token `ctk_…` del collaudo, il token di lettura del repository e la ricetta. Codice non valido o scaduto → 401. 10 al minuto per IP.
+ * @summary Il runner scambia il codice monouso
+ */
+export const collaudoClaim = async (collaudoClaim: CollaudoClaim, options?: RequestInit): Promise<CollaudoClaimPackage> => {
+
+  return customFetch<CollaudoClaimPackage>(getCollaudoClaimUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(collaudoClaim)
+  }
+);}
+
+
+
+
+export const getCollaudoClaimMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof collaudoClaim>>, TError,{data: BodyType<CollaudoClaim>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof collaudoClaim>>, TError,{data: BodyType<CollaudoClaim>}, TContext> => {
+
+const mutationKey = ['collaudoClaim'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof collaudoClaim>>, {data: BodyType<CollaudoClaim>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  collaudoClaim(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CollaudoClaimMutationResult = NonNullable<Awaited<ReturnType<typeof collaudoClaim>>>
+    export type CollaudoClaimMutationBody = BodyType<CollaudoClaim>
+    export type CollaudoClaimMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | TooManyRequestsResponse>
+
+    /**
+ * @summary Il runner scambia il codice monouso
+ */
+export const useCollaudoClaim = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | TooManyRequestsResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof collaudoClaim>>, TError,{data: BodyType<CollaudoClaim>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof collaudoClaim>>,
+        TError,
+        {data: BodyType<CollaudoClaim>},
+        TContext
+      > => {
+      return useMutation(getCollaudoClaimMutationOptions(options));
+    }
+
+export const getCollaudoNextUrl = () => {
+
+
+
+
+  return `/api/collaudo/next`
+}
+
+/**
+ * Solo con il token del collaudo. Attende fino a 25 secondi un comando dell'agente; 204 se non ne arriva, 410 se il collaudo ha già l'esito (il runner passa al link dal vivo).
+ * @summary Il runner chiede il prossimo comando
+ */
+export const collaudoNext = async ( options?: RequestInit): Promise<CollaudoCommand | void> => {
+
+  return customFetch<CollaudoCommand | void>(getCollaudoNextUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getCollaudoNextMutationOptions = <TError = ErrorType<UnauthorizedResponse | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof collaudoNext>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof collaudoNext>>, TError,void, TContext> => {
+
+const mutationKey = ['collaudoNext'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof collaudoNext>>, void> = () => {
+
+
+          return  collaudoNext(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CollaudoNextMutationResult = NonNullable<Awaited<ReturnType<typeof collaudoNext>>>
+
+    export type CollaudoNextMutationError = ErrorType<UnauthorizedResponse | ErrorResponse>
+
+    /**
+ * @summary Il runner chiede il prossimo comando
+ */
+export const useCollaudoNext = <TError = ErrorType<UnauthorizedResponse | ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof collaudoNext>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof collaudoNext>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getCollaudoNextMutationOptions(options));
+    }
+
+export const getCollaudoResultUrl = (commandId: number,) => {
+
+
+
+
+  return `/api/collaudo/results/${commandId}`
+}
+
+/**
+ * Solo con il token del collaudo. Comando non del collaudo o non consegnato → 404.
+ * @summary Il runner riferisce il risultato di un comando
+ */
+export const collaudoResult = async (commandId: number,
+    collaudoCommandResult: CollaudoCommandResult, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getCollaudoResultUrl(commandId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(collaudoCommandResult)
+  }
+);}
+
+
+
+
+export const getCollaudoResultMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof collaudoResult>>, TError,{commandId: number;data: BodyType<CollaudoCommandResult>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof collaudoResult>>, TError,{commandId: number;data: BodyType<CollaudoCommandResult>}, TContext> => {
+
+const mutationKey = ['collaudoResult'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof collaudoResult>>, {commandId: number;data: BodyType<CollaudoCommandResult>}> = (props) => {
+          const {commandId,data} = props ?? {};
+
+          return  collaudoResult(commandId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CollaudoResultMutationResult = NonNullable<Awaited<ReturnType<typeof collaudoResult>>>
+    export type CollaudoResultMutationBody = BodyType<CollaudoCommandResult>
+    export type CollaudoResultMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | NotFoundResponse>
+
+    /**
+ * @summary Il runner riferisce il risultato di un comando
+ */
+export const useCollaudoResult = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | NotFoundResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof collaudoResult>>, TError,{commandId: number;data: BodyType<CollaudoCommandResult>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof collaudoResult>>,
+        TError,
+        {commandId: number;data: BodyType<CollaudoCommandResult>},
+        TContext
+      > => {
+      return useMutation(getCollaudoResultMutationOptions(options));
+    }
+
+export const getCollaudoPingUrl = () => {
+
+
+
+
+  return `/api/collaudo/ping`
+}
+
+/**
+ * Solo con il token del collaudo. Rinnova di 5 minuti la lease.
+ * @summary Rinnova la lease del collaudo
+ */
+export const collaudoPing = async ( options?: RequestInit): Promise<NodeLeaseRenewed> => {
+
+  return customFetch<NodeLeaseRenewed>(getCollaudoPingUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+export const getCollaudoPingMutationOptions = <TError = ErrorType<UnauthorizedResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof collaudoPing>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof collaudoPing>>, TError,void, TContext> => {
+
+const mutationKey = ['collaudoPing'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof collaudoPing>>, void> = () => {
+
+
+          return  collaudoPing(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CollaudoPingMutationResult = NonNullable<Awaited<ReturnType<typeof collaudoPing>>>
+
+    export type CollaudoPingMutationError = ErrorType<UnauthorizedResponse>
+
+    /**
+ * @summary Rinnova la lease del collaudo
+ */
+export const useCollaudoPing = <TError = ErrorType<UnauthorizedResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof collaudoPing>>, TError,void, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof collaudoPing>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getCollaudoPingMutationOptions(options));
+    }
+
+export const getCollaudoTunnelUrl = () => {
+
+
+
+
+  return `/api/collaudo/tunnel`
+}
+
+/**
+ * Solo con il token del collaudo. Indirizzo `https://….trycloudflare.com` e scadenza (al più 31 minuti da ora); altro → 400.
+ * @summary Il runner comunica il link dal vivo
+ */
+export const collaudoTunnel = async (collaudoTunnel: CollaudoTunnel, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getCollaudoTunnelUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(collaudoTunnel)
+  }
+);}
+
+
+
+
+export const getCollaudoTunnelMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof collaudoTunnel>>, TError,{data: BodyType<CollaudoTunnel>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof collaudoTunnel>>, TError,{data: BodyType<CollaudoTunnel>}, TContext> => {
+
+const mutationKey = ['collaudoTunnel'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof collaudoTunnel>>, {data: BodyType<CollaudoTunnel>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  collaudoTunnel(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CollaudoTunnelMutationResult = NonNullable<Awaited<ReturnType<typeof collaudoTunnel>>>
+    export type CollaudoTunnelMutationBody = BodyType<CollaudoTunnel>
+    export type CollaudoTunnelMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse>
+
+    /**
+ * @summary Il runner comunica il link dal vivo
+ */
+export const useCollaudoTunnel = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof collaudoTunnel>>, TError,{data: BodyType<CollaudoTunnel>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof collaudoTunnel>>,
+        TError,
+        {data: BodyType<CollaudoTunnel>},
+        TContext
+      > => {
+      return useMutation(getCollaudoTunnelMutationOptions(options));
+    }
+
+export const getCollaudoUploadFileUrl = () => {
+
+
+
+
+  return `/api/collaudo/files`
+}
+
+/**
+ * Solo con il token del collaudo. Corpo grezzo (WebM fino a 30 MB, un solo video; PNG fino a 2 MB, al più 20), tipo nell'header `X-File-Kind` (`video` o `screenshot`), nome in `X-File-Name`. Il formato si legge dai primi byte.
+ * @summary Il runner carica un video o uno screenshot
+ */
+export const collaudoUploadFile = async (collaudoUploadFileBody: Blob, options?: RequestInit): Promise<CollaudoFileSaved> => {
+
+  return customFetch<CollaudoFileSaved>(getCollaudoUploadFileUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/octet-stream', ...options?.headers },
+    body: collaudoUploadFileBody
+  }
+);}
+
+
+
+
+export const getCollaudoUploadFileMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | PayloadTooLargeResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof collaudoUploadFile>>, TError,{data: BodyType<Blob>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof collaudoUploadFile>>, TError,{data: BodyType<Blob>}, TContext> => {
+
+const mutationKey = ['collaudoUploadFile'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof collaudoUploadFile>>, {data: BodyType<Blob>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  collaudoUploadFile(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CollaudoUploadFileMutationResult = NonNullable<Awaited<ReturnType<typeof collaudoUploadFile>>>
+    export type CollaudoUploadFileMutationBody = BodyType<Blob>
+    export type CollaudoUploadFileMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse | PayloadTooLargeResponse>
+
+    /**
+ * @summary Il runner carica un video o uno screenshot
+ */
+export const useCollaudoUploadFile = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse | PayloadTooLargeResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof collaudoUploadFile>>, TError,{data: BodyType<Blob>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof collaudoUploadFile>>,
+        TError,
+        {data: BodyType<Blob>},
+        TContext
+      > => {
+      return useMutation(getCollaudoUploadFileMutationOptions(options));
+    }
+
+export const getCollaudoReportUrl = () => {
+
+
+
+
+  return `/api/collaudo/report`
+}
+
+/**
+ * Solo con il token del collaudo, che si revoca. Chiude il collaudo e fa partire il successivo.
+ * @summary Il runner chiude il collaudo
+ */
+export const collaudoReport = async (collaudoReport: CollaudoReport, options?: RequestInit): Promise<void> => {
+
+  return customFetch<void>(getCollaudoReportUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(collaudoReport)
+  }
+);}
+
+
+
+
+export const getCollaudoReportMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof collaudoReport>>, TError,{data: BodyType<CollaudoReport>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof collaudoReport>>, TError,{data: BodyType<CollaudoReport>}, TContext> => {
+
+const mutationKey = ['collaudoReport'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof collaudoReport>>, {data: BodyType<CollaudoReport>}> = (props) => {
+          const {data} = props ?? {};
+
+          return  collaudoReport(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CollaudoReportMutationResult = NonNullable<Awaited<ReturnType<typeof collaudoReport>>>
+    export type CollaudoReportMutationBody = BodyType<CollaudoReport>
+    export type CollaudoReportMutationError = ErrorType<BadRequestResponse | UnauthorizedResponse>
+
+    /**
+ * @summary Il runner chiude il collaudo
+ */
+export const useCollaudoReport = <TError = ErrorType<BadRequestResponse | UnauthorizedResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof collaudoReport>>, TError,{data: BodyType<CollaudoReport>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof collaudoReport>>,
+        TError,
+        {data: BodyType<CollaudoReport>},
+        TContext
+      > => {
+      return useMutation(getCollaudoReportMutationOptions(options));
     }
 
 export const getCancelRunUrl = (id: number,) => {

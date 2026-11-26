@@ -67,6 +67,10 @@ export interface App {
   architectureRefresh: ArchitectureRefresh;
   /** Rianalisi automatica, a ogni nuovo commit del branch base un'analisi in coda per l'agente locale */
   autoReanalysis: boolean;
+  /** «Correggi da solo»: un collaudo con problemi rimanda il lavoro alla squadra (al più 2 volte per lavoro) */
+  testAutoFix: boolean;
+  /** Versione della ricetta di collaudo (0 = nessuna) */
+  testRecipeVersion: number;
   /**
      * Ultimo SHA del branch base già gestito dalla rianalisi automatica
      * @nullable

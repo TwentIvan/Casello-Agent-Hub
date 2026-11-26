@@ -1,9 +1,8 @@
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { z } from "zod";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import {
   appArchitectureTable,
-  appTestRecipesTable,
   appsTable,
   db,
   releaseTestStepsTable,
@@ -24,6 +23,7 @@ import { testModelFor } from "./model";
 import { toDbOutcome, type DeliveredOutcome } from "./outcome";
 import { COLLAUDO_INSTRUCTIONS, MAX_START_ROUNDS, START_EXHAUSTED_NOTE, contextMessages, dataBlock, type WorkTaskInfo } from "./prompts";
 import { validateRecipe, type TestRecipe } from "./recipe";
+import { saveTestRecipe } from "./recipe-store";
 
 // Collaudatore: agente che gira in Botcave con il ciclo di sempre e il modello del capo, e comanda da remoto il runner del
 // collaudo con `shell` e `browser` (ogni chiamata è un comando in coda, il risultato torna come risultato dello strumento).
@@ -216,16 +216,9 @@ function toDelivery(data: z.infer<typeof DeliverySchema>): Delivery {
 
 /** Salva la ricetta come versione nuova dell'App (sorgente `agent`); restituisce la versione. */
 async function saveRecipe(appId: number, recipe: TestRecipe): Promise<number> {
-  return db.transaction(async (tx) => {
-    const [row] = await tx
-      .update(appsTable)
-      .set({ testRecipe: recipe, testRecipeVersion: sql`${appsTable.testRecipeVersion} + 1` })
-      .where(eq(appsTable.id, appId))
-      .returning({ version: appsTable.testRecipeVersion });
-    if (!row) throw new Error("app not found");
-    await tx.insert(appTestRecipesTable).values({ appId, version: row.version, recipe, source: "agent" });
-    return row.version;
-  });
+  const version = await saveTestRecipe(appId, recipe, "agent");
+  if (version === null) throw new Error("app not found");
+  return version;
 }
 
 /** Compiti con codice del lavoro, con titolo, issue ed esito dal PLAN. */

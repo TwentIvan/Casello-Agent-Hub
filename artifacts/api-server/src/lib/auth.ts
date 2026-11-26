@@ -250,6 +250,9 @@ export const AGENT_DENIED_ROUTES: ReadonlyArray<{ method: "POST" | "PUT" | "PATC
   { method: "POST", path: /^\/app-bootstraps\/?$/i },
   { method: "POST", path: /^\/app-bootstraps\/[^/]+\/(retry|health-check)\/?$/i },
   { method: "PUT", path: /^\/app-bootstraps\/[^/]+\/checklist\/[^/]+\/?$/i },
+  // Collaudo dei lavori: «Riaccendi», «Rimanda alla squadra» e la ricetta di avvio le decide solo l'utente
+  { method: "POST", path: /^\/release-tests\/[^/]+\/(relight|send-back)\/?$/i },
+  { method: "PUT", path: /^\/apps\/[^/]+\/test-recipe\/?$/i },
   { method: "DELETE", path: /^\// },
 ];
 

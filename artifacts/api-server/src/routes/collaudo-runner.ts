@@ -4,6 +4,7 @@
 
 import express, { Router, type IRouter, type RequestHandler } from "express";
 import { z } from "zod";
+import { CollaudoClaimBody, CollaudoReportBody, CollaudoResultBody, CollaudoResultParams, CollaudoTunnelBody } from "@workspace/api-zod";
 import { currentCollaudo, requireCollaudoToken } from "../lib/collaudo/auth";
 import { nextCommand, releaseCommand, saveCommandResult } from "../lib/collaudo/commands";
 import {
@@ -22,11 +23,9 @@ import { collaudoClaimRateLimit } from "../middlewares/rate-limit";
 
 const NEXT_WAIT_MS = 25_000;
 
-const ClaimBody = z.object({ testId: z.number().int().positive(), code: z.string().min(1).max(200) });
-const ResultParams = z.object({ commandId: z.coerce.number().int().positive() });
-const ResultBody = z.object({ ok: z.boolean(), output: z.string().max(200_000) });
-const TunnelBody = z.object({ url: z.string().max(300), until: z.string().max(60) });
-const ReportBody = z.object({ status: z.enum(["done", "failed"]), error: z.string().max(2_000).optional() });
+// Schemi del contratto; gli interi si stringono qui (il generatore li produce come numeri)
+const ClaimBody = CollaudoClaimBody.extend({ testId: z.number().int().positive() });
+const ResultParams = CollaudoResultParams.extend({ commandId: z.coerce.number().int().positive() });
 
 /** Errori di regola con il loro stato; gli altri salgono al gestore comune. */
 const handled =
@@ -96,7 +95,7 @@ export function createCollaudoRunnerRouter(): IRouter {
     handled(async (req, res) => {
       const { testId } = currentCollaudo(req);
       const { commandId } = parseRequest(ResultParams, req.params);
-      const body = parseRequest(ResultBody, req.body);
+      const body = parseRequest(CollaudoResultBody, req.body);
       if (!(await saveCommandResult(testId, commandId, body))) {
         res.status(404).json({ error: PROTOCOL_MESSAGES.commandNotFound });
         return;
@@ -116,7 +115,7 @@ export function createCollaudoRunnerRouter(): IRouter {
   router.post(
     "/tunnel",
     handled(async (req, res) => {
-      const body = parseRequest(TunnelBody, req.body);
+      const body = parseRequest(CollaudoTunnelBody, req.body);
       await setTunnel(currentCollaudo(req).testId, body.url, body.until);
       res.status(204).end();
     }),
@@ -148,7 +147,7 @@ export function createCollaudoRunnerRouter(): IRouter {
   router.post(
     "/report",
     handled(async (req, res) => {
-      const body = parseRequest(ReportBody, req.body);
+      const body = parseRequest(CollaudoReportBody, req.body);
       await report(currentCollaudo(req).testId, body.status);
       res.status(204).end();
     }),

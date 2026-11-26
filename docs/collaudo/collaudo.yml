@@ -1,0 +1,71 @@
+# Workflow del repository di collaudo di Botcave (modello: TwentIvan/botcave-modello-collaudo).
+# Lo avvia Botcave con workflow_dispatch; il codice monouso arriva come input e si maschera subito.
+name: collaudo
+
+on:
+  workflow_dispatch:
+    inputs:
+      collaudo:
+        description: "Numero del collaudo in Botcave"
+        required: true
+      codice:
+        description: "Codice monouso del collaudo (lo dà Botcave)"
+        required: true
+
+permissions: {}
+
+jobs:
+  collaudo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      BOTCAVE_URL: https://casello.fantamister.cloud
+      PLAYWRIGHT_VERSION: "1.65.1"
+    steps:
+      - name: Maschera il codice
+        run: echo "::add-mask::${{ inputs.codice }}"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Scarica il programma di collaudo
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/collaudo"
+          cd "$RUNNER_TEMP/collaudo"
+          curl -fsSL --proto '=https' -o collaudo-manifest.json "$BOTCAVE_URL/downloads/collaudo/collaudo-manifest.json"
+          file=$(node -e 'const m=require("./collaudo-manifest.json");if(!/^casello-collaudo-[0-9.]+\.mjs$/.test(m.file))process.exit(1);console.log(m.file)')
+          sha=$(node -e 'console.log(require("./collaudo-manifest.json").sha256)')
+          curl -fsSL --proto '=https' -o "$file" "$BOTCAVE_URL/downloads/collaudo/$file"
+          echo "$sha  $file" | sha256sum -c -
+          mv "$file" casello-collaudo.mjs
+
+      - name: Installa Playwright e Chromium
+        run: |
+          set -euo pipefail
+          npx --yes "playwright@$PLAYWRIGHT_VERSION" install --with-deps chromium
+          mkdir -p "$RUNNER_TEMP/pw"
+          cd "$RUNNER_TEMP/pw"
+          npm init -y >/dev/null
+          npm i --no-audit --no-fund "playwright@$PLAYWRIGHT_VERSION"
+
+      - name: Esegui il collaudo
+        env:
+          COLLAUDO_CODICE: ${{ inputs.codice }}
+          NODE_PATH: ${{ runner.temp }}/pw/node_modules
+        run: node "$RUNNER_TEMP/collaudo/casello-collaudo.mjs" --url "$BOTCAVE_URL" --collaudo ${{ inputs.collaudo }}

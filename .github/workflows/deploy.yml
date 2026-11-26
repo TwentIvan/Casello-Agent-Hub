@@ -241,6 +241,9 @@ jobs:
           # Botcave Nodo: manifest pubblicato con la console, cache di un'ora
           expect /downloads/nodo/nodo-manifest.json "200 OK"
           expect /downloads/nodo/nodo-manifest.json "max-age=3600"
+          # Programma di collaudo: manifest con cache di un'ora
+          expect /downloads/collaudo/collaudo-manifest.json "200 OK"
+          expect /downloads/collaudo/collaudo-manifest.json "max-age=3600"
           # Webhook degli inneschi: il segreto e' nel percorso, la location non deve scriverlo ne' nell'access log ne' nell'error log
           conf=$(docker exec web-smoke-run nginx -T 2>/dev/null)
           hooks=$(awk '/location \^~ \/api\/hooks\//{f=1} f{print} f&&/^    }/{exit}' <<<"$conf")

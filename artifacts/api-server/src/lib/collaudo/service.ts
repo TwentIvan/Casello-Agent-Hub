@@ -55,7 +55,7 @@ function scheduleInBackground(): void {
 
 /**
  * Chiede il collaudo del lavoro alla sua testa. Idempotente per (lavoro, sha, modo) aperto; un altro collaudo aperto della
- * stessa App (altro lavoro, altra testa o altro modo) si annulla. Senza repository di collaudo nasce `skipped`.
+ * stessa App (altro lavoro, altra testa o altro modo) si annulla, tranne un collaudo `full` aperto davanti a un `relight` (null). Senza repository di collaudo nasce `skipped`.
  */
 export async function requestReleaseTest(workId: number, mode: "full" | "relight" = "full"): Promise<number | null> {
   const [work] = await db
@@ -85,6 +85,8 @@ export async function requestReleaseTest(workId: number, mode: "full" | "relight
       .where(and(eq(releaseTestsTable.appId, work.appId), inArray(releaseTestsTable.status, [...OPEN])))
       .limit(1);
     if (open && open.workId === workId && open.sha === sha && open.mode === mode) return { id: open.id, cancelled: null };
+    // «Riaccendi» non toglie mai di mezzo un collaudo vero in corso (di questo lavoro o di un'altra squadra dell'App)
+    if (open && mode === "relight" && open.mode === "full") return null;
     let cancelled: number | null = null;
     if (open) {
       await tx
@@ -110,6 +112,10 @@ export async function requestReleaseTest(workId: number, mode: "full" | "relight
     return { id: row!.id, cancelled };
   });
 
+  if (result === null) {
+    logger.info({ workId, mode }, "Riaccendi rifiutato: collaudo in corso per l'App");
+    return null;
+  }
   if (result.cancelled !== null) {
     stopTestAgent(result.cancelled);
     await expireOpenCommands(result.cancelled);

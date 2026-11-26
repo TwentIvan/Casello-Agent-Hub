@@ -221,6 +221,45 @@ describe("Riaccendi", () => {
     expect(await db.select().from(releaseTestsTable).where(eq(releaseTestsTable.workId, workId))).toHaveLength(2);
   });
 
+  it("solo l'ultimo collaudo full del lavoro: uno più vecchio, con un collaudo nuovo in corso, non si riaccende e il nuovo resta", async () => {
+    const { testId, workId, appId, instanceId } = await seed();
+    const [fresh] = await db
+      .insert(releaseTestsTable)
+      .values({ appId, workId, instanceId, sha: "def5678", mode: "full", status: "running" })
+      .returning();
+    const res = await api("POST", `/release-tests/${testId}/relight`);
+    expect(res.status).toBe(409);
+    expect(res.json.error).toBe("«Riaccendi» vale solo per l'ultimo collaudo del lavoro");
+    expect((await db.select().from(releaseTestsTable).where(eq(releaseTestsTable.id, fresh!.id)))[0]!.status).toBe("running");
+  });
+
+  it("un collaudo full in corso di un'altra squadra della stessa App non si annulla: 409", async () => {
+    const { testId, appId } = await seed();
+    const [other] = await db
+      .insert(teamInstancesTable)
+      .values({ name: "Altra", refAppId: appId, refType: "piano", refId: "2", refTitle: "Piano", roles: [], status: "active", createdBy: userId, activatedBy: userId })
+      .returning();
+    const [otherWork] = await db
+      .insert(teamWorksTable)
+      .values({ instanceId: other!.id, number: 1, repo: "ivan/mister", branch: `botcave/lavoro-${other!.id}-1`, baseBranch: "main", baseSha: "abc1234", headSha: "aaa1111", status: "open" })
+      .returning();
+    const [running] = await db
+      .insert(releaseTestsTable)
+      .values({ appId, workId: otherWork!.id, instanceId: other!.id, sha: "aaa1111", mode: "full", status: "running" })
+      .returning();
+    // Con il repository di collaudo configurato (altrimenti ogni richiesta nasce subito `skipped`); il rifiuto non lancia nulla
+    process.env["COLLAUDO_REPO"] = "ivan/collaudo";
+    let res: Awaited<ReturnType<typeof api>>;
+    try {
+      res = await api("POST", `/release-tests/${testId}/relight`);
+    } finally {
+      delete process.env["COLLAUDO_REPO"];
+    }
+    expect(res.status).toBe(409);
+    expect(res.json.error).toBe("un collaudo è in corso per questa App: riprova quando finisce");
+    expect((await db.select().from(releaseTestsTable).where(eq(releaseTestsTable.id, running!.id)))[0]!.status).toBe("running");
+  });
+
   it("voce già decisa → 409; voce di un altro utente → 404; collaudo inesistente → 404", async () => {
     const { testId, itemId } = await seed();
     await db.update(pendingActionsTable).set({ status: "rejected" }).where(eq(pendingActionsTable.id, itemId));

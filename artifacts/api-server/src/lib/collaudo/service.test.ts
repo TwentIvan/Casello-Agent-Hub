@@ -214,6 +214,24 @@ describe("ciclo di vita del collaudo", () => {
     expect(files.map((f) => f.name)).toEqual(["nuovo.png"]);
   });
 
+  it("relight non annulla un collaudo full aperto: null e il collaudo resta", async () => {
+    const { workId } = await seedWork("relight-full");
+    const fullId = (await requestReleaseTest(workId))!;
+    expect(await requestReleaseTest(workId, "relight")).toBeNull();
+    expect((await testRow(fullId)).status).not.toBe("cancelled");
+    expect(await db.select().from(releaseTestsTable).where(eq(releaseTestsTable.workId, workId))).toHaveLength(1);
+  });
+
+  it("relight su un relight aperto lo sostituisce", async () => {
+    const { workId } = await seedWork("relight-relight");
+    const first = (await requestReleaseTest(workId, "relight"))!;
+    await db.update(teamWorksTable).set({ headSha: "fff9999" }).where(eq(teamWorksTable.id, workId));
+    const second = (await requestReleaseTest(workId, "relight"))!;
+    expect(second).not.toBe(first);
+    expect((await testRow(first)).status).toBe("cancelled");
+    expect((await testRow(second)).sha).toBe("fff9999");
+  });
+
   it("nuovo collaudo annulla il precedente", async () => {
     const { workId } = await seedWork("annulla");
     const oldId = (await requestReleaseTest(workId))!;

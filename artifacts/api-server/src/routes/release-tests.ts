@@ -175,6 +175,17 @@ export function createReleaseTestsRouter(): IRouter {
       res.status(409).json({ error: MSG.itemNotPending });
       return;
     }
+    // Solo l'ultimo collaudo completo del lavoro si riaccende: uno più vecchio è superato da un collaudo nuovo
+    const [latest] = await db
+      .select({ id: releaseTestsTable.id })
+      .from(releaseTestsTable)
+      .where(and(eq(releaseTestsTable.workId, test.workId), eq(releaseTestsTable.mode, "full")))
+      .orderBy(desc(releaseTestsTable.id))
+      .limit(1);
+    if (latest?.id !== test.id) {
+      res.status(409).json({ error: MSG.relightNotLatest });
+      return;
+    }
     // Solo le richieste valide consumano il limite
     if (!consumeTestRelight(item.actionId)) {
       res.status(429).json({ error: MSG.relightLimit });

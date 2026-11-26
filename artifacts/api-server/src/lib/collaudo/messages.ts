@@ -30,7 +30,8 @@ export const RELEASE_TEST_ROUTE_MESSAGES = {
   itemNotFound: "voce «Porta in produzione» non trovata",
   relightNotDone: "il collaudo non è concluso: aspetta la fine",
   itemNotPending: "la voce «Porta in produzione» non è più in attesa",
-  relightFailed: "collaudo non avviabile: riprova più tardi",
+  relightFailed: "un collaudo è in corso per questa App: riprova quando finisce",
+  relightNotLatest: "«Riaccendi» vale solo per l'ultimo collaudo del lavoro",
   relightLimit: "limite di «Riaccendi» di oggi raggiunto: riprova domani",
   sendBackGone: "la voce «Porta in produzione» è già stata decisa",
 } as const;

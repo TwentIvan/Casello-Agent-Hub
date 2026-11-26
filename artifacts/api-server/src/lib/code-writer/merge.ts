@@ -13,7 +13,7 @@ import type { CatalogTool, ToolResult } from "../tools/types";
 import { ciState } from "./ci-state";
 import { requestArchitectureRefresh } from "../architecture/scheduler";
 import { requestReanalysisCheck } from "../reanalysis/service";
-import { getPullDetail, listPullFiles, markReadyForReview, readCi, readFileAt, squashMerge, type PullDetail, type PullFile, type RepoRef } from "./github-git";
+import { containsCommit, getBranchHead, getPullDetail, listPullFiles, markReadyForReview, mergeCommit, readCi, readFileAt, squashMerge, type PullDetail, type PullFile, type RepoRef } from "./github-git";
 import { classifyMigration, isPostMigration, MIGRATION_NAME_RE } from "../migrations/classify";
 import { codeBranch, codeErrorMessage } from "./session";
 import { WORK_MESSAGES } from "../teams/works";
@@ -251,14 +251,18 @@ async function release(rowId: number): Promise<void> {
   await db.update(teamCodeTasksTable).set({ botcaveMergedAt: null }).where(eq(teamCodeTasksTable.id, rowId));
 }
 
-/** Esce dalla bozza e unisce con squash sulla testa controllata; un errore toglie la prenotazione. */
-async function doMerge(ctx: Context, pull: PullDetail): Promise<string> {
+/**
+ * Esce dalla bozza e unisce sulla testa controllata, con squash o (`method: "merge"`) con un commit di merge che conserva
+ * la storia della PR; un errore toglie la prenotazione.
+ */
+async function doMerge(ctx: Context, pull: PullDetail, method: "squash" | "merge" = "squash"): Promise<string> {
   try {
     if (pull.draft) await markReadyForReview(ctx.repo, pull.nodeId);
     const title = `${pull.title || `Compito ${ctx.row.planTaskId}`} (#${pull.number})`.slice(0, 250);
-    const merged = await squashMerge(ctx.repo, pull.number, { sha: pull.headSha, title });
+    const input = { sha: pull.headSha, title };
+    const merged = method === "merge" ? await mergeCommit(ctx.repo, pull.number, input) : await squashMerge(ctx.repo, pull.number, input);
     logger.info(
-      { instanceId: ctx.instance.id, planTaskId: ctx.row.planTaskId, pr: pull.number, head: pull.headSha.slice(0, 7), sha: merged.sha.slice(0, 7) },
+      { instanceId: ctx.instance.id, planTaskId: ctx.row.planTaskId, pr: pull.number, head: pull.headSha.slice(0, 7), sha: merged.sha.slice(0, 7), method },
       "PR della squadra unita da Botcave",
     );
     // Il codice dell'App è cambiato: la sintesi dell'architettura si aggiorna (in background, mai a scapito del merge)
@@ -422,10 +426,25 @@ export async function notifyMergeRejected(action: PendingActionRow): Promise<voi
 }
 
 /**
+ * Vero se la PR porta nel lavoro la testa del branch base che il lavoro non ha ancora (il compito ha unito il base nel suo
+ * branch): va unita con un commit di merge, altrimenti lo squash farebbe perdere la storia del base e «Porta in produzione»
+ * ritroverebbe gli stessi conflitti. Testa del base non leggibile → falso (squash, come prima).
+ */
+async function bringsBase(repo: RepoRef, baseBranch: string, workBranch: string, prHead: string): Promise<boolean> {
+  const baseHead = await getBranchHead(repo, baseBranch);
+  const workHead = await getBranchHead(repo, workBranch);
+  if (baseHead === null || workHead === null) return false;
+  // Confronti fra sha: i nomi dei branch con «/» nell'indirizzo del confronto non servono
+  if (await containsCommit(repo, baseHead, workHead)) return false;
+  return containsCommit(repo, baseHead, prHead);
+}
+
+/**
  * Merge automatico di una PR di un compito sul branch del suo lavoro (spec §15.2), chiamato dalla sorveglianza con la CI
  * verde: stessi controlli di `unisci_pr` (squadra attiva, installazione, branch, base = branch del lavoro, testa invariata,
  * CI letta dal vivo, workflow e meccanismo delle migrazioni rifiutati, migrazioni classificate) ma senza limite orario né
- * ruolo `code: merge`; gli script `-post` si uniscono e restano elencati nel lavoro per «Porta in produzione». Squash.
+ * ruolo `code: merge`; gli script `-post` si uniscono e restano elencati nel lavoro per «Porta in produzione». Squash, oppure merge vero se la
+ * PR porta la testa del branch base che il lavoro non ha ancora (`bringsBase`).
  * Risponde `merged`, `{refused}` con il messaggio fisso (il chiamante blocca il compito) o `skipped` (stato cambiato).
  */
 export async function mergeIntoWork(code: TeamCodeTaskRow): Promise<"merged" | "skipped" | { refused: string }> {
@@ -439,8 +458,9 @@ export async function mergeIntoWork(code: TeamCodeTaskRow): Promise<"merged" | "
     const pull = await checkPull(ctx, null);
     const verdict = await classifyLivePull(ctx.repo, pull);
     if (verdict.kind === "refuse") return { refused: verdict.message };
+    const method = (await bringsBase(ctx.repo, work.baseBranch, work.branch, pull.headSha)) ? "merge" : "squash";
     await reserve(ctx, false);
-    const mergedSha = await doMerge(ctx, pull);
+    const mergedSha = await doMerge(ctx, pull, method);
     const posts = verdict.kind === "queue" ? verdict.postScripts.map((p) => p.path) : [];
     await db
       .update(teamWorksTable)

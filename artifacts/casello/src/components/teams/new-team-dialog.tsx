@@ -27,6 +27,8 @@ import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
 
 const FROM_SCRATCH = "none";
+/** Tipo del lavoro di riferimento delle squadre create a mano (quelle di «Implementa» e del ciclo hanno il loro). */
+const TEAM_REF_TYPE = "squadra";
 
 interface NewTeamDialogProps {
   open: boolean;
@@ -35,7 +37,7 @@ interface NewTeamDialogProps {
   template?: { id: number; name: string };
 }
 
-/** Crea una squadra per un lavoro concreto: nome e lavoro di riferimento (app, tipo, identificativo, titolo). */
+/** Crea una squadra per un lavoro concreto: nome e lavoro di riferimento (app e titolo facoltativo). */
 export function NewTeamDialog({ open, onOpenChange, template }: NewTeamDialogProps) {
   const [, navigate] = useLocation();
   const queryClient = useQueryClient();
@@ -48,8 +50,6 @@ export function NewTeamDialog({ open, onOpenChange, template }: NewTeamDialogPro
   const [templateChoice, setTemplateChoice] = useState<string>("");
   const [name, setName] = useState("");
   const [appId, setAppId] = useState("");
-  const [refType, setRefType] = useState("");
-  const [refId, setRefId] = useState("");
   const [refTitle, setRefTitle] = useState("");
 
   const create = useCreateTeamInstance({
@@ -68,7 +68,7 @@ export function NewTeamDialog({ open, onOpenChange, template }: NewTeamDialogPro
 
   const templateId = template?.id ?? (templateChoice && templateChoice !== FROM_SCRATCH ? Number(templateChoice) : undefined);
   const ready =
-    name.trim() !== "" && appId !== "" && refType.trim() !== "" && refId.trim() !== "" && (template || templateChoice !== "");
+    name.trim() !== "" && appId !== "" && (template || templateChoice !== "");
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -89,11 +89,12 @@ export function NewTeamDialog({ open, onOpenChange, template }: NewTeamDialogPro
       data: {
         ...(templateId !== undefined ? { templateId } : { roles: [lead] }),
         name: name.trim(),
+        // Il lavoro di riferimento è l'App: tipo e id sono solo un'etichetta, presa dal nome della squadra
         ref: {
           appId: Number(appId),
-          type: refType.trim(),
-          id: refId.trim(),
-          ...(refTitle.trim() && { title: refTitle.trim() }),
+          type: TEAM_REF_TYPE,
+          id: name.trim().slice(0, 100),
+          title: refTitle.trim() || name.trim(),
         },
       },
     });
@@ -153,23 +154,6 @@ export function NewTeamDialog({ open, onOpenChange, template }: NewTeamDialogPro
                   </SelectContent>
                 </Select>
               )}
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="team-ref-type">Tipo</Label>
-                <Input
-                  id="team-ref-type"
-                  value={refType}
-                  onChange={(e) => setRefType(e.target.value)}
-                  maxLength={40}
-                  placeholder="es. wi"
-                  className="font-mono"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label htmlFor="team-ref-id">Identificativo</Label>
-                <Input id="team-ref-id" value={refId} onChange={(e) => setRefId(e.target.value)} maxLength={100} placeholder="es. 1174" />
-              </div>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="team-ref-title">Titolo (facoltativo)</Label>

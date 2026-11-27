@@ -186,6 +186,8 @@ export interface FakeGithub {
   statuses: Map<string, { context: string; state: string }[]>;
   /** id del job → log di testo. */
   jobLogs: Map<number, string>;
+  /** Lanci di workflow ricevuti (`POST /repos/{repo}/actions/workflows/{file}/dispatches`, 204). */
+  dispatches: { repo: string; workflow: string; ref: string; inputs: Record<string, string> }[];
   /** Crea un repo Git con un commit iniziale sul branch dato; risponde con lo sha del commit. */
   seedRepo(fullName: string, branch: string, files: Record<string, string | { content: string; mode: string }>): string;
   /** File (percorso → testo) del commit a cui punta un branch o uno sha. */
@@ -387,6 +389,7 @@ export async function startFakeGithub(opts: { appId?: string; slug?: string } = 
     checkRuns: new Map(),
     statuses: new Map(),
     jobLogs: new Map(),
+    dispatches: [],
     seedRepo(fullName, branch, files) {
       const repo: FakeGitRepo = { blobs: new Map(), trees: new Map(), commits: new Map(), refs: new Map(), defaultBranch: branch };
       const entries: FakeGitTreeEntry[] = Object.entries(files).map(([path, spec]) => {
@@ -601,6 +604,17 @@ export async function startFakeGithub(opts: { appId?: string; slug?: string } = 
         default_branch: gitOf(fullName)?.defaultBranch ?? r.defaultBranch,
         ...(template ? { template_repository: { full_name: template } } : {}),
       });
+    }
+
+    // Lancio di un workflow (`workflow_dispatch`): serve `actions: write`, risponde 204
+    let dm: RegExpExecArray | null;
+    if (repoMatch && method === "POST" && (dm = /^\/actions\/workflows\/([^/]+)\/dispatches$/.exec(rest))) {
+      const fullName = access("actions", "write");
+      if (!fullName) return;
+      const b = (body ?? {}) as { ref?: string; inputs?: Record<string, string> };
+      fake.dispatches.push({ repo: fullName, workflow: decodeURIComponent(dm[1]!), ref: b.ref ?? "", inputs: b.inputs ?? {} });
+      res.writeHead(204).end();
+      return;
     }
 
     // Merge di un branch in un altro (`POST /repos/{repo}/merges`): 204 se il base contiene già la testa, 409 con un conflitto

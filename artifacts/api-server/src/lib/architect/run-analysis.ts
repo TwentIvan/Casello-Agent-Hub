@@ -94,7 +94,8 @@ function notifyFinished(analysisId: number): void {
 }
 
 /**
- * Nota dell'utente sull'ultimo «Porta in produzione» rifiutato nei giri precedenti dello stesso ciclo (3c): la più recente,
+ * Motivo del rifiuto dell'ultimo «Porta in produzione» nei giri precedenti dello stesso ciclo (3c): nota dell'utente o resoconto
+ * del collaudo (marcato come tale), la più recente,
  * null se non ce n'è.
  */
 async function releaseNoteForRound(roundId: number): Promise<string | null> {

@@ -36,6 +36,8 @@ tags:
     description: Catalogo dei modelli per provider e suo aggiornamento
   - name: fleet
     description: Flotta degli agenti (salute, attività e politica di coordinamento comune)
+  - name: collaudo
+    description: Collaudo dei lavori delle squadre prima di «Porta in produzione» (esiti, ricetta, configurazione e protocollo del runner)
   - name: evolution
     description: Ciclo di evoluzione automatica di un'App (impostazioni, consenso, giri)
   - name: architect
@@ -2958,6 +2960,413 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "409":
           $ref: "#/components/responses/Conflict"
+
+  # ─── Collaudo dei lavori ────────────────────────────────────────────────────
+
+  /release-tests:
+    get:
+      operationId: listReleaseTests
+      tags: [collaudo]
+      summary: Collaudi di un lavoro o di un'App
+      description: >-
+        Gli ultimi 20 collaudi, dal più recente, del lavoro (`workId`) o dell'App (`appId`): serve uno dei due, altrimenti 400.
+        Solo letture.
+      parameters:
+        - name: workId
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: appId
+          in: query
+          required: false
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Collaudi
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ReleaseTest"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /release-tests/{id}:
+    get:
+      operationId: getReleaseTest
+      tags: [collaudo]
+      summary: Dettaglio di un collaudo
+      description: Esito, resoconto, problemi, passi dell'agente collaudatore e metadati dei file (video e screenshot).
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Collaudo
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReleaseTestDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /release-tests/{id}/files/{fileId}:
+    get:
+      operationId: getReleaseTestFile
+      tags: [collaudo]
+      summary: Scarica un file del collaudo
+      description: >-
+        Video WebM o screenshot PNG, con `Content-Disposition: inline` (si aprono nel browser), `X-Content-Type-Options:
+        nosniff` e `Cache-Control: no-store`. Un file che non è del collaudo → 404.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Contenuto del file
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /release-tests/{id}/relight:
+    post:
+      operationId: relightReleaseTest
+      tags: [collaudo]
+      summary: Riaccende il collaudo per il link dal vivo
+      description: >-
+        Solo sull'ultimo collaudo completo (`full`) del lavoro, `done`, e con la voce «Porta in produzione» ancora in attesa: mette in coda un nuovo
+        collaudo in modalità `relight` (senza agente né modello, serve solo il link dal vivo). Altrimenti 409. Al più 6 al
+        giorno (ora italiana) per voce, poi 429. Il token d'ambito `agent` non può.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "202":
+          description: Collaudo in coda
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReleaseTest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /release-tests/{id}/send-back:
+    post:
+      operationId: sendBackReleaseTest
+      tags: [collaudo]
+      summary: Rimanda il lavoro alla squadra dopo il collaudo
+      description: >-
+        Rifiuta la voce «Porta in produzione» con nota = resoconto del collaudo (al più 4 000 caratteri); il lavoro torna
+        aperto e il capo riceve il resoconto. Solo sull'ultimo collaudo completo (`full`) del lavoro, concluso (`done` o
+        `failed`), di cui usa il resoconto. Non conta nelle correzioni automatiche. Solo con il login; voce non più in
+        attesa, collaudo non concluso o non l'ultimo completo → 409.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "204":
+          description: Lavoro rimandato alla squadra
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+
+  /apps/{id}/test-recipe:
+    get:
+      operationId: getAppTestRecipe
+      tags: [collaudo]
+      summary: Ricetta di avvio del collaudo di un'App
+      description: Ricetta corrente (null se non ancora scoperta), versione, origine e elenco delle versioni.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Ricetta
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TestRecipeView"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      operationId: updateAppTestRecipe
+      tags: [collaudo]
+      summary: Salva la ricetta di avvio del collaudo
+      description: >-
+        Valida la ricetta come lo strumento `salva_ricetta` (comandi su una riga fino a 500 caratteri, al più 20 passi,
+        porte 1..65535, nessuna credenziale) e salva una versione nuova con origine `user`. Il token d'ambito `agent` non può.
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TestRecipeUpdate"
+      responses:
+        "200":
+          description: Ricetta salvata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TestRecipeView"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /collaudo/setup:
+    get:
+      operationId: getCollaudoSetup
+      tags: [collaudo]
+      summary: Stato della configurazione del collaudo
+      description: >-
+        Cosa manca per collaudare: repository di collaudo, App GitHub installata, workflow presente, permesso `actions:
+        write`. Legge da GitHub, mai in scrittura. Solo con il login.
+      responses:
+        "200":
+          description: Stato della configurazione
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CollaudoSetup"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /collaudo/setup/verify:
+    post:
+      operationId: verifyCollaudoSetup
+      tags: [collaudo]
+      summary: Ricontrolla la configurazione del collaudo
+      description: Rilegge da GitHub lo stato della configurazione (dopo che l'utente ha sistemato qualcosa). Solo con il login.
+      responses:
+        "200":
+          description: Stato della configurazione
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CollaudoSetup"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /collaudo/claim:
+    post:
+      operationId: collaudoClaim
+      tags: [collaudo]
+      summary: Il runner scambia il codice monouso
+      description: >-
+        Protocollo del runner di collaudo (GitHub Actions): pubblica, senza login. Scambia il codice monouso (15 minuti)
+        con il token `ctk_…` del collaudo, il token di lettura del repository e la ricetta. Codice non valido o scaduto →
+        401. 10 al minuto per IP.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CollaudoClaim"
+      responses:
+        "200":
+          description: Pacchetto del collaudo
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CollaudoClaimPackage"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "429":
+          $ref: "#/components/responses/TooManyRequests"
+
+  /collaudo/next:
+    post:
+      operationId: collaudoNext
+      tags: [collaudo]
+      summary: Il runner chiede il prossimo comando
+      description: >-
+        Solo con il token del collaudo. Attende fino a 25 secondi un comando dell'agente; 204 se non ne arriva, 410 se il
+        collaudo ha già l'esito o l'errore: con `liveLink` vero (esito ok o problemi) il runner apre il link dal vivo,
+        altrimenti riferisce subito senza tunnel.
+      responses:
+        "200":
+          description: Comando da eseguire
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CollaudoCommand"
+        "204":
+          description: Nessun comando
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "410":
+          description: Collaudo consegnato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CollaudoDelivered"
+
+  /collaudo/results/{commandId}:
+    post:
+      operationId: collaudoResult
+      tags: [collaudo]
+      summary: Il runner riferisce il risultato di un comando
+      description: Solo con il token del collaudo. Comando non del collaudo o non consegnato → 404.
+      parameters:
+        - name: commandId
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CollaudoCommandResult"
+      responses:
+        "204":
+          description: Risultato salvato
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /collaudo/ping:
+    post:
+      operationId: collaudoPing
+      tags: [collaudo]
+      summary: Rinnova la lease del collaudo
+      description: Solo con il token del collaudo. Rinnova di 5 minuti la lease.
+      responses:
+        "200":
+          description: Lease rinnovata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeLeaseRenewed"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /collaudo/tunnel:
+    post:
+      operationId: collaudoTunnel
+      tags: [collaudo]
+      summary: Il runner comunica il link dal vivo
+      description: >-
+        Solo con il token del collaudo. Indirizzo `https://….trycloudflare.com` e scadenza (al più 31 minuti da ora); altro →
+        400.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CollaudoTunnel"
+      responses:
+        "204":
+          description: Link salvato
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /collaudo/files:
+    post:
+      operationId: collaudoUploadFile
+      tags: [collaudo]
+      summary: Il runner carica un video o uno screenshot
+      description: >-
+        Solo con il token del collaudo. Corpo grezzo (WebM fino a 30 MB, un solo video; PNG fino a 2 MB, al più 20), tipo
+        nell'header `X-File-Kind` (`video` o `screenshot`), nome in `X-File-Name`. Il formato si legge dai primi byte.
+      parameters:
+        - name: X-File-Kind
+          in: header
+          required: true
+          schema:
+            type: string
+            enum: [video, screenshot]
+        - name: X-File-Name
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "201":
+          description: File salvato
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CollaudoFileSaved"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "413":
+          $ref: "#/components/responses/PayloadTooLarge"
+
+  /collaudo/report:
+    post:
+      operationId: collaudoReport
+      tags: [collaudo]
+      summary: Il runner chiude il collaudo
+      description: Solo con il token del collaudo, che si revoca. Chiude il collaudo e fa partire il successivo.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CollaudoReport"
+      responses:
+        "204":
+          description: Collaudo chiuso
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
 
   /runs/{id}/cancel:
     post:
@@ -7462,7 +7871,7 @@ components:
 
     App:
       type: object
-      required: [id, name, slug, baseUrl, status, serviceSecretSet, extraHeaders, sourceType, sourceRepo, sourceBranch, sourceTokenSet, sourceInstallationId, openapiUrl, functionalDescription, architectureRefresh, autoReanalysis, reanalysisSeenSha, reanalysisCheckedAt, stagingBranch, stagingUrl, alfredName, luciusName, leadName, botNames, pageActions, embedPagesSeen, createdAt, updatedAt]
+      required: [id, name, slug, baseUrl, status, serviceSecretSet, extraHeaders, sourceType, sourceRepo, sourceBranch, sourceTokenSet, sourceInstallationId, openapiUrl, functionalDescription, architectureRefresh, autoReanalysis, testAutoFix, testRecipeVersion, reanalysisSeenSha, reanalysisCheckedAt, stagingBranch, stagingUrl, alfredName, luciusName, leadName, botNames, pageActions, embedPagesSeen, createdAt, updatedAt]
       properties:
         id:
           type: integer
@@ -7523,6 +7932,13 @@ components:
         autoReanalysis:
           type: boolean
           description: Rianalisi automatica, a ogni nuovo commit del branch base un'analisi in coda per l'agente locale
+        testAutoFix:
+          type: boolean
+          description: >-
+            «Correggi da solo»: un collaudo con problemi rimanda il lavoro alla squadra (al più 2 volte per lavoro)
+        testRecipeVersion:
+          type: integer
+          description: Versione della ricetta di collaudo (0 = nessuna)
         reanalysisSeenSha:
           type: ["string", "null"]
           description: Ultimo SHA del branch base già gestito dalla rianalisi automatica
@@ -8027,6 +8443,9 @@ components:
         autoReanalysis:
           type: boolean
           description: Accende o spegne la rianalisi automatica (serve il codice da GitHub tramite installazione per avere effetto)
+        testAutoFix:
+          type: boolean
+          description: Accende o spegne la correzione automatica dei problemi del collaudo
         stagingBranch:
           type: ["string", "null"]
           description: Branch di prova (non il base, non main/master, non botcave/…); null lo toglie
@@ -8489,6 +8908,314 @@ components:
         pendingActions:
           type: integer
           description: Voci pending di «Da confermare» dell'utente nate da run dell'agente
+
+    TestRecipe:
+      type: object
+      required: [install, build, services, postgres, schema, env, startUrl, login]
+      properties:
+        install:
+          type: array
+          items:
+            type: string
+          description: Comandi di installazione, uno per riga
+        build:
+          type: array
+          items:
+            type: string
+        services:
+          type: array
+          items:
+            type: object
+            required: [name, command, port, readyPath]
+            properties:
+              name:
+                type: string
+              command:
+                type: string
+              port:
+                type: integer
+              readyPath:
+                type: string
+        postgres:
+          type: boolean
+          description: L'App vuole un Postgres di prova
+        schema:
+          type: array
+          items:
+            type: string
+          description: Comandi per preparare lo schema del database di prova
+        env:
+          type: object
+          additionalProperties:
+            type: string
+          description: Variabili d'ambiente (mai credenziali)
+        startUrl:
+          type: string
+        login:
+          type: ["string", "null"]
+          description: Come accedere con i dati di prova, a parole
+
+    TestRecipeUpdate:
+      type: object
+      required: [recipe]
+      properties:
+        recipe:
+          $ref: "#/components/schemas/TestRecipe"
+
+    TestRecipeVersion:
+      type: object
+      required: [version, source, createdAt]
+      properties:
+        version:
+          type: integer
+        source:
+          type: string
+          enum: [agent, user]
+        createdAt:
+          type: string
+          format: date-time
+
+    TestRecipeView:
+      type: object
+      required: [version, source, recipe, versions]
+      properties:
+        version:
+          type: integer
+          description: 0 se l'App non ha ancora una ricetta
+        source:
+          type: ["string", "null"]
+          enum: [agent, user, null]
+        recipe:
+          oneOf:
+            - $ref: "#/components/schemas/TestRecipe"
+            - type: "null"
+        versions:
+          type: array
+          description: Ultime 20 versioni, dalla più recente
+          items:
+            $ref: "#/components/schemas/TestRecipeVersion"
+
+    CollaudoSetup:
+      type: object
+      required: [repo, installed, workflow, actionsWrite]
+      properties:
+        repo:
+          type: ["string", "null"]
+          description: Repository di collaudo (null se non configurato)
+        installed:
+          type: boolean
+          description: L'App GitHub è installata sul repository
+        workflow:
+          type: boolean
+          description: Il file del workflow esiste nel repository
+        actionsWrite:
+          type: boolean
+          description: GitHub concede il permesso `actions` in scrittura sul repository
+
+    ReleaseTestProblem:
+      type: object
+      required: [task, title, steps, expected, actual, screenshot]
+      properties:
+        task:
+          type: ["string", "null"]
+          description: Compito del PLAN a cui si riferisce
+        title:
+          type: string
+        steps:
+          type: string
+        expected:
+          type: string
+        actual:
+          type: string
+        screenshot:
+          type: ["integer", "null"]
+          description: Id di uno screenshot tra i file del collaudo
+
+    ReleaseTest:
+      type: object
+      required: [id, appId, workId, instanceId, sha, mode, status, outcome, report, problems, notTestable, error, tunnelUrl, tunnelUntil, costUsd, autoRejects, createdAt, startedAt, finishedAt]
+      properties:
+        id:
+          type: integer
+        appId:
+          type: integer
+        workId:
+          type: integer
+        instanceId:
+          type: integer
+        sha:
+          type: string
+          description: Testa del lavoro collaudata
+        mode:
+          type: string
+          enum: [full, relight]
+        status:
+          type: string
+          enum: [queued, dispatching, running, done, failed, skipped, cancelled]
+        outcome:
+          type: ["string", "null"]
+          enum: [ok, problems, not_startable, null]
+        report:
+          type: ["string", "null"]
+          description: Resoconto in Markdown
+        problems:
+          type: ["array", "null"]
+          items:
+            $ref: "#/components/schemas/ReleaseTestProblem"
+        notTestable:
+          type: ["array", "null"]
+          items:
+            type: string
+        error:
+          type: ["string", "null"]
+          description: Motivo fisso se il collaudo è saltato, fallito o annullato
+        tunnelUrl:
+          type: ["string", "null"]
+          description: Link pubblico temporaneo alla prova dal vivo (solo finché è valido)
+        tunnelUntil:
+          type: ["string", "null"]
+          format: date-time
+        autoRejects:
+          type: integer
+          minimum: 0
+          description: Correzioni automatiche già usate dal lavoro (team_works.test_auto_rejects)
+        costUsd:
+          type: ["number", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        startedAt:
+          type: ["string", "null"]
+          format: date-time
+        finishedAt:
+          type: ["string", "null"]
+          format: date-time
+
+    ReleaseTestFile:
+      type: object
+      required: [id, kind, name, contentType, size]
+      properties:
+        id:
+          type: integer
+        kind:
+          type: string
+          enum: [video, screenshot]
+        name:
+          type: string
+        contentType:
+          type: string
+        size:
+          type: integer
+
+    ReleaseTestDetail:
+      allOf:
+        - $ref: "#/components/schemas/ReleaseTest"
+        - type: object
+          required: [steps, files]
+          properties:
+            steps:
+              type: array
+              items:
+                $ref: "#/components/schemas/TeamStep"
+            files:
+              type: array
+              items:
+                $ref: "#/components/schemas/ReleaseTestFile"
+
+    CollaudoDelivered:
+      type: object
+      required: [error, liveLink]
+      properties:
+        error:
+          type: string
+        liveLink:
+          type: boolean
+          description: Vero solo con un esito da provare dal vivo (ok o problemi)
+
+    CollaudoClaim:
+      type: object
+      required: [testId, code]
+      properties:
+        testId:
+          type: integer
+          minimum: 1
+        code:
+          type: string
+          minLength: 1
+          maxLength: 200
+
+    CollaudoClaimPackage:
+      type: object
+      required: [token, repo, sha, repoToken, recipe, mode]
+      properties:
+        token:
+          type: string
+          description: Token `ctk_…` del collaudo
+        repo:
+          type: string
+        sha:
+          type: string
+        repoToken:
+          type: string
+          description: Token di lettura del repository dell'App, valido un'ora
+        recipe:
+          oneOf:
+            - $ref: "#/components/schemas/TestRecipe"
+            - type: "null"
+        mode:
+          type: string
+          enum: [full, relight]
+
+    CollaudoCommand:
+      type: object
+      required: [id, kind, args]
+      properties:
+        id:
+          type: integer
+        kind:
+          type: string
+          enum: [shell, browser]
+        args:
+          description: Argomenti del comando
+
+    CollaudoCommandResult:
+      type: object
+      required: [ok, output]
+      properties:
+        ok:
+          type: boolean
+        output:
+          type: string
+          maxLength: 200000
+
+    CollaudoTunnel:
+      type: object
+      required: [url, until]
+      properties:
+        url:
+          type: string
+          maxLength: 300
+        until:
+          type: string
+          maxLength: 60
+
+    CollaudoFileSaved:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: integer
+
+    CollaudoReport:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          enum: [done, failed]
+        error:
+          type: string
+          maxLength: 2000
 
     FleetPolicy:
       type: object
@@ -9425,6 +10152,11 @@ components:
         decidedByCycle:
           type: boolean
           description: Voce di piano approvata dal ciclo di evoluzione della squadra, non da un clic
+        releaseTest:
+          description: Ultimo collaudo completo del lavoro di una voce `release` (assente per le altre voci)
+          oneOf:
+            - $ref: "#/components/schemas/QueuedReleaseTest"
+            - type: "null"
         createdAt:
           type: string
           format: date-time
@@ -9432,6 +10164,44 @@ components:
           type: ["string", "null"]
           format: date-time
         finishedAt:
+          type: ["string", "null"]
+          format: date-time
+
+    QueuedReleaseTest:
+      type: object
+      description: Ultimo collaudo completo (`full`) del lavoro; «Riaccendi» e «Rimanda alla squadra» operano su questo
+      required: [id, status, outcome, relight]
+      properties:
+        id:
+          type: integer
+        status:
+          type: string
+          enum: [queued, dispatching, running, done, failed, skipped, cancelled]
+        outcome:
+          type: ["string", "null"]
+          enum: [ok, problems, not_startable, null]
+        relight:
+          description: «Riaccendi» più recente dopo il collaudo completo, con il suo link dal vivo; null se non ce n'è
+          oneOf:
+            - $ref: "#/components/schemas/QueuedReleaseRelight"
+            - type: "null"
+
+    QueuedReleaseRelight:
+      type: object
+      required: [id, status, error, tunnelUrl, tunnelUntil]
+      properties:
+        id:
+          type: integer
+        status:
+          type: string
+          enum: [queued, dispatching, running, done, failed, skipped, cancelled]
+        error:
+          type: ["string", "null"]
+          description: Motivo fisso se la riaccensione non è riuscita
+        tunnelUrl:
+          type: ["string", "null"]
+          description: Link pubblico temporaneo alla prova dal vivo (solo finché è valido)
+        tunnelUntil:
           type: ["string", "null"]
           format: date-time
 

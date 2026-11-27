@@ -1,6 +1,6 @@
 import { and, desc, eq, lt, sql } from "drizzle-orm";
 import type { ChatCompletionFunctionTool, ChatCompletionMessageParam } from "openai/resources/chat/completions";
-import { aiModelsTable, db, nodesTable, teamInstancesTable, teamCodeTasksTable, teamTasksTable, teamTurnStepsTable, teamTurnsTable, type TeamInstanceRow, type TeamTurnReason, type TeamTurnRow } from "@workspace/db";
+import { db, nodesTable, teamInstancesTable, teamCodeTasksTable, teamTasksTable, teamTurnStepsTable, teamTurnsTable, type TeamInstanceRow, type TeamTurnReason, type TeamTurnRow } from "@workspace/db";
 import { runAgentLoop, type LoopDeps, type LoopLimits } from "../agent-loop";
 import { dispatchAgentCall } from "../agent-dispatch";
 import { resolveModel, type ResolvedModel } from "../ai/executor";
@@ -19,6 +19,7 @@ import { readinessText, teamReadiness } from "./readiness";
 import { loadRoleTools, roleFunctionTools, roleToolExecutor, teamQueueAction, toolSchemaLookup } from "./role-tools";
 import { TASK_MESSAGES, errName, skillTexts } from "./task-runner";
 import { teamBudgetBlock } from "./team-budget";
+import { usableNodeFallback } from "./node-fallback";
 import { cyclePausedForTeam } from "../evolution/cycle-team";
 import { enqueueTurnReason, notifyTurnQueued } from "./turn-queue";
 
@@ -488,7 +489,7 @@ async function executeTurn(turn: TeamTurnRow, usage: LoopUsage): Promise<TurnRes
     case "cancelled":
       return { status: "failed", error: TURN_MESSAGES.internalError, aiModelId };
     case "fallback": {
-      const fallback = await usableLeadFallback(instance.id, resolved);
+      const fallback = await usableNodeFallback(instance.id, resolved);
       logger.info({ teamTurnId: turn.id, reason: outcome.reason, fallback: fallback !== null }, "Turno del capo senza Claude Code");
       if (!fallback) {
         await toolDeps.onStep({ type: "model", ok: false, durationMs, error: outcome.message });
@@ -530,26 +531,6 @@ async function nodeNote(nodeId: number | null): Promise<string | undefined> {
   if (nodeId === null) return undefined;
   const [node] = await db.select({ name: nodesTable.name }).from(nodesTable).where(eq(nodesTable.id, nodeId)).limit(1);
   return node ? `Claude Code sul nodo «${node.name}»` : undefined;
-}
-
-/**
- * Modello di ripiego dell'account nodo del capo, se usabile: dello stesso proprietario, cloud, risolvibile e senza tetti
- * raggiunti (della squadra, del modello, dell'account e dell'utente). Null altrimenti.
- */
-async function usableLeadFallback(instanceId: number, node: ResolvedModel): Promise<{ resolved: ResolvedModel; name: string } | null> {
-  const id = node.fallbackAiModelId;
-  if (id === null) return null;
-  let fallback: ResolvedModel;
-  try {
-    fallback = await resolveModel(id, { userId: node.ownerUserId, mustOwn: true });
-  } catch (err) {
-    logger.warn({ fallbackAiModelId: id, errName: errName(err) }, "Modello di ripiego del capo non usabile");
-    return null;
-  }
-  if (fallback.kind !== "openai_compatible") return null;
-  if ((await teamBudgetBlock(instanceId, id)) !== null) return null;
-  const [row] = await db.select({ displayName: aiModelsTable.displayName }).from(aiModelsTable).where(eq(aiModelsTable.id, id)).limit(1);
-  return { resolved: fallback, name: row?.displayName || fallback.modelId };
 }
 
 /**

@@ -181,7 +181,7 @@ export function ActionDialog({
               </div>
             ) : action.kind === "release" ? (
               <div className="rounded-md border p-3">
-                <ReleaseDetail args={action.args} status={action.status} />
+                <ReleaseDetail args={action.args} status={action.status} releaseTest={action.releaseTest ?? null} />
               </div>
             ) : action.kind === "app_bootstrap" ? (
               <div className="rounded-md border p-3">

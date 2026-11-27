@@ -24,7 +24,7 @@ env:
 
 jobs:
   # Test dell'API (Vitest + Postgres in memoria) divisi in 4 parti parallele, ognuna con il suo Postgres in memoria
-  # (i file di una parte girano in serie: vedi vitest.config.ts); la console nella prima parte. Girano a ogni push e
+  # (i file di una parte girano in serie: vedi vitest.config.ts); la console e casello-collaudo nella prima parte. Girano a ogni push e
   # bloccano il deploy; le build delle immagini partono insieme (su main :latest si scrive solo dopo i test, nel deploy).
   test:
     name: Test API (${{ matrix.shard }}/4)
@@ -51,6 +51,32 @@ jobs:
 
       - if: matrix.shard == 1
         run: pnpm --filter @workspace/casello run test
+
+      # Programma di collaudo (casello-collaudo): test e typecheck nella prima parte
+      - if: matrix.shard == 1
+        run: pnpm --filter @workspace/casello-collaudo run test
+
+      - if: matrix.shard == 1
+        run: pnpm --filter @workspace/casello-collaudo run typecheck
+
+      # Il programma di collaudo si pubblica con la versione nel nome (cache immutable): codice cambiato senza alzare la
+      # versione = i runner userebbero il file vecchio. Solo sui push dei branch diversi da main, come per Botcave Nodo.
+      - name: Versione di casello-collaudo alzata se cambia il codice
+        if: matrix.shard == 1 && github.event_name == 'push' && github.ref != 'refs/heads/main'
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin main
+          if git diff --quiet FETCH_HEAD -- artifacts/casello-collaudo/src; then
+            echo "artifacts/casello-collaudo/src uguale a main: nessun controllo della versione"
+            exit 0
+          fi
+          main_version=$( (git show FETCH_HEAD:artifacts/casello-collaudo/package.json 2>/dev/null || true) | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).version??"")}catch{console.log("")}})')
+          branch_version=$(node -p 'require("./artifacts/casello-collaudo/package.json").version')
+          echo "versione su main: ${main_version:-assente}, su questo branch: ${branch_version}"
+          if [ -n "$main_version" ] && [ "$main_version" = "$branch_version" ]; then
+            echo "::error file=artifacts/casello-collaudo/package.json::artifacts/casello-collaudo/src è cambiato rispetto a main ma la versione è ancora ${branch_version}: alza \"version\" in artifacts/casello-collaudo/package.json (il programma pubblicato ha la versione nel nome e la cache immutable)"
+            exit 1
+          fi
 
   # Botcave Nodo: si ricostruisce su macOS solo se la versione (package.json) o la minima (min-version.txt) differiscono da
   # quelle pubblicate in produzione. Altrimenti si riusano zip, binario e manifest già pubblicati (verificati con sha256 e
@@ -241,6 +267,9 @@ jobs:
           # Botcave Nodo: manifest pubblicato con la console, cache di un'ora
           expect /downloads/nodo/nodo-manifest.json "200 OK"
           expect /downloads/nodo/nodo-manifest.json "max-age=3600"
+          # Programma di collaudo: manifest con cache di un'ora
+          expect /downloads/collaudo/collaudo-manifest.json "200 OK"
+          expect /downloads/collaudo/collaudo-manifest.json "max-age=3600"
           # Webhook degli inneschi: il segreto e' nel percorso, la location non deve scriverlo ne' nell'access log ne' nell'error log
           conf=$(docker exec web-smoke-run nginx -T 2>/dev/null)
           hooks=$(awk '/location \^~ \/api\/hooks\//{f=1} f{print} f&&/^    }/{exit}' <<<"$conf")

@@ -56,6 +56,8 @@ export interface AppUpdate {
   architectureRefresh?: ArchitectureRefresh;
   /** Accende o spegne la rianalisi automatica (serve il codice da GitHub tramite installazione per avere effetto) */
   autoReanalysis?: boolean;
+  /** Accende o spegne la correzione automatica dei problemi del collaudo */
+  testAutoFix?: boolean;
   /**
      * Branch di prova (non il base, non main/master, non botcave/…); null lo toglie
      * @nullable

@@ -11,6 +11,7 @@ import type { QueuedActionStatus } from './queuedActionStatus';
 import type { QueuedActionTeam } from './queuedActionTeam';
 import type { QueuedActionTool } from './queuedActionTool';
 import type { QueuedProposal } from './queuedProposal';
+import type { QueuedReleaseTest } from './queuedReleaseTest';
 
 export interface QueuedAction {
   number: number;
@@ -41,6 +42,8 @@ export interface QueuedAction {
   decisionNote: string | null;
   /** Voce di piano approvata dal ciclo di evoluzione della squadra, non da un clic */
   decidedByCycle?: boolean;
+  /** Ultimo collaudo completo del lavoro di una voce `release` (assente per le altre voci) */
+  releaseTest?: QueuedReleaseTest | null;
   createdAt: Date;
   /** @nullable */
   decidedAt: Date | null;

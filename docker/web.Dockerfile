@@ -14,15 +14,19 @@ ENV BASE_PATH=/
 
 COPY pnpm-lock.yaml pnpm-workspace.yaml package.json .npmrc tsconfig.base.json tsconfig.json ./
 COPY artifacts/casello/package.json artifacts/casello/
+COPY artifacts/casello-collaudo/package.json artifacts/casello-collaudo/
 COPY lib ./lib
 COPY scripts ./scripts
 # NB: niente NODE_ENV=production qui — le dipendenze di build del web sono devDependencies
-RUN pnpm install --frozen-lockfile --filter @workspace/casello...
+RUN pnpm install --frozen-lockfile --filter @workspace/casello... --filter @workspace/casello-collaudo...
 
 # design/ è la fonte dell'identità Botcave: token, logo e icone li legge la build di Vite
 COPY design ./design
 COPY artifacts/casello ./artifacts/casello
 RUN pnpm --filter @workspace/casello run build
+# Programma del runner di collaudo (dist/casello-collaudo-<versione>.mjs e collaudo-manifest.json, generati da scripts/build.mjs)
+COPY artifacts/casello-collaudo ./artifacts/casello-collaudo
+RUN pnpm --filter @workspace/casello-collaudo run build
 
 # ---------- stage 2: runtime ----------
 FROM nginx:alpine AS runtime
@@ -37,4 +41,6 @@ ENV NGINX_ENVSUBST_FILTER=EMBED_
 COPY --from=build /repo/artifacts/casello/dist/public /usr/share/nginx/html
 # Botcave Nodo per Mac (zip, binario e manifest dal job build-nodo della CI); in locale la cartella può avere solo .gitkeep
 COPY docker/nodo-downloads/ /usr/share/nginx/html/downloads/nodo/
+# Programma di collaudo: solo il file con la versione nel nome e il manifest
+COPY --from=build /repo/artifacts/casello-collaudo/dist/casello-collaudo-*.mjs /repo/artifacts/casello-collaudo/dist/collaudo-manifest.json /usr/share/nginx/html/downloads/collaudo/
 EXPOSE 80

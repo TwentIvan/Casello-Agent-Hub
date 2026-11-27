@@ -487,3 +487,21 @@ export function resetBugLimits(): void {
   bugIpReportCounter.reset();
   bugMessageCounter.reset();
 }
+
+// «Riaccendi» di un collaudo (rilancia il runner per il link dal vivo): 6 al giorno per voce «Porta in produzione», giorno
+// italiano. La chiave porta la data di Roma: il giorno dopo ricomincia da zero.
+const ROME_DAY = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Rome", year: "numeric", month: "2-digit", day: "2-digit" });
+const testRelightCounter = fixedWindowCounter({ limit: 6, windowMs: 48 * 3_600_000 });
+
+/** Conta un «Riaccendi» della voce: false oltre 6 nello stesso giorno italiano. */
+export function consumeTestRelight(actionId: number, now: Date = new Date()): boolean {
+  return testRelightCounter.consume(`action:${actionId}:${ROME_DAY.format(now)}`).ok;
+}
+
+/** Azzera il contatore di «Riaccendi» (solo per i test). */
+export function resetTestRelightLimit(): void {
+  testRelightCounter.reset();
+}
+
+// Runner di collaudo: scambio del codice monouso, 10 al minuto per IP (route pubblica)
+export const collaudoClaimRateLimit = rateLimit({ limit: 10, windowMs: 60_000 });

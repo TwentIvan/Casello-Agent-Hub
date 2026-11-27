@@ -178,7 +178,7 @@ export function PendingActionItem({
       {proposal && <ProposalSteps proposal={proposal} excluded={excluded} onToggle={toggle} />}
       {action.kind === "bug" && <BugDetail args={action.args} linkTeam={consoleHref === undefined} />}
       {action.kind === "merge" && <MergeDetail args={action.args} />}
-      {action.kind === "release" && <ReleaseDetail args={action.args} status={action.status} />}
+      {action.kind === "release" && <ReleaseDetail args={action.args} status={action.status} releaseTest={action.releaseTest ?? null} consoleHref={consoleHref} />}
       {action.kind === "app_bootstrap" && <AppBootstrapDetail args={action.args} status={action.status} number={action.number} />}
     </ConfirmItem>
   );

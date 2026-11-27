@@ -17,6 +17,7 @@ import { loadProposalSteps } from "../lib/actions/proposal-exec";
 import { toProposalView } from "../lib/actions/proposal-view";
 import { ACTION_MESSAGES, approveAction, rejectAction, type DecideResult } from "../lib/actions/decide";
 import { currentUserId } from "../lib/auth";
+import { releaseTestsForActions, type ReleaseTestBrief } from "../lib/collaudo/view";
 import { actionDecideRateLimit } from "../middlewares/rate-limit";
 import { parseRequest } from "../middlewares/error-handler";
 
@@ -44,9 +45,10 @@ type QueuedRow = Awaited<ReturnType<typeof selectQueued>>[number];
 
 type StepsMap = Awaited<ReturnType<typeof loadProposalSteps>>;
 type ToolNames = Map<number, string>;
+type QueuedData = { steps: StepsMap; toolNames: ToolNames; releaseTests: Map<number, ReleaseTestBrief> };
 
-// Passi e nomi dei tool delle sole proposte, con una lettura per ciascuno per tutte le voci
-async function loadProposalData(rows: QueuedRow[]): Promise<{ steps: StepsMap; toolNames: ToolNames }> {
+// Passi e nomi dei tool delle sole proposte e ultimo collaudo delle voci `release`, con una lettura per ciascuno per tutte le voci
+async function loadProposalData(rows: QueuedRow[]): Promise<QueuedData> {
   const ids = rows.filter((r) => r.action.kind === "proposal").map((r) => r.action.id);
   const steps = await loadProposalSteps(ids);
   const toolIds = [...new Set([...steps.values()].flat().map((s) => s.toolId))];
@@ -55,13 +57,15 @@ async function loadProposalData(rows: QueuedRow[]): Promise<{ steps: StepsMap; t
     const tools = await db.select({ id: appToolsTable.id, name: appToolsTable.name }).from(appToolsTable).where(inArray(appToolsTable.id, toolIds));
     for (const t of tools) toolNames.set(t.id, t.name);
   }
-  return { steps, toolNames };
+  const releaseTests = await releaseTestsForActions(rows.filter((r) => r.action.kind === "release").map((r) => r.action.id));
+  return { steps, toolNames, releaseTests };
 }
 
 function toQueuedAction(
   { action, appName, toolName, toolIdentity, teamName }: QueuedRow,
-  data: { steps: StepsMap; toolNames: ToolNames },
+  data: QueuedData,
 ) {
+  const test = data.releaseTests.get(action.id);
   return {
     number: action.number,
     status: action.status,
@@ -82,6 +86,8 @@ function toQueuedAction(
     errorMessage: action.errorMessage,
     decisionNote: action.decisionNote,
     decidedByCycle: action.decidedByCycle,
+    // Ultimo collaudo completo del lavoro, solo per le voci «Porta in produzione» che ne hanno uno, con l'ultimo «Riaccendi»
+    releaseTest: test ? { id: test.id, status: test.status, outcome: test.outcome, relight: test.relight } : null,
     createdAt: action.createdAt,
     decidedAt: action.decidedAt,
     finishedAt: action.finishedAt,

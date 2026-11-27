@@ -1732,6 +1732,8 @@ export const ListAppsResponseItem = zod.object({
   "functionalDescription": zod.string().nullable().describe('Descrizione funzionale dell\'app per l\'architetto'),
   "architectureRefresh": zod.enum(['off', 'hourly', '6h', 'daily', 'weekly']).describe('Frequenza di controllo della sintesi dell\'architettura'),
   "autoReanalysis": zod.boolean().describe('Rianalisi automatica, a ogni nuovo commit del branch base un\'analisi in coda per l\'agente locale'),
+  "testAutoFix": zod.boolean().describe('«Correggi da solo»: un collaudo con problemi rimanda il lavoro alla squadra (al più 2 volte per lavoro)'),
+  "testRecipeVersion": zod.number().describe('Versione della ricetta di collaudo (0 = nessuna)'),
   "reanalysisSeenSha": zod.string().nullable().describe('Ultimo SHA del branch base già gestito dalla rianalisi automatica'),
   "reanalysisCheckedAt": zod.coerce.date().nullable().describe('Ultimo controllo della rianalisi automatica'),
   "stagingBranch": zod.string().nullable().describe('Branch di prova dell\'App, riscritto da Botcave a ogni lavoro delle squadre (null = nessuna versione di prova)'),
@@ -1832,6 +1834,8 @@ export const CreateAppResponse = zod.object({
   "functionalDescription": zod.string().nullable().describe('Descrizione funzionale dell\'app per l\'architetto'),
   "architectureRefresh": zod.enum(['off', 'hourly', '6h', 'daily', 'weekly']).describe('Frequenza di controllo della sintesi dell\'architettura'),
   "autoReanalysis": zod.boolean().describe('Rianalisi automatica, a ogni nuovo commit del branch base un\'analisi in coda per l\'agente locale'),
+  "testAutoFix": zod.boolean().describe('«Correggi da solo»: un collaudo con problemi rimanda il lavoro alla squadra (al più 2 volte per lavoro)'),
+  "testRecipeVersion": zod.number().describe('Versione della ricetta di collaudo (0 = nessuna)'),
   "reanalysisSeenSha": zod.string().nullable().describe('Ultimo SHA del branch base già gestito dalla rianalisi automatica'),
   "reanalysisCheckedAt": zod.coerce.date().nullable().describe('Ultimo controllo della rianalisi automatica'),
   "stagingBranch": zod.string().nullable().describe('Branch di prova dell\'App, riscritto da Botcave a ogni lavoro delle squadre (null = nessuna versione di prova)'),
@@ -1899,6 +1903,8 @@ export const GetAppResponse = zod.object({
   "functionalDescription": zod.string().nullable().describe('Descrizione funzionale dell\'app per l\'architetto'),
   "architectureRefresh": zod.enum(['off', 'hourly', '6h', 'daily', 'weekly']).describe('Frequenza di controllo della sintesi dell\'architettura'),
   "autoReanalysis": zod.boolean().describe('Rianalisi automatica, a ogni nuovo commit del branch base un\'analisi in coda per l\'agente locale'),
+  "testAutoFix": zod.boolean().describe('«Correggi da solo»: un collaudo con problemi rimanda il lavoro alla squadra (al più 2 volte per lavoro)'),
+  "testRecipeVersion": zod.number().describe('Versione della ricetta di collaudo (0 = nessuna)'),
   "reanalysisSeenSha": zod.string().nullable().describe('Ultimo SHA del branch base già gestito dalla rianalisi automatica'),
   "reanalysisCheckedAt": zod.coerce.date().nullable().describe('Ultimo controllo della rianalisi automatica'),
   "stagingBranch": zod.string().nullable().describe('Branch di prova dell\'App, riscritto da Botcave a ogni lavoro delle squadre (null = nessuna versione di prova)'),
@@ -1970,6 +1976,7 @@ export const UpdateAppBody = zod.object({
   "functionalDescription": zod.string().nullish(),
   "architectureRefresh": zod.enum(['off', 'hourly', '6h', 'daily', 'weekly']).optional().describe('Frequenza di controllo della sintesi dell\'architettura'),
   "autoReanalysis": zod.boolean().optional().describe('Accende o spegne la rianalisi automatica (serve il codice da GitHub tramite installazione per avere effetto)'),
+  "testAutoFix": zod.boolean().optional().describe('Accende o spegne la correzione automatica dei problemi del collaudo'),
   "stagingBranch": zod.string().nullish().describe('Branch di prova (non il base, non main\/master, non botcave\/…); null lo toglie'),
   "alfredName": zod.string().max(updateAppBodyAlfredNameMax).nullish().describe('Nome di Alfred in questa App; null torna al predefinito'),
   "luciusName": zod.string().max(updateAppBodyLuciusNameMax).nullish().describe('Nome di Lucius in questa App; null torna al predefinito'),
@@ -2014,6 +2021,8 @@ export const UpdateAppResponse = zod.object({
   "functionalDescription": zod.string().nullable().describe('Descrizione funzionale dell\'app per l\'architetto'),
   "architectureRefresh": zod.enum(['off', 'hourly', '6h', 'daily', 'weekly']).describe('Frequenza di controllo della sintesi dell\'architettura'),
   "autoReanalysis": zod.boolean().describe('Rianalisi automatica, a ogni nuovo commit del branch base un\'analisi in coda per l\'agente locale'),
+  "testAutoFix": zod.boolean().describe('«Correggi da solo»: un collaudo con problemi rimanda il lavoro alla squadra (al più 2 volte per lavoro)'),
+  "testRecipeVersion": zod.number().describe('Versione della ricetta di collaudo (0 = nessuna)'),
   "reanalysisSeenSha": zod.string().nullable().describe('Ultimo SHA del branch base già gestito dalla rianalisi automatica'),
   "reanalysisCheckedAt": zod.coerce.date().nullable().describe('Ultimo controllo della rianalisi automatica'),
   "stagingBranch": zod.string().nullable().describe('Branch di prova dell\'App, riscritto da Botcave a ogni lavoro delle squadre (null = nessuna versione di prova)'),
@@ -2100,6 +2109,8 @@ export const UpdateAppPageActionsResponse = zod.object({
   "functionalDescription": zod.string().nullable().describe('Descrizione funzionale dell\'app per l\'architetto'),
   "architectureRefresh": zod.enum(['off', 'hourly', '6h', 'daily', 'weekly']).describe('Frequenza di controllo della sintesi dell\'architettura'),
   "autoReanalysis": zod.boolean().describe('Rianalisi automatica, a ogni nuovo commit del branch base un\'analisi in coda per l\'agente locale'),
+  "testAutoFix": zod.boolean().describe('«Correggi da solo»: un collaudo con problemi rimanda il lavoro alla squadra (al più 2 volte per lavoro)'),
+  "testRecipeVersion": zod.number().describe('Versione della ricetta di collaudo (0 = nessuna)'),
   "reanalysisSeenSha": zod.string().nullable().describe('Ultimo SHA del branch base già gestito dalla rianalisi automatica'),
   "reanalysisCheckedAt": zod.coerce.date().nullable().describe('Ultimo controllo della rianalisi automatica'),
   "stagingBranch": zod.string().nullable().describe('Branch di prova dell\'App, riscritto da Botcave a ogni lavoro delle squadre (null = nessuna versione di prova)'),
@@ -3730,6 +3741,414 @@ export const ResumeFleetResponse = zod.object({
   "maxRunningPerAgent": zod.number(),
   "updatedAt": zod.coerce.date().nullable().describe('Null finché la politica non è mai stata cambiata (valori predefiniti)')
 })
+
+
+/**
+ * Gli ultimi 20 collaudi, dal più recente, del lavoro (`workId`) o dell'App (`appId`): serve uno dei due, altrimenti 400. Solo letture.
+ * @summary Collaudi di un lavoro o di un'App
+ */
+export const ListReleaseTestsQueryParams = zod.object({
+  "workId": zod.coerce.number().optional(),
+  "appId": zod.coerce.number().optional()
+})
+
+export const listReleaseTestsResponseAutoRejectsMin = 0;
+
+
+
+export const ListReleaseTestsResponseItem = zod.object({
+  "id": zod.number(),
+  "appId": zod.number(),
+  "workId": zod.number(),
+  "instanceId": zod.number(),
+  "sha": zod.string().describe('Testa del lavoro collaudata'),
+  "mode": zod.enum(['full', 'relight']),
+  "status": zod.enum(['queued', 'dispatching', 'running', 'done', 'failed', 'skipped', 'cancelled']),
+  "outcome": zod.union([zod.literal('ok'),zod.literal('problems'),zod.literal('not_startable'),zod.literal(null)]).nullable(),
+  "report": zod.string().nullable().describe('Resoconto in Markdown'),
+  "problems": zod.array(zod.object({
+  "task": zod.string().nullable().describe('Compito del PLAN a cui si riferisce'),
+  "title": zod.string(),
+  "steps": zod.string(),
+  "expected": zod.string(),
+  "actual": zod.string(),
+  "screenshot": zod.number().nullable().describe('Id di uno screenshot tra i file del collaudo')
+})).nullable(),
+  "notTestable": zod.array(zod.string()).nullable(),
+  "error": zod.string().nullable().describe('Motivo fisso se il collaudo è saltato, fallito o annullato'),
+  "tunnelUrl": zod.string().nullable().describe('Link pubblico temporaneo alla prova dal vivo (solo finché è valido)'),
+  "tunnelUntil": zod.coerce.date().nullable(),
+  "autoRejects": zod.number().min(listReleaseTestsResponseAutoRejectsMin).describe('Correzioni automatiche già usate dal lavoro (team_works.test_auto_rejects)'),
+  "costUsd": zod.number().nullable(),
+  "createdAt": zod.coerce.date(),
+  "startedAt": zod.coerce.date().nullable(),
+  "finishedAt": zod.coerce.date().nullable()
+})
+export const ListReleaseTestsResponse = zod.array(ListReleaseTestsResponseItem)
+
+
+/**
+ * Esito, resoconto, problemi, passi dell'agente collaudatore e metadati dei file (video e screenshot).
+ * @summary Dettaglio di un collaudo
+ */
+export const GetReleaseTestParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const getReleaseTestResponseOneAutoRejectsMin = 0;
+
+
+
+export const GetReleaseTestResponse = zod.object({
+  "id": zod.number(),
+  "appId": zod.number(),
+  "workId": zod.number(),
+  "instanceId": zod.number(),
+  "sha": zod.string().describe('Testa del lavoro collaudata'),
+  "mode": zod.enum(['full', 'relight']),
+  "status": zod.enum(['queued', 'dispatching', 'running', 'done', 'failed', 'skipped', 'cancelled']),
+  "outcome": zod.union([zod.literal('ok'),zod.literal('problems'),zod.literal('not_startable'),zod.literal(null)]).nullable(),
+  "report": zod.string().nullable().describe('Resoconto in Markdown'),
+  "problems": zod.array(zod.object({
+  "task": zod.string().nullable().describe('Compito del PLAN a cui si riferisce'),
+  "title": zod.string(),
+  "steps": zod.string(),
+  "expected": zod.string(),
+  "actual": zod.string(),
+  "screenshot": zod.number().nullable().describe('Id di uno screenshot tra i file del collaudo')
+})).nullable(),
+  "notTestable": zod.array(zod.string()).nullable(),
+  "error": zod.string().nullable().describe('Motivo fisso se il collaudo è saltato, fallito o annullato'),
+  "tunnelUrl": zod.string().nullable().describe('Link pubblico temporaneo alla prova dal vivo (solo finché è valido)'),
+  "tunnelUntil": zod.coerce.date().nullable(),
+  "autoRejects": zod.number().min(getReleaseTestResponseOneAutoRejectsMin).describe('Correzioni automatiche già usate dal lavoro (team_works.test_auto_rejects)'),
+  "costUsd": zod.number().nullable(),
+  "createdAt": zod.coerce.date(),
+  "startedAt": zod.coerce.date().nullable(),
+  "finishedAt": zod.coerce.date().nullable()
+}).and(zod.object({
+  "steps": zod.array(zod.object({
+  "id": zod.number(),
+  "position": zod.number(),
+  "type": zod.string().describe('model (chiamata al modello), tool (chiamata a uno strumento) o queued (azione accodata)'),
+  "toolName": zod.string().nullable(),
+  "args": zod.unknown().nullable().describe('Argomenti con i valori sensibili oscurati'),
+  "ok": zod.boolean().nullable(),
+  "httpStatus": zod.number().nullable(),
+  "durationMs": zod.number().nullable(),
+  "error": zod.string().nullable(),
+  "note": zod.string().nullish().describe('Nota informativa (es. turno del capo eseguito da Claude Code sul nodo); assente nei passi dei compiti'),
+  "createdAt": zod.coerce.date()
+})),
+  "files": zod.array(zod.object({
+  "id": zod.number(),
+  "kind": zod.enum(['video', 'screenshot']),
+  "name": zod.string(),
+  "contentType": zod.string(),
+  "size": zod.number()
+}))
+}))
+
+
+/**
+ * Video WebM o screenshot PNG, con `Content-Disposition: inline` (si aprono nel browser), `X-Content-Type-Options: nosniff` e `Cache-Control: no-store`. Un file che non è del collaudo → 404.
+ * @summary Scarica un file del collaudo
+ */
+export const GetReleaseTestFileParams = zod.object({
+  "id": zod.coerce.number(),
+  "fileId": zod.coerce.number()
+})
+
+export const GetReleaseTestFileResponse = zod.unknown()
+
+
+/**
+ * Solo sull'ultimo collaudo completo (`full`) del lavoro, `done`, e con la voce «Porta in produzione» ancora in attesa: mette in coda un nuovo collaudo in modalità `relight` (senza agente né modello, serve solo il link dal vivo). Altrimenti 409. Al più 6 al giorno (ora italiana) per voce, poi 429. Il token d'ambito `agent` non può.
+ * @summary Riaccende il collaudo per il link dal vivo
+ */
+export const RelightReleaseTestParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const relightReleaseTestResponseAutoRejectsMin = 0;
+
+
+
+export const RelightReleaseTestResponse = zod.object({
+  "id": zod.number(),
+  "appId": zod.number(),
+  "workId": zod.number(),
+  "instanceId": zod.number(),
+  "sha": zod.string().describe('Testa del lavoro collaudata'),
+  "mode": zod.enum(['full', 'relight']),
+  "status": zod.enum(['queued', 'dispatching', 'running', 'done', 'failed', 'skipped', 'cancelled']),
+  "outcome": zod.union([zod.literal('ok'),zod.literal('problems'),zod.literal('not_startable'),zod.literal(null)]).nullable(),
+  "report": zod.string().nullable().describe('Resoconto in Markdown'),
+  "problems": zod.array(zod.object({
+  "task": zod.string().nullable().describe('Compito del PLAN a cui si riferisce'),
+  "title": zod.string(),
+  "steps": zod.string(),
+  "expected": zod.string(),
+  "actual": zod.string(),
+  "screenshot": zod.number().nullable().describe('Id di uno screenshot tra i file del collaudo')
+})).nullable(),
+  "notTestable": zod.array(zod.string()).nullable(),
+  "error": zod.string().nullable().describe('Motivo fisso se il collaudo è saltato, fallito o annullato'),
+  "tunnelUrl": zod.string().nullable().describe('Link pubblico temporaneo alla prova dal vivo (solo finché è valido)'),
+  "tunnelUntil": zod.coerce.date().nullable(),
+  "autoRejects": zod.number().min(relightReleaseTestResponseAutoRejectsMin).describe('Correzioni automatiche già usate dal lavoro (team_works.test_auto_rejects)'),
+  "costUsd": zod.number().nullable(),
+  "createdAt": zod.coerce.date(),
+  "startedAt": zod.coerce.date().nullable(),
+  "finishedAt": zod.coerce.date().nullable()
+})
+
+
+/**
+ * Rifiuta la voce «Porta in produzione» con nota = resoconto del collaudo (al più 4 000 caratteri); il lavoro torna aperto e il capo riceve il resoconto. Solo sull'ultimo collaudo completo (`full`) del lavoro, concluso (`done` o `failed`), di cui usa il resoconto. Non conta nelle correzioni automatiche. Solo con il login; voce non più in attesa, collaudo non concluso o non l'ultimo completo → 409.
+ * @summary Rimanda il lavoro alla squadra dopo il collaudo
+ */
+export const SendBackReleaseTestParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const SendBackReleaseTestResponse = zod.void()
+
+
+/**
+ * Ricetta corrente (null se non ancora scoperta), versione, origine e elenco delle versioni.
+ * @summary Ricetta di avvio del collaudo di un'App
+ */
+export const GetAppTestRecipeParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const GetAppTestRecipeResponse = zod.object({
+  "version": zod.number().describe('0 se l\'App non ha ancora una ricetta'),
+  "source": zod.union([zod.literal('agent'),zod.literal('user'),zod.literal(null)]).nullable(),
+  "recipe": zod.union([zod.object({
+  "install": zod.array(zod.string()).describe('Comandi di installazione, uno per riga'),
+  "build": zod.array(zod.string()),
+  "services": zod.array(zod.object({
+  "name": zod.string(),
+  "command": zod.string(),
+  "port": zod.number(),
+  "readyPath": zod.string()
+})),
+  "postgres": zod.boolean().describe('L\'App vuole un Postgres di prova'),
+  "schema": zod.array(zod.string()).describe('Comandi per preparare lo schema del database di prova'),
+  "env": zod.record(zod.string(), zod.string()).describe('Variabili d\'ambiente (mai credenziali)'),
+  "startUrl": zod.string(),
+  "login": zod.string().nullable().describe('Come accedere con i dati di prova, a parole')
+}),zod.null()]),
+  "versions": zod.array(zod.object({
+  "version": zod.number(),
+  "source": zod.enum(['agent', 'user']),
+  "createdAt": zod.coerce.date()
+})).describe('Ultime 20 versioni, dalla più recente')
+})
+
+
+/**
+ * Valida la ricetta come lo strumento `salva_ricetta` (comandi su una riga fino a 500 caratteri, al più 20 passi, porte 1..65535, nessuna credenziale) e salva una versione nuova con origine `user`. Il token d'ambito `agent` non può.
+ * @summary Salva la ricetta di avvio del collaudo
+ */
+export const UpdateAppTestRecipeParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const UpdateAppTestRecipeBody = zod.object({
+  "recipe": zod.object({
+  "install": zod.array(zod.string()).describe('Comandi di installazione, uno per riga'),
+  "build": zod.array(zod.string()),
+  "services": zod.array(zod.object({
+  "name": zod.string(),
+  "command": zod.string(),
+  "port": zod.number(),
+  "readyPath": zod.string()
+})),
+  "postgres": zod.boolean().describe('L\'App vuole un Postgres di prova'),
+  "schema": zod.array(zod.string()).describe('Comandi per preparare lo schema del database di prova'),
+  "env": zod.record(zod.string(), zod.string()).describe('Variabili d\'ambiente (mai credenziali)'),
+  "startUrl": zod.string(),
+  "login": zod.string().nullable().describe('Come accedere con i dati di prova, a parole')
+})
+})
+
+export const UpdateAppTestRecipeResponse = zod.object({
+  "version": zod.number().describe('0 se l\'App non ha ancora una ricetta'),
+  "source": zod.union([zod.literal('agent'),zod.literal('user'),zod.literal(null)]).nullable(),
+  "recipe": zod.union([zod.object({
+  "install": zod.array(zod.string()).describe('Comandi di installazione, uno per riga'),
+  "build": zod.array(zod.string()),
+  "services": zod.array(zod.object({
+  "name": zod.string(),
+  "command": zod.string(),
+  "port": zod.number(),
+  "readyPath": zod.string()
+})),
+  "postgres": zod.boolean().describe('L\'App vuole un Postgres di prova'),
+  "schema": zod.array(zod.string()).describe('Comandi per preparare lo schema del database di prova'),
+  "env": zod.record(zod.string(), zod.string()).describe('Variabili d\'ambiente (mai credenziali)'),
+  "startUrl": zod.string(),
+  "login": zod.string().nullable().describe('Come accedere con i dati di prova, a parole')
+}),zod.null()]),
+  "versions": zod.array(zod.object({
+  "version": zod.number(),
+  "source": zod.enum(['agent', 'user']),
+  "createdAt": zod.coerce.date()
+})).describe('Ultime 20 versioni, dalla più recente')
+})
+
+
+/**
+ * Cosa manca per collaudare: repository di collaudo, App GitHub installata, workflow presente, permesso `actions: write`. Legge da GitHub, mai in scrittura. Solo con il login.
+ * @summary Stato della configurazione del collaudo
+ */
+export const GetCollaudoSetupResponse = zod.object({
+  "repo": zod.string().nullable().describe('Repository di collaudo (null se non configurato)'),
+  "installed": zod.boolean().describe('L\'App GitHub è installata sul repository'),
+  "workflow": zod.boolean().describe('Il file del workflow esiste nel repository'),
+  "actionsWrite": zod.boolean().describe('GitHub concede il permesso `actions` in scrittura sul repository')
+})
+
+
+/**
+ * Rilegge da GitHub lo stato della configurazione (dopo che l'utente ha sistemato qualcosa). Solo con il login.
+ * @summary Ricontrolla la configurazione del collaudo
+ */
+export const VerifyCollaudoSetupResponse = zod.object({
+  "repo": zod.string().nullable().describe('Repository di collaudo (null se non configurato)'),
+  "installed": zod.boolean().describe('L\'App GitHub è installata sul repository'),
+  "workflow": zod.boolean().describe('Il file del workflow esiste nel repository'),
+  "actionsWrite": zod.boolean().describe('GitHub concede il permesso `actions` in scrittura sul repository')
+})
+
+
+/**
+ * Protocollo del runner di collaudo (GitHub Actions): pubblica, senza login. Scambia il codice monouso (15 minuti) con il token `ctk_…` del collaudo, il token di lettura del repository e la ricetta. Codice non valido o scaduto → 401. 10 al minuto per IP.
+ * @summary Il runner scambia il codice monouso
+ */
+
+export const collaudoClaimBodyCodeMax = 200;
+
+
+
+export const CollaudoClaimBody = zod.object({
+  "testId": zod.number().min(1),
+  "code": zod.string().min(1).max(collaudoClaimBodyCodeMax)
+})
+
+export const CollaudoClaimResponse = zod.object({
+  "token": zod.string().describe('Token `ctk_…` del collaudo'),
+  "repo": zod.string(),
+  "sha": zod.string(),
+  "repoToken": zod.string().describe('Token di lettura del repository dell\'App, valido un\'ora'),
+  "recipe": zod.union([zod.object({
+  "install": zod.array(zod.string()).describe('Comandi di installazione, uno per riga'),
+  "build": zod.array(zod.string()),
+  "services": zod.array(zod.object({
+  "name": zod.string(),
+  "command": zod.string(),
+  "port": zod.number(),
+  "readyPath": zod.string()
+})),
+  "postgres": zod.boolean().describe('L\'App vuole un Postgres di prova'),
+  "schema": zod.array(zod.string()).describe('Comandi per preparare lo schema del database di prova'),
+  "env": zod.record(zod.string(), zod.string()).describe('Variabili d\'ambiente (mai credenziali)'),
+  "startUrl": zod.string(),
+  "login": zod.string().nullable().describe('Come accedere con i dati di prova, a parole')
+}),zod.null()]),
+  "mode": zod.enum(['full', 'relight'])
+})
+
+
+/**
+ * Solo con il token del collaudo. Attende fino a 25 secondi un comando dell'agente; 204 se non ne arriva, 410 se il collaudo ha già l'esito o l'errore: con `liveLink` vero (esito ok o problemi) il runner apre il link dal vivo, altrimenti riferisce subito senza tunnel.
+ * @summary Il runner chiede il prossimo comando
+ */
+export const CollaudoNextResponse = zod.object({
+  "id": zod.number(),
+  "kind": zod.enum(['shell', 'browser']),
+  "args": zod.unknown().describe('Argomenti del comando')
+})
+
+
+/**
+ * Solo con il token del collaudo. Comando non del collaudo o non consegnato → 404.
+ * @summary Il runner riferisce il risultato di un comando
+ */
+export const CollaudoResultParams = zod.object({
+  "commandId": zod.coerce.number()
+})
+
+export const collaudoResultBodyOutputMax = 200000;
+
+
+
+export const CollaudoResultBody = zod.object({
+  "ok": zod.boolean(),
+  "output": zod.string().max(collaudoResultBodyOutputMax)
+})
+
+export const CollaudoResultResponse = zod.void()
+
+
+/**
+ * Solo con il token del collaudo. Rinnova di 5 minuti la lease.
+ * @summary Rinnova la lease del collaudo
+ */
+export const CollaudoPingResponse = zod.object({
+  "leaseExpiresAt": zod.coerce.date()
+})
+
+
+/**
+ * Solo con il token del collaudo. Indirizzo `https://….trycloudflare.com` e scadenza (al più 31 minuti da ora); altro → 400.
+ * @summary Il runner comunica il link dal vivo
+ */
+export const collaudoTunnelBodyUrlMax = 300;
+
+export const collaudoTunnelBodyUntilMax = 60;
+
+
+
+export const CollaudoTunnelBody = zod.object({
+  "url": zod.string().max(collaudoTunnelBodyUrlMax),
+  "until": zod.string().max(collaudoTunnelBodyUntilMax)
+})
+
+export const CollaudoTunnelResponse = zod.void()
+
+
+/**
+ * Solo con il token del collaudo. Corpo grezzo (WebM fino a 30 MB, un solo video; PNG fino a 2 MB, al più 20), tipo nell'header `X-File-Kind` (`video` o `screenshot`), nome in `X-File-Name`. Il formato si legge dai primi byte.
+ * @summary Il runner carica un video o uno screenshot
+ */
+export const CollaudoUploadFileHeader = zod.object({
+  "X-File-Kind": zod.enum(['video', 'screenshot']),
+  "X-File-Name": zod.string()
+})
+
+export const CollaudoUploadFileResponse = zod.object({
+  "id": zod.number()
+})
+
+
+/**
+ * Solo con il token del collaudo, che si revoca. Chiude il collaudo e fa partire il successivo.
+ * @summary Il runner chiude il collaudo
+ */
+export const collaudoReportBodyErrorMax = 2000;
+
+
+
+export const CollaudoReportBody = zod.object({
+  "status": zod.enum(['done', 'failed']),
+  "error": zod.string().max(collaudoReportBodyErrorMax).optional()
+})
+
+export const CollaudoReportResponse = zod.void()
 
 
 /**
@@ -9408,6 +9827,18 @@ export const ListPendingActionsResponse = zod.object({
   "errorMessage": zod.string().nullable(),
   "decisionNote": zod.string().nullable(),
   "decidedByCycle": zod.boolean().optional().describe('Voce di piano approvata dal ciclo di evoluzione della squadra, non da un clic'),
+  "releaseTest": zod.union([zod.object({
+  "id": zod.number(),
+  "status": zod.enum(['queued', 'dispatching', 'running', 'done', 'failed', 'skipped', 'cancelled']),
+  "outcome": zod.union([zod.literal('ok'),zod.literal('problems'),zod.literal('not_startable'),zod.literal(null)]).nullable(),
+  "relight": zod.union([zod.object({
+  "id": zod.number(),
+  "status": zod.enum(['queued', 'dispatching', 'running', 'done', 'failed', 'skipped', 'cancelled']),
+  "error": zod.string().nullable().describe('Motivo fisso se la riaccensione non è riuscita'),
+  "tunnelUrl": zod.string().nullable().describe('Link pubblico temporaneo alla prova dal vivo (solo finché è valido)'),
+  "tunnelUntil": zod.coerce.date().nullable()
+}),zod.null()]).describe('«Riaccendi» più recente dopo il collaudo completo, con il suo link dal vivo; null se non ce n\'è')
+}).describe('Ultimo collaudo completo (`full`) del lavoro; «Riaccendi» e «Rimanda alla squadra» operano su questo'),zod.null()]).optional().describe('Ultimo collaudo completo del lavoro di una voce `release` (assente per le altre voci)'),
   "createdAt": zod.coerce.date(),
   "decidedAt": zod.coerce.date().nullable(),
   "finishedAt": zod.coerce.date().nullable()
@@ -9467,6 +9898,18 @@ export const GetPendingActionResponse = zod.object({
   "errorMessage": zod.string().nullable(),
   "decisionNote": zod.string().nullable(),
   "decidedByCycle": zod.boolean().optional().describe('Voce di piano approvata dal ciclo di evoluzione della squadra, non da un clic'),
+  "releaseTest": zod.union([zod.object({
+  "id": zod.number(),
+  "status": zod.enum(['queued', 'dispatching', 'running', 'done', 'failed', 'skipped', 'cancelled']),
+  "outcome": zod.union([zod.literal('ok'),zod.literal('problems'),zod.literal('not_startable'),zod.literal(null)]).nullable(),
+  "relight": zod.union([zod.object({
+  "id": zod.number(),
+  "status": zod.enum(['queued', 'dispatching', 'running', 'done', 'failed', 'skipped', 'cancelled']),
+  "error": zod.string().nullable().describe('Motivo fisso se la riaccensione non è riuscita'),
+  "tunnelUrl": zod.string().nullable().describe('Link pubblico temporaneo alla prova dal vivo (solo finché è valido)'),
+  "tunnelUntil": zod.coerce.date().nullable()
+}),zod.null()]).describe('«Riaccendi» più recente dopo il collaudo completo, con il suo link dal vivo; null se non ce n\'è')
+}).describe('Ultimo collaudo completo (`full`) del lavoro; «Riaccendi» e «Rimanda alla squadra» operano su questo'),zod.null()]).optional().describe('Ultimo collaudo completo del lavoro di una voce `release` (assente per le altre voci)'),
   "createdAt": zod.coerce.date(),
   "decidedAt": zod.coerce.date().nullable(),
   "finishedAt": zod.coerce.date().nullable()
@@ -9539,6 +9982,18 @@ export const ApprovePendingActionResponse = zod.object({
   "errorMessage": zod.string().nullable(),
   "decisionNote": zod.string().nullable(),
   "decidedByCycle": zod.boolean().optional().describe('Voce di piano approvata dal ciclo di evoluzione della squadra, non da un clic'),
+  "releaseTest": zod.union([zod.object({
+  "id": zod.number(),
+  "status": zod.enum(['queued', 'dispatching', 'running', 'done', 'failed', 'skipped', 'cancelled']),
+  "outcome": zod.union([zod.literal('ok'),zod.literal('problems'),zod.literal('not_startable'),zod.literal(null)]).nullable(),
+  "relight": zod.union([zod.object({
+  "id": zod.number(),
+  "status": zod.enum(['queued', 'dispatching', 'running', 'done', 'failed', 'skipped', 'cancelled']),
+  "error": zod.string().nullable().describe('Motivo fisso se la riaccensione non è riuscita'),
+  "tunnelUrl": zod.string().nullable().describe('Link pubblico temporaneo alla prova dal vivo (solo finché è valido)'),
+  "tunnelUntil": zod.coerce.date().nullable()
+}),zod.null()]).describe('«Riaccendi» più recente dopo il collaudo completo, con il suo link dal vivo; null se non ce n\'è')
+}).describe('Ultimo collaudo completo (`full`) del lavoro; «Riaccendi» e «Rimanda alla squadra» operano su questo'),zod.null()]).optional().describe('Ultimo collaudo completo del lavoro di una voce `release` (assente per le altre voci)'),
   "createdAt": zod.coerce.date(),
   "decidedAt": zod.coerce.date().nullable(),
   "finishedAt": zod.coerce.date().nullable()
@@ -9605,6 +10060,18 @@ export const RejectPendingActionResponse = zod.object({
   "errorMessage": zod.string().nullable(),
   "decisionNote": zod.string().nullable(),
   "decidedByCycle": zod.boolean().optional().describe('Voce di piano approvata dal ciclo di evoluzione della squadra, non da un clic'),
+  "releaseTest": zod.union([zod.object({
+  "id": zod.number(),
+  "status": zod.enum(['queued', 'dispatching', 'running', 'done', 'failed', 'skipped', 'cancelled']),
+  "outcome": zod.union([zod.literal('ok'),zod.literal('problems'),zod.literal('not_startable'),zod.literal(null)]).nullable(),
+  "relight": zod.union([zod.object({
+  "id": zod.number(),
+  "status": zod.enum(['queued', 'dispatching', 'running', 'done', 'failed', 'skipped', 'cancelled']),
+  "error": zod.string().nullable().describe('Motivo fisso se la riaccensione non è riuscita'),
+  "tunnelUrl": zod.string().nullable().describe('Link pubblico temporaneo alla prova dal vivo (solo finché è valido)'),
+  "tunnelUntil": zod.coerce.date().nullable()
+}),zod.null()]).describe('«Riaccendi» più recente dopo il collaudo completo, con il suo link dal vivo; null se non ce n\'è')
+}).describe('Ultimo collaudo completo (`full`) del lavoro; «Riaccendi» e «Rimanda alla squadra» operano su questo'),zod.null()]).optional().describe('Ultimo collaudo completo del lavoro di una voce `release` (assente per le altre voci)'),
   "createdAt": zod.coerce.date(),
   "decidedAt": zod.coerce.date().nullable(),
   "finishedAt": zod.coerce.date().nullable()

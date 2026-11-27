@@ -539,6 +539,10 @@ export interface App {
   architectureRefresh: ArchitectureRefresh;
   /** Rianalisi automatica, a ogni nuovo commit del branch base un'analisi in coda per l'agente locale */
   autoReanalysis: boolean;
+  /** «Correggi da solo»: un collaudo con problemi rimanda il lavoro alla squadra (al più 2 volte per lavoro) */
+  testAutoFix: boolean;
+  /** Versione della ricetta di collaudo (0 = nessuna) */
+  testRecipeVersion: number;
   /**
      * Ultimo SHA del branch base già gestito dalla rianalisi automatica
      * @nullable
@@ -949,6 +953,8 @@ export interface AppUpdate {
   architectureRefresh?: ArchitectureRefresh;
   /** Accende o spegne la rianalisi automatica (serve il codice da GitHub tramite installazione per avere effetto) */
   autoReanalysis?: boolean;
+  /** Accende o spegne la correzione automatica dei problemi del collaudo */
+  testAutoFix?: boolean;
   /**
      * Branch di prova (non il base, non main/master, non botcave/…); null lo toglie
      * @nullable
@@ -1329,6 +1335,313 @@ export interface AgentActivity {
   activeChildRuns: number;
   /** Voci pending di «Da confermare» dell'utente nate da run dell'agente */
   pendingActions: number;
+}
+
+export type TestRecipeServicesItem = {
+  name: string;
+  command: string;
+  port: number;
+  readyPath: string;
+};
+
+/**
+ * Variabili d'ambiente (mai credenziali)
+ */
+export type TestRecipeEnv = {[key: string]: string};
+
+export interface TestRecipe {
+  /** Comandi di installazione, uno per riga */
+  install: string[];
+  build: string[];
+  services: TestRecipeServicesItem[];
+  /** L'App vuole un Postgres di prova */
+  postgres: boolean;
+  /** Comandi per preparare lo schema del database di prova */
+  schema: string[];
+  /** Variabili d'ambiente (mai credenziali) */
+  env: TestRecipeEnv;
+  startUrl: string;
+  /**
+     * Come accedere con i dati di prova, a parole
+     * @nullable
+     */
+  login: string | null;
+}
+
+export interface TestRecipeUpdate {
+  recipe: TestRecipe;
+}
+
+export type TestRecipeVersionSource = typeof TestRecipeVersionSource[keyof typeof TestRecipeVersionSource];
+
+
+export const TestRecipeVersionSource = {
+  agent: 'agent',
+  user: 'user',
+} as const;
+
+export interface TestRecipeVersion {
+  version: number;
+  source: TestRecipeVersionSource;
+  createdAt: string;
+}
+
+/**
+ * @nullable
+ */
+export type TestRecipeViewSource = typeof TestRecipeViewSource[keyof typeof TestRecipeViewSource] | null;
+
+
+export const TestRecipeViewSource = {
+  agent: 'agent',
+  user: 'user',
+} as const;
+
+export interface TestRecipeView {
+  /** 0 se l'App non ha ancora una ricetta */
+  version: number;
+  /** @nullable */
+  source: TestRecipeViewSource;
+  recipe: TestRecipe | null;
+  /** Ultime 20 versioni, dalla più recente */
+  versions: TestRecipeVersion[];
+}
+
+export interface CollaudoSetup {
+  /**
+     * Repository di collaudo (null se non configurato)
+     * @nullable
+     */
+  repo: string | null;
+  /** L'App GitHub è installata sul repository */
+  installed: boolean;
+  /** Il file del workflow esiste nel repository */
+  workflow: boolean;
+  /** GitHub concede il permesso `actions` in scrittura sul repository */
+  actionsWrite: boolean;
+}
+
+export interface ReleaseTestProblem {
+  /**
+     * Compito del PLAN a cui si riferisce
+     * @nullable
+     */
+  task: string | null;
+  title: string;
+  steps: string;
+  expected: string;
+  actual: string;
+  /**
+     * Id di uno screenshot tra i file del collaudo
+     * @nullable
+     */
+  screenshot: number | null;
+}
+
+export type ReleaseTestMode = typeof ReleaseTestMode[keyof typeof ReleaseTestMode];
+
+
+export const ReleaseTestMode = {
+  full: 'full',
+  relight: 'relight',
+} as const;
+
+export type ReleaseTestStatus = typeof ReleaseTestStatus[keyof typeof ReleaseTestStatus];
+
+
+export const ReleaseTestStatus = {
+  queued: 'queued',
+  dispatching: 'dispatching',
+  running: 'running',
+  done: 'done',
+  failed: 'failed',
+  skipped: 'skipped',
+  cancelled: 'cancelled',
+} as const;
+
+/**
+ * @nullable
+ */
+export type ReleaseTestOutcome = typeof ReleaseTestOutcome[keyof typeof ReleaseTestOutcome] | null;
+
+
+export const ReleaseTestOutcome = {
+  ok: 'ok',
+  problems: 'problems',
+  not_startable: 'not_startable',
+} as const;
+
+export interface ReleaseTest {
+  id: number;
+  appId: number;
+  workId: number;
+  instanceId: number;
+  /** Testa del lavoro collaudata */
+  sha: string;
+  mode: ReleaseTestMode;
+  status: ReleaseTestStatus;
+  /** @nullable */
+  outcome: ReleaseTestOutcome;
+  /**
+     * Resoconto in Markdown
+     * @nullable
+     */
+  report: string | null;
+  /** @nullable */
+  problems: ReleaseTestProblem[] | null;
+  /** @nullable */
+  notTestable: string[] | null;
+  /**
+     * Motivo fisso se il collaudo è saltato, fallito o annullato
+     * @nullable
+     */
+  error: string | null;
+  /**
+     * Link pubblico temporaneo alla prova dal vivo (solo finché è valido)
+     * @nullable
+     */
+  tunnelUrl: string | null;
+  /** @nullable */
+  tunnelUntil: string | null;
+  /**
+     * Correzioni automatiche già usate dal lavoro (team_works.test_auto_rejects)
+     * @minimum 0
+     */
+  autoRejects: number;
+  /** @nullable */
+  costUsd: number | null;
+  createdAt: string;
+  /** @nullable */
+  startedAt: string | null;
+  /** @nullable */
+  finishedAt: string | null;
+}
+
+export type ReleaseTestFileKind = typeof ReleaseTestFileKind[keyof typeof ReleaseTestFileKind];
+
+
+export const ReleaseTestFileKind = {
+  video: 'video',
+  screenshot: 'screenshot',
+} as const;
+
+export interface ReleaseTestFile {
+  id: number;
+  kind: ReleaseTestFileKind;
+  name: string;
+  contentType: string;
+  size: number;
+}
+
+export interface TeamStep {
+  id: number;
+  position: number;
+  /** model (chiamata al modello), tool (chiamata a uno strumento) o queued (azione accodata) */
+  type: string;
+  /** @nullable */
+  toolName: string | null;
+  /** Argomenti con i valori sensibili oscurati */
+  args: unknown | null;
+  /** @nullable */
+  ok: boolean | null;
+  /** @nullable */
+  httpStatus: number | null;
+  /** @nullable */
+  durationMs: number | null;
+  /** @nullable */
+  error: string | null;
+  /**
+     * Nota informativa (es. turno del capo eseguito da Claude Code sul nodo); assente nei passi dei compiti
+     * @nullable
+     */
+  note?: string | null;
+  createdAt: string;
+}
+
+export type ReleaseTestDetail = ReleaseTest & {
+  steps: TeamStep[];
+  files: ReleaseTestFile[];
+};
+
+export interface CollaudoDelivered {
+  error: string;
+  /** Vero solo con un esito da provare dal vivo (ok o problemi) */
+  liveLink: boolean;
+}
+
+export interface CollaudoClaim {
+  /** @minimum 1 */
+  testId: number;
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  code: string;
+}
+
+export type CollaudoClaimPackageMode = typeof CollaudoClaimPackageMode[keyof typeof CollaudoClaimPackageMode];
+
+
+export const CollaudoClaimPackageMode = {
+  full: 'full',
+  relight: 'relight',
+} as const;
+
+export interface CollaudoClaimPackage {
+  /** Token `ctk_…` del collaudo */
+  token: string;
+  repo: string;
+  sha: string;
+  /** Token di lettura del repository dell'App, valido un'ora */
+  repoToken: string;
+  recipe: TestRecipe | null;
+  mode: CollaudoClaimPackageMode;
+}
+
+export type CollaudoCommandKind = typeof CollaudoCommandKind[keyof typeof CollaudoCommandKind];
+
+
+export const CollaudoCommandKind = {
+  shell: 'shell',
+  browser: 'browser',
+} as const;
+
+export interface CollaudoCommand {
+  id: number;
+  kind: CollaudoCommandKind;
+  /** Argomenti del comando */
+  args: unknown;
+}
+
+export interface CollaudoCommandResult {
+  ok: boolean;
+  /** @maxLength 200000 */
+  output: string;
+}
+
+export interface CollaudoTunnel {
+  /** @maxLength 300 */
+  url: string;
+  /** @maxLength 60 */
+  until: string;
+}
+
+export interface CollaudoFileSaved {
+  id: number;
+}
+
+export type CollaudoReportStatus = typeof CollaudoReportStatus[keyof typeof CollaudoReportStatus];
+
+
+export const CollaudoReportStatus = {
+  done: 'done',
+  failed: 'failed',
+} as const;
+
+export interface CollaudoReport {
+  status: CollaudoReportStatus;
+  /** @maxLength 2000 */
+  error?: string;
 }
 
 export interface FleetPolicy {
@@ -2186,6 +2499,73 @@ export interface QueuedProposal {
   steps: QueuedProposalStep[];
 }
 
+export type QueuedReleaseTestStatus = typeof QueuedReleaseTestStatus[keyof typeof QueuedReleaseTestStatus];
+
+
+export const QueuedReleaseTestStatus = {
+  queued: 'queued',
+  dispatching: 'dispatching',
+  running: 'running',
+  done: 'done',
+  failed: 'failed',
+  skipped: 'skipped',
+  cancelled: 'cancelled',
+} as const;
+
+/**
+ * @nullable
+ */
+export type QueuedReleaseTestOutcome = typeof QueuedReleaseTestOutcome[keyof typeof QueuedReleaseTestOutcome] | null;
+
+
+export const QueuedReleaseTestOutcome = {
+  ok: 'ok',
+  problems: 'problems',
+  not_startable: 'not_startable',
+} as const;
+
+export type QueuedReleaseRelightStatus = typeof QueuedReleaseRelightStatus[keyof typeof QueuedReleaseRelightStatus];
+
+
+export const QueuedReleaseRelightStatus = {
+  queued: 'queued',
+  dispatching: 'dispatching',
+  running: 'running',
+  done: 'done',
+  failed: 'failed',
+  skipped: 'skipped',
+  cancelled: 'cancelled',
+} as const;
+
+export interface QueuedReleaseRelight {
+  id: number;
+  status: QueuedReleaseRelightStatus;
+  /**
+     * Motivo fisso se la riaccensione non è riuscita
+     * @nullable
+     */
+  error: string | null;
+  /**
+     * Link pubblico temporaneo alla prova dal vivo (solo finché è valido)
+     * @nullable
+     */
+  tunnelUrl: string | null;
+  /** @nullable */
+  tunnelUntil: string | null;
+}
+
+/**
+ * Ultimo collaudo completo (`full`) del lavoro; «Riaccendi» e «Rimanda alla squadra» operano su questo
+ */
+export interface QueuedReleaseTest {
+  id: number;
+  status: QueuedReleaseTestStatus;
+  /** @nullable */
+  outcome: QueuedReleaseTestOutcome;
+  /** «Riaccendi» più recente dopo il collaudo completo, con il suo link dal vivo; null se non ce n'è */
+  relight: QueuedReleaseRelight | null;
+}
+
 export interface QueuedAction {
   number: number;
   status: QueuedActionStatus;
@@ -2215,6 +2595,8 @@ export interface QueuedAction {
   decisionNote: string | null;
   /** Voce di piano approvata dal ciclo di evoluzione della squadra, non da un clic */
   decidedByCycle?: boolean;
+  /** Ultimo collaudo completo del lavoro di una voce `release` (assente per le altre voci) */
+  releaseTest?: QueuedReleaseTest | null;
   createdAt: string;
   /** @nullable */
   decidedAt: string | null;
@@ -5583,31 +5965,6 @@ export interface TeamEventsReadInput {
   ids: number[];
 }
 
-export interface TeamStep {
-  id: number;
-  position: number;
-  /** model (chiamata al modello), tool (chiamata a uno strumento) o queued (azione accodata) */
-  type: string;
-  /** @nullable */
-  toolName: string | null;
-  /** Argomenti con i valori sensibili oscurati */
-  args: unknown | null;
-  /** @nullable */
-  ok: boolean | null;
-  /** @nullable */
-  httpStatus: number | null;
-  /** @nullable */
-  durationMs: number | null;
-  /** @nullable */
-  error: string | null;
-  /**
-     * Nota informativa (es. turno del capo eseguito da Claude Code sul nodo); assente nei passi dei compiti
-     * @nullable
-     */
-  note?: string | null;
-  createdAt: string;
-}
-
 export type TeamTaskStatus = typeof TeamTaskStatus[keyof typeof TeamTaskStatus];
 
 
@@ -6009,6 +6366,11 @@ limit?: number;
  * @minimum 1
  */
 before?: number;
+};
+
+export type ListReleaseTestsParams = {
+workId?: number;
+appId?: number;
 };
 
 export type StartZipAnalysisParams = {

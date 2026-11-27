@@ -19,6 +19,7 @@ import { startTriggerPoller } from "./lib/triggers/poller";
 import { failInterruptedArchitecture, startArchitectureScheduler } from "./lib/architecture/scheduler";
 import { startReanalysisScheduler } from "./lib/reanalysis/service";
 import { startCodeWatcher } from "./lib/code-writer/watcher";
+import { startCollaudoScheduler } from "./lib/collaudo/scheduler";
 import { startEvolutionScheduler } from "./lib/evolution/scheduler";
 import { failInterruptedTeamWork } from "./lib/teams/task-runner";
 import { pumpTurnInBackground, resumeQueuedTurns } from "./lib/teams/turn-runner";
@@ -100,6 +101,8 @@ failInterruptedRuns()
     startEvolutionScheduler();
     // Sorveglianza della CI delle PR dei compiti con codice.
     startCodeWatcher();
+    // Collaudo dei lavori: claim e report del runner, collaudi appesi chiusi e collaudi in coda lanciati ogni 60 s.
+    startCollaudoScheduler();
     // App nate da zero: controllo di healthz sul loro dominio, primo giro dopo 60 s.
     startBootstrapHealthChecker();
   });

@@ -4,7 +4,7 @@
 // esito con UPDATE condizionati (lavoro `releasing`, voce `executing`). Log: id, numeri e sha a 7.
 
 import { and, eq } from "drizzle-orm";
-import { db, pendingActionsTable, teamInstancesTable, teamWorksTable, type PendingActionRow, type TeamWork } from "@workspace/db";
+import { db, evolutionRoundsTable, pendingActionsTable, teamInstancesTable, teamWorksTable, type PendingActionRow, type TeamWork } from "@workspace/db";
 import { logger } from "../logger";
 import { userHasInstallation } from "../github/installations";
 import { requestArchitectureRefresh } from "../architecture/scheduler";
@@ -18,6 +18,7 @@ import { enqueueTurnReason, notifyTurnQueued } from "./turn-queue";
 import { emitEvent } from "./events";
 import { WORK_MESSAGES, workRepo } from "./works";
 import { notifyWorkChanged } from "./work-hooks";
+import { COLLAUDO_MESSAGES } from "../collaudo/messages";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -134,6 +135,8 @@ export async function approveRelease(userId: number, action: PendingActionRow): 
       throw err;
     });
   if (!claimed) return { ok: false, status: 409, message: RELEASE_MESSAGES.notReady };
+  // Voce decisa: il collaudo del lavoro non serve più (import dinamico: il collaudo importa questo modulo)
+  await (await import("../collaudo/service")).cancelReleaseTestsQuietly(work.instanceId);
 
   try {
     const merged = await mergeBranches(ctx.ref, {
@@ -168,18 +171,77 @@ export async function approveRelease(userId: number, action: PendingActionRow): 
  * Rifiuto dentro la transazione del rifiuto della voce: lavoro di nuovo `open` con la nota (la sorveglianza non lo richiude da
  * sola), turno `request` al capo con la nota. Il chiamante sveglia la coda dei turni dopo il commit.
  */
-export async function rejectRelease(action: PendingActionRow, note: string | null, tx: Tx): Promise<number | null> {
+export async function rejectRelease(
+  action: PendingActionRow,
+  note: string | null,
+  tx: Tx,
+  turnText?: (workNumber: number) => string,
+): Promise<number | null> {
   const [w] = await tx
     .update(teamWorksTable)
     .set({ status: "open", pendingActionId: null, rejectionNote: note ?? RELEASE_MESSAGES.rejectedNoNote, updatedAt: new Date() })
     .where(and(eq(teamWorksTable.pendingActionId, action.id), eq(teamWorksTable.status, "awaiting_release")))
     .returning();
   if (!w) return null;
-  const text = note
+  const text = turnText
+    ? turnText(w.number)
+    : note
     ? `L'utente ha rifiutato «Porta in produzione» del lavoro ${w.number} con questa nota: ${note}. Il lavoro è di nuovo aperto: correggi con compiti sul branch del lavoro, poi chiudi_lavoro.`
     : `L'utente ha rifiutato «Porta in produzione» del lavoro ${w.number} senza nota: chiedigli cosa correggere con segnala.`;
   await enqueueTurnReason(w.instanceId, { type: "request", text, source: "system" }, tx);
   return w.instanceId;
+}
+
+/** Motivo del rifiuto sul giro del ciclo: come la nota dell'utente letta dal ciclo, al più 500 caratteri. */
+const CYCLE_NOTE_MAX = 500;
+
+/** Nota del rifiuto di una voce dal collaudo: al più 4 000 caratteri. */
+export const TEST_REJECT_NOTE_MAX = 4_000;
+
+/**
+ * Rifiuto della voce `release` a nome del collaudo (correzione automatica, «Rimanda alla squadra»): come il rifiuto dell'utente,
+ * voce `rejected` con la nota, lavoro di nuovo `open`, turno `request` del capo e avviso del cambio di lavoro, tutto in una
+ * transazione con `onRejected` (es. il conteggio dei rimandi automatici). Il testo per il capo dice chi ha deciso: il collaudo
+ * (`auto`) o l'utente (`user`). Voce non più in attesa o lavoro non più in attesa di «Porta in produzione» → false, nulla scritto.
+ */
+export async function rejectReleaseForTest(
+  actionId: number,
+  note: string,
+  source: "auto" | "user",
+  onRejected?: (tx: Tx, instanceId: number) => Promise<void>,
+): Promise<boolean> {
+  const text = note.slice(0, TEST_REJECT_NOTE_MAX);
+  const notRejected = new Error("voce non rifiutata");
+  let instanceId: number;
+  try {
+    instanceId = await db.transaction(async (tx) => {
+      const [rejected] = await tx
+        .update(pendingActionsTable)
+        .set({ status: "rejected", decidedAt: new Date(), decisionNote: text })
+        .where(and(eq(pendingActionsTable.id, actionId), eq(pendingActionsTable.kind, "release"), eq(pendingActionsTable.status, "pending")))
+        .returning();
+      if (!rejected) throw notRejected;
+      const turnText = (n: number) => (source === "auto" ? COLLAUDO_MESSAGES.autoRejectTurn(n, text) : COLLAUDO_MESSAGES.userRejectTurn(n, text));
+      const id = await rejectRelease(rejected, text, tx, turnText);
+      // Voce in attesa ma lavoro già altrove: niente rifiuto a metà
+      if (id === null) throw notRejected;
+      // Giro del ciclo di evoluzione che seguiva la voce: il motivo è il resoconto del collaudo, mai «nota dell'utente»
+      await tx
+        .update(evolutionRoundsTable)
+        .set({ rejectionNote: COLLAUDO_MESSAGES.cycleRejectionNote(text).slice(0, CYCLE_NOTE_MAX) })
+        .where(and(eq(evolutionRoundsTable.pendingActionId, actionId), eq(evolutionRoundsTable.status, "awaiting_release")));
+      if (onRejected) await onRejected(tx, id);
+      return id;
+    });
+  } catch (err) {
+    if (err === notRejected) return false;
+    throw err;
+  }
+  notifyTurnQueued(instanceId);
+  notifyWorkChanged(instanceId);
+  // «Rimanda alla squadra» (a mano): un «Riaccendi» ancora aperto non serve più
+  if (source === "user") await (await import("../collaudo/service")).cancelReleaseTestsQuietly(instanceId);
+  return true;
 }
 
 /** Giro della sorveglianza sui lavori `releasing` (al più 20): CI della PR di rilascio, poi merge o esito negativo. */

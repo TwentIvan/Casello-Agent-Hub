@@ -362,7 +362,16 @@ export async function ensureReleaseItem(workId: number): Promise<void> {
     await tx.update(teamWorksTable).set({ pendingActionId: item!.id, headSha: head, updatedAt: new Date() }).where(eq(teamWorksTable.id, work.id));
     return true;
   });
-  if (queuedItem) notifyWorkChanged(instance.id);
+  if (!queuedItem) return;
+  notifyWorkChanged(instance.id);
+  // Collaudo della testa del lavoro: un errore non tocca la voce, già in coda. Import dinamico: il collaudo dipende da release.ts,
+  // che dipende da questo modulo
+  try {
+    const { requestReleaseTest } = await import("../collaudo/service");
+    await requestReleaseTest(work.id);
+  } catch (err) {
+    logger.error({ instanceId: instance.id, work: work.number, errName: err instanceof Error ? err.name : "Error" }, "Collaudo del lavoro non richiesto");
+  }
 }
 
 /** Esito dell'ultima revisione del lavoro: compito finito di un ruolo con il codice in lettura, creato dopo l'apertura del lavoro. */

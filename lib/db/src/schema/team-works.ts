@@ -28,6 +28,8 @@ export const teamWorksTable = pgTable(
     releasePrUrl: text("release_pr_url"),
     releaseCiSince: timestamp("release_ci_since"),
     rejectionNote: text("rejection_note"),
+    // Rifiuti automatici di «Porta in produzione» dopo un collaudo con problemi (al più 2)
+    testAutoRejects: integer("test_auto_rejects").notNull().default(0),
     finishedAt: timestamp("finished_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),

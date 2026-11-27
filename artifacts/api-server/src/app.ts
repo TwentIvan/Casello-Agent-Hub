@@ -82,7 +82,7 @@ const nodeJsonParser = express.json({ limit: "256kb" });
 // Segnalazioni dei bug dal plugin (pubbliche): corpo al più 32 KB, oltre 413.
 const bugJsonParser = express.json({ limit: "32kb" });
 const EMBED_BUGS_PATH = /^\/api\/embed\/bugs(?:\/|$)/i;
-const NODE_PROTOCOL_PATH = /^\/api\/node(?:\/|$)/i;
+const NODE_PROTOCOL_PATH = /^\/api\/(?:node|collaudo)(?:\/|$)/i;
 const formParser = express.urlencoded({ extended: true });
 const isAttachmentUpload = (req: express.Request): boolean => req.method === "POST" && ATTACHMENT_UPLOAD_PATH.test(req.originalUrl.split("?")[0]!);
 // I webhook hanno il loro parser: il corpo non passa mai dai parser globali, nemmeno su un percorso non gestito.

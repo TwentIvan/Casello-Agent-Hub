@@ -12,6 +12,7 @@ import {
   characterHistoryTable,
   planConversationsTable,
   teamChatConversationsTable,
+  releaseTestsTable,
   runsTable,
   teamTasksTable,
   teamTurnsTable,
@@ -20,7 +21,7 @@ import {
 import type { Character } from "./memory/types";
 
 // Tetti di spesa mensili (USD). Chi configura paga: la spesa di un utente è quella fatta sui suoi account AI
-// (run, analisi cloud, chat del piano, sessioni di Alfred, chat di squadra di Lucius, riassunti delle memorie, compiti e turni delle squadre con un suo modello); quella di un agente è la somma delle sue run, con
+// (run, analisi cloud, chat del piano, sessioni di Alfred, chat di squadra di Lucius, riassunti delle memorie, compiti, turni e collaudi delle squadre con un suo modello); quella di un agente è la somma delle sue run, con
 // qualsiasi modello; quella di un modello o di un account AI è la stessa somma ristretta a quel modello o ai
 // modelli dell'account (il credito si carica per chiave). Il mese è quello di calendario, ora italiana. Un costo null (prezzo mancante) non si
 // può sommare: si conta a parte tra le esecuzioni senza prezzo, e la spesa reale è più alta di quella mostrata.
@@ -93,7 +94,7 @@ const unpricedBp = sql<number>`(count(*) filter (where ${bestPracticeSearchesTab
 const runUnpriced = sql<number>`(count(*) filter (where ${runsTable.costUsd} is null and coalesce(${runsTable.promptTokens}, 0) + coalesce(${runsTable.completionTokens}, 0) > 0))::int`;
 
 /** Esecuzioni con token consumati ma costo null (stessa regola delle run), per compiti, turni delle squadre e sessioni di Alfred. */
-export function unpricedOf(table: typeof teamTasksTable | typeof teamTurnsTable | typeof alfredSessionsTable) {
+export function unpricedOf(table: typeof teamTasksTable | typeof teamTurnsTable | typeof alfredSessionsTable | typeof releaseTestsTable) {
   return sql<number>`(count(*) filter (where ${table.costUsd} is null and coalesce(${table.promptTokens}, 0) + coalesce(${table.completionTokens}, 0) > 0))::int`;
 }
 
@@ -108,7 +109,7 @@ async function spendsBy(key: SpendKey, ids: number[], since: Date): Promise<Map<
   const result = new Map<number, Spend>(ids.map((id) => [id, { spentUsd: 0, unpricedCount: 0 }]));
   if (ids.length === 0) return result;
   const scope = inArray(key, ids);
-  const [runs, analyses, chats, tasks, turns, alfred, teamChats, summaries, characterChats, architecture, bestPractice] = await Promise.all([
+  const [runs, analyses, chats, tasks, turns, alfred, teamChats, summaries, characterChats, architecture, bestPractice, releaseTests] = await Promise.all([
     db
       .select({ key, spent: sumOf(runsTable.costUsd), unpriced: runUnpriced })
       .from(runsTable)
@@ -215,8 +216,16 @@ async function spendsBy(key: SpendKey, ids: number[], since: Date): Promise<Map<
       .innerJoin(aiAccountsTable, eq(aiModelsTable.accountId, aiAccountsTable.id))
       .where(and(scope, isNull(bestPracticeSearchesTable.analysisId), gte(bestPracticeSearchesTable.createdAt, since)))
       .groupBy(key),
+    // Collaudi dei lavori: il modello del capo (o il suo ripiego cloud) paga
+    db
+      .select({ key, spent: sumOf(releaseTestsTable.costUsd), unpriced: unpricedOf(releaseTestsTable) })
+      .from(releaseTestsTable)
+      .innerJoin(aiModelsTable, eq(releaseTestsTable.aiModelId, aiModelsTable.id))
+      .innerJoin(aiAccountsTable, eq(aiModelsTable.accountId, aiAccountsTable.id))
+      .where(and(scope, gte(releaseTestsTable.createdAt, since)))
+      .groupBy(key),
   ]);
-  for (const r of [...runs, ...analyses, ...chats, ...tasks, ...turns, ...alfred, ...teamChats, ...summaries, ...characterChats, ...architecture, ...bestPractice]) {
+  for (const r of [...runs, ...analyses, ...chats, ...tasks, ...turns, ...alfred, ...teamChats, ...summaries, ...characterChats, ...architecture, ...bestPractice, ...releaseTests]) {
     if (r.key === null) continue;
     const acc = result.get(r.key)!;
     result.set(r.key, { spentUsd: acc.spentUsd + Number(r.spent), unpricedCount: acc.unpricedCount + r.unpriced });

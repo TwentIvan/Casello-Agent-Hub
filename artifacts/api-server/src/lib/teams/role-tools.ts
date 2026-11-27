@@ -48,6 +48,11 @@ export const INTERNAL_TOOL_NAMES = [
   // Vaglio delle segnalazioni dei bug da parte del Responsabile (bugs/triage-tools.ts)
   "elenca_segnalazioni",
   "esito_vaglio",
+  // Collaudatore dei lavori (collaudo/run-test.ts)
+  "shell",
+  "browser",
+  "salva_ricetta",
+  "consegna_collaudo",
 ] as const;
 
 export type InternalToolName = (typeof INTERNAL_TOOL_NAMES)[number];

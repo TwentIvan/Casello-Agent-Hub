@@ -70,7 +70,7 @@ jobs:
             echo "artifacts/casello-collaudo/src uguale a main: nessun controllo della versione"
             exit 0
           fi
-          main_version=$(git show FETCH_HEAD:artifacts/casello-collaudo/package.json 2>/dev/null | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).version??"")}catch{console.log("")}})')
+          main_version=$( (git show FETCH_HEAD:artifacts/casello-collaudo/package.json 2>/dev/null || true) | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{try{console.log(JSON.parse(s).version??"")}catch{console.log("")}})')
           branch_version=$(node -p 'require("./artifacts/casello-collaudo/package.json").version')
           echo "versione su main: ${main_version:-assente}, su questo branch: ${branch_version}"
           if [ -n "$main_version" ] && [ "$main_version" = "$branch_version" ]; then

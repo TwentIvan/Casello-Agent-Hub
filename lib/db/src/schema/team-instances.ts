@@ -4,6 +4,7 @@ import { appsTable } from "./apps";
 import { usersTable } from "./users";
 import { teamTemplatesTable } from "./team-templates";
 import { skillKindEnum } from "./skills";
+import type { RoleLinkData } from "./team-templates";
 
 // Forma del manifesto salvato (`validateRoles` dell'API la verifica con `InstanceRoleSchema` a ogni scrittura
 // e ogni lettura la rilegge con lo stesso schema)
@@ -40,6 +41,8 @@ export const teamInstancesTable = pgTable(
     status: teamInstanceStatusEnum("status").notNull().default("draft"),
     // Manifesto dei ruoli dell'istanza, con le skill fissate a una versione
     roles: jsonb("roles").$type<InstanceRoleData[]>().notNull().default([]),
+    // Relazioni tra i ruoli: chi può contattare chi durante un compito (frecce del disegno)
+    links: jsonb("links").$type<RoleLinkData[]>().notNull().default([]),
     createdBy: integer("created_by").references(() => usersTable.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),

@@ -13,7 +13,8 @@ import {
 import { isUniqueViolation } from "../pg-errors";
 import { effectiveLevel, type ToolLevel } from "../tools/levels";
 import { TemplateRoleSchema, type InstanceRole, type TemplateRole } from "./manifest";
-import { validateRoles } from "./rules";
+import { TeamRuleError, validateRoles } from "./rules";
+import { linksError, pruneLinks, readLinks, type RoleLink } from "./links";
 import type { Executor, SkillKind } from "./skills";
 
 // Modelli di squadra: nome, descrizione e, per ogni versione, il manifesto dei ruoli. Ogni salvataggio
@@ -60,11 +61,20 @@ export type TemplateView = {
   archived: boolean;
   instanceCount: number;
   roles: RoleView[];
+  /** Relazioni tra i ruoli della versione corrente */
+  links: RoleLink[];
   createdAt: Date;
   updatedAt: Date;
 };
 
-export type TemplateInput = { name: string; description?: string; roles: TemplateRole[] };
+/** `links` omesso = relazioni della versione precedente, potate ai ruoli rimasti (nessuna per un modello nuovo). */
+export type TemplateInput = { name: string; description?: string; roles: TemplateRole[]; links?: RoleLink[] };
+
+/** Controlla le relazioni rispetto ai ruoli: errore di regola (400) con il messaggio fisso. */
+export function checkLinks(roles: Array<TemplateRole | InstanceRole>, links: RoleLink[]): void {
+  const error = linksError(roles, links);
+  if (error) throw new TeamRuleError(error);
+}
 
 /** Skill specializzate di un'istanza: nome e tipo per codice (servono solo a leggere i ruoli di un'istanza). */
 export type LocalSkillInfo = Map<string, { name: string; kind: SkillKind }>;
@@ -144,7 +154,7 @@ export async function describeRoles(
   });
 }
 
-async function toView(row: TeamTemplateRow, roles: TemplateRole[]): Promise<TemplateView> {
+async function toView(row: TeamTemplateRow, roles: TemplateRole[], links: RoleLink[]): Promise<TemplateView> {
   const [{ value }] = (await db
     .select({ value: count() })
     .from(teamInstancesTable)
@@ -157,19 +167,28 @@ async function toView(row: TeamTemplateRow, roles: TemplateRole[]): Promise<Temp
     archived: row.archived,
     instanceCount: value,
     roles: await describeRoles(roles),
+    links,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
 }
 
 async function readVersion(templateId: number, version: number, executor: Pick<typeof db, "select"> = db): Promise<TemplateRole[]> {
+  return (await readVersionWithLinks(templateId, version, executor)).roles;
+}
+
+async function readVersionWithLinks(
+  templateId: number,
+  version: number,
+  executor: Pick<typeof db, "select"> = db,
+): Promise<{ roles: TemplateRole[]; links: RoleLink[] }> {
   const [row] = await executor
     .select()
     .from(teamTemplateVersionsTable)
     .where(and(eq(teamTemplateVersionsTable.templateId, templateId), eq(teamTemplateVersionsTable.version, version)))
     .limit(1);
   if (!row) throw new TemplateError(404, TEMPLATE_MESSAGES.versionNotFound);
-  return TemplateRoleSchema.array().parse(row.manifest);
+  return { roles: TemplateRoleSchema.array().parse(row.manifest), links: readLinks(row.links) };
 }
 
 /** Scrive modello e versione 1 senza validare: chi chiama ha già validato i ruoli (fuori da ogni transazione). */
@@ -180,7 +199,7 @@ export async function insertTemplateUnchecked(input: TemplateInput, executor: Ex
         .insert(teamTemplatesTable)
         .values({ name: input.name, description: input.description ?? "" })
         .returning({ id: teamTemplatesTable.id });
-      await tx.insert(teamTemplateVersionsTable).values({ templateId: row!.id, version: 1, manifest: input.roles });
+      await tx.insert(teamTemplateVersionsTable).values({ templateId: row!.id, version: 1, manifest: input.roles, links: input.links ?? [] });
       return row!.id;
     });
   } catch (err) {
@@ -193,6 +212,7 @@ export async function insertTemplateUnchecked(input: TemplateInput, executor: Ex
 
 export async function createTemplate(userId: number, input: TemplateInput, executor: Executor = db): Promise<TemplateView> {
   await validateRoles({ roles: input.roles, mode: "template", userId, previous: null });
+  checkLinks(input.roles, input.links ?? []);
   return getTemplate(await insertTemplateUnchecked(input, executor));
 }
 
@@ -207,7 +227,7 @@ export async function appendTemplateVersionUnchecked(id: number, input: Template
       if (!locked) throw new TemplateError(404, TEMPLATE_MESSAGES.notFound);
       if (locked.archived) throw new TemplateError(409, TEMPLATE_MESSAGES.archived);
       const version = locked.version + 1;
-      await tx.insert(teamTemplateVersionsTable).values({ templateId: id, version, manifest: input.roles });
+      await tx.insert(teamTemplateVersionsTable).values({ templateId: id, version, manifest: input.roles, links: input.links ?? [] });
       await tx
         .update(teamTemplatesTable)
         .set({ name: input.name, description: input.description ?? "", version, updatedAt: new Date() })
@@ -226,9 +246,11 @@ export async function appendTemplateVersionUnchecked(id: number, input: Template
 export async function saveTemplate(userId: number, id: number, input: TemplateInput, executor: Executor = db): Promise<TemplateView> {
   const current = await getTemplateRow(id);
   if (current.archived) throw new TemplateError(409, TEMPLATE_MESSAGES.archived);
-  const previous = await readVersion(id, current.version);
+  const { roles: previous, links: previousLinks } = await readVersionWithLinks(id, current.version);
   await validateRoles({ roles: input.roles, mode: "template", userId, previous });
-  await appendTemplateVersionUnchecked(id, input, executor);
+  const links = input.links ?? pruneLinks(input.roles, previousLinks);
+  checkLinks(input.roles, links);
+  await appendTemplateVersionUnchecked(id, { ...input, links }, executor);
   return getTemplate(id);
 }
 
@@ -240,7 +262,8 @@ export async function getTemplateRow(id: number): Promise<TeamTemplateRow> {
 
 export async function getTemplate(id: number): Promise<TemplateView> {
   const row = await getTemplateRow(id);
-  return toView(row, await readVersion(id, row.version));
+  const { roles, links } = await readVersionWithLinks(id, row.version);
+  return toView(row, roles, links);
 }
 
 export async function listTemplates({ archived }: { archived: boolean }): Promise<TemplateView[]> {
@@ -249,13 +272,24 @@ export async function listTemplates({ archived }: { archived: boolean }): Promis
     .from(teamTemplatesTable)
     .where(eq(teamTemplatesTable.archived, archived))
     .orderBy(desc(teamTemplatesTable.createdAt), desc(teamTemplatesTable.id));
-  return Promise.all(rows.map(async (row) => toView(row, await readVersion(row.id, row.version))));
+  return Promise.all(
+    rows.map(async (row) => {
+      const { roles, links } = await readVersionWithLinks(row.id, row.version);
+      return toView(row, roles, links);
+    }),
+  );
 }
 
 /** I ruoli di una versione del modello (anche non corrente), arricchiti per la lettura. */
 export async function getTemplateVersion(id: number, version: number): Promise<TemplateRole[]> {
   await getTemplateRow(id);
   return readVersion(id, version);
+}
+
+/** Relazioni tra i ruoli di una versione del modello. */
+export async function getTemplateLinks(id: number, version: number): Promise<RoleLink[]> {
+  await getTemplateRow(id);
+  return (await readVersionWithLinks(id, version)).links;
 }
 
 /** Senza istanze si cancella (le versioni seguono); con istanze si archivia, perché le istanze ne ricordano l'origine. */

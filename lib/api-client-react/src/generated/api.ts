@@ -275,6 +275,7 @@ import type {
   TeamPlan,
   TeamPlanInput,
   TeamReadiness,
+  TeamRoleMessage,
   TeamRoleView,
   TeamSaveAsTemplate,
   TeamTask,
@@ -15275,6 +15276,83 @@ export function useListTeamEvents<TData = Awaited<ReturnType<typeof listTeamEven
  ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
 
   const queryOptions = getListTeamEventsQueryOptions(id,options)
+
+  const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export const getListTeamRoleMessagesUrl = (id: number,) => {
+
+
+
+
+  return `/api/team-instances/${id}/role-messages`
+}
+
+/**
+ * @summary Consultazioni e messaggi tra i ruoli della squadra, dal più recente (ultimi 200)
+ */
+export const listTeamRoleMessages = async (id: number, options?: RequestInit): Promise<TeamRoleMessage[]> => {
+
+  return customFetch<TeamRoleMessage[]>(getListTeamRoleMessagesUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListTeamRoleMessagesQueryKey = (id: number,) => {
+    return [
+    `/api/team-instances/${id}/role-messages`
+    ] as const;
+    }
+
+
+export const getListTeamRoleMessagesQueryOptions = <TData = Awaited<ReturnType<typeof listTeamRoleMessages>>, TError = ErrorType<NotFoundResponse>>(id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTeamRoleMessages>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListTeamRoleMessagesQueryKey(id);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listTeamRoleMessages>>> = ({ signal }) => listTeamRoleMessages(id, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: id !== null && id !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listTeamRoleMessages>>, TError, TData> & { queryKey: QueryKey }
+}
+
+export type ListTeamRoleMessagesQueryResult = NonNullable<Awaited<ReturnType<typeof listTeamRoleMessages>>>
+export type ListTeamRoleMessagesQueryError = ErrorType<NotFoundResponse>
+
+
+/**
+ * @summary Consultazioni e messaggi tra i ruoli della squadra, dal più recente (ultimi 200)
+ */
+
+export function useListTeamRoleMessages<TData = Awaited<ReturnType<typeof listTeamRoleMessages>>, TError = ErrorType<NotFoundResponse>>(
+ id: number, options?: { query?:UseQueryOptions<Awaited<ReturnType<typeof listTeamRoleMessages>>, TError, TData>, request?: SecondParameter<typeof customFetch>}
+
+ ):  UseQueryResult<TData, TError> & { queryKey: QueryKey } {
+
+  const queryOptions = getListTeamRoleMessagesQueryOptions(id,options)
 
   const query = useQuery(queryOptions) as  UseQueryResult<TData, TError> & { queryKey: QueryKey };
 

@@ -1,15 +1,15 @@
 import { and, eq, gte, inArray, sql } from "drizzle-orm";
-import { db, releaseTestsTable, teamInstancesTable, teamTasksTable, teamTurnsTable } from "@workspace/db";
+import { db, releaseTestsTable, teamInstancesTable, teamRoleMessagesTable, teamTasksTable, teamTurnsTable } from "@workspace/db";
 import { monthStart, unpricedOf, type Spend } from "../budget";
 
-// Spesa delle squadre (compiti, turni del capo e collaudi dei lavori), senza dipendenze dal ciclo di evoluzione: la usano sia il tetto delle
+// Spesa delle squadre (compiti, turni del capo, consultazioni tra ruoli e collaudi dei lavori), senza dipendenze dal ciclo di evoluzione: la usano sia il tetto delle
 // squadre (`team-budget.ts`) sia la spesa del ciclo (`evolution/spend.ts`), che altrimenti si importerebbero a vicenda.
 
 /** Tipo del lavoro di riferimento delle squadre create da un ciclo di evoluzione. */
 export const EVOLUTION_REF_TYPE = "evoluzione";
 
 async function spendOf(instanceIds: number[] | ReturnType<typeof evolutionInstancesOf>, since: Date): Promise<Spend> {
-  const [tasks, turns, tests] = await Promise.all([
+  const [tasks, turns, tests, consults] = await Promise.all([
     db
       .select({ spent: sql<string>`coalesce(sum(${teamTasksTable.costUsd}), 0)`, unpriced: unpricedOf(teamTasksTable) })
       .from(teamTasksTable)
@@ -22,8 +22,12 @@ async function spendOf(instanceIds: number[] | ReturnType<typeof evolutionInstan
       .select({ spent: sql<string>`coalesce(sum(${releaseTestsTable.costUsd}), 0)`, unpriced: unpricedOf(releaseTestsTable) })
       .from(releaseTestsTable)
       .where(and(inArray(releaseTestsTable.instanceId, instanceIds), gte(releaseTestsTable.createdAt, since))),
+    db
+      .select({ spent: sql<string>`coalesce(sum(${teamRoleMessagesTable.costUsd}), 0)`, unpriced: unpricedOf(teamRoleMessagesTable) })
+      .from(teamRoleMessagesTable)
+      .where(and(inArray(teamRoleMessagesTable.instanceId, instanceIds), gte(teamRoleMessagesTable.createdAt, since))),
   ]);
-  return [...tasks, ...turns, ...tests].reduce<Spend>(
+  return [...tasks, ...turns, ...tests, ...consults].reduce<Spend>(
     (acc, r) => ({ spentUsd: acc.spentUsd + Number(r.spent), unpricedCount: acc.unpricedCount + r.unpriced }),
     { spentUsd: 0, unpricedCount: 0 },
   );

@@ -17,6 +17,7 @@ import { InstanceRoleSchema, codeWrites, type InstanceRole } from "./manifest";
 import { getPlan, type PlanView } from "./plan";
 import { readinessText, teamReadiness } from "./readiness";
 import { loadRoleTools, roleFunctionTools, roleToolExecutor, teamQueueAction, toolSchemaLookup } from "./role-tools";
+import { readLinks, type RoleLink } from "./links";
 import { TASK_MESSAGES, errName, skillTexts } from "./task-runner";
 import { teamBudgetBlock } from "./team-budget";
 import { usableNodeFallback } from "./node-fallback";
@@ -97,6 +98,16 @@ export const WORK_INSTRUCTION = [
   "- Quando i compiti con codice sono finiti e le loro PR sono unite nel lavoro (evento «PR #n unita», non basta «CI verde») chiama `chiudi_lavoro` una volta sola: Botcave mette il lavoro sulla versione di prova e chiede all'utente «Porta in produzione». Il merge sul branch base lo decide solo l'utente.",
   "- Se l'utente rifiuta «Porta in produzione» con una nota o il rilascio non riesce, il lavoro torna aperto: correggi con compiti nuovi sul branch del lavoro (proponi_piano se servono compiti nuovi), poi `chiudi_lavoro` di nuovo.",
 ].join("\n");
+
+/** Relazioni tra i ruoli: chi può contattare chi durante un compito (il capo resta l'unico che assegna). */
+export function linksLeadInstruction(roles: InstanceRole[], links: RoleLink[]): string {
+  const name = new Map(roles.map((r) => [r.key, r.name]));
+  return [
+    "Relazioni tra i ruoli: durante un compito questi ruoli possono contattarsi direttamente (consulta_ruolo per una domanda con risposta subito, scrivi_a_ruolo per un messaggio letto al prossimo compito del collega):",
+    ...links.map((l) => `- ${name.get(l.from) ?? l.from} → ${name.get(l.to) ?? l.to}${l.mode === "notes" ? " (solo messaggi)" : ""}`),
+    "Resti tu l'unico che assegna i compiti e decide il PLAN: gli scambi tra colleghi servono a chiarire dubbi, li trovi in leggi_esito (colleagues).",
+  ].join("\n");
+}
 
 /** Istruzioni sul codice: lavoro su branch unico con un ruolo che scrive codice, altrimenti la regola del merge. */
 export function codeInstruction(roles: InstanceRole[]): string {
@@ -203,6 +214,8 @@ function systemPrompt(
     "Identità del capo:",
     lead.task || "(nessuna istruzione specifica)",
   ];
+  const links = readLinks(instance.links);
+  if (links.length > 0) parts.push("", linksLeadInstruction(roles, links));
   for (const skill of skills) parts.push("", `Skill ${skill.code} · ${skill.label}:`, skill.content);
   return parts.join("\n");
 }

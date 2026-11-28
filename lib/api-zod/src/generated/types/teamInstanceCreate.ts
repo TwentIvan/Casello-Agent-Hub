@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { TeamInstanceRole } from './teamInstanceRole';
+import type { TeamRoleLink } from './teamRoleLink';
 import type { TeamWorkRef } from './teamWorkRef';
 
 export interface TeamInstanceCreate {
@@ -18,4 +19,9 @@ export interface TeamInstanceCreate {
   ref: TeamWorkRef;
   /** Obbligatori senza modello, ignorati con il modello */
   roles?: TeamInstanceRole[];
+  /**
+     * Relazioni tra i ruoli senza modello; con il modello si copiano quelle della sua versione
+     * @maxItems 60
+     */
+  links?: TeamRoleLink[];
 }

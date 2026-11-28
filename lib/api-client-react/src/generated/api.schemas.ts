@@ -5353,6 +5353,25 @@ export interface TeamRoleView {
   skills: TeamRoleViewSkillsItem[];
 }
 
+export type TeamRoleLinkMode = typeof TeamRoleLinkMode[keyof typeof TeamRoleLinkMode];
+
+
+export const TeamRoleLinkMode = {
+  full: 'full',
+  notes: 'notes',
+} as const;
+
+/**
+ * Relazione tra due ruoli (non il capo): il ruolo `from` può contattare il ruolo `to` durante un compito. `full` = consultazioni e messaggi, `notes` = solo messaggi (obbligatorio verso un ruolo sul nodo; un ruolo sul nodo non è mai `from`).
+ */
+export interface TeamRoleLink {
+  /** @pattern ^[a-z0-9_-]{1,40}$ */
+  from: string;
+  /** @pattern ^[a-z0-9_-]{1,40}$ */
+  to: string;
+  mode: TeamRoleLinkMode;
+}
+
 export interface TeamTemplate {
   id: number;
   name: string;
@@ -5361,8 +5380,58 @@ export interface TeamTemplate {
   archived: boolean;
   instanceCount: number;
   roles: TeamRoleView[];
+  links: TeamRoleLink[];
   createdAt: string;
   updatedAt: string;
+}
+
+export type TeamRoleMessageKind = typeof TeamRoleMessageKind[keyof typeof TeamRoleMessageKind];
+
+
+export const TeamRoleMessageKind = {
+  consult: 'consult',
+  note: 'note',
+} as const;
+
+export type TeamRoleMessageStatus = typeof TeamRoleMessageStatus[keyof typeof TeamRoleMessageStatus];
+
+
+export const TeamRoleMessageStatus = {
+  pending: 'pending',
+  answered: 'answered',
+  failed: 'failed',
+  delivered: 'delivered',
+} as const;
+
+/**
+ * Consultazione o messaggio tra due ruoli collegati della squadra
+ */
+export interface TeamRoleMessage {
+  id: number;
+  kind: TeamRoleMessageKind;
+  status: TeamRoleMessageStatus;
+  fromRole: string;
+  toRole: string;
+  /**
+     * Esecuzione del compito che ha scritto
+     * @nullable
+     */
+  fromTaskId: number | null;
+  /**
+     * Esecuzione del compito che ha ricevuto il messaggio
+     * @nullable
+     */
+  deliveredTaskId: number | null;
+  text: string;
+  /** @nullable */
+  answer: string | null;
+  /** @nullable */
+  error: string | null;
+  /** @nullable */
+  costUsd: number | null;
+  createdAt: string;
+  /** @nullable */
+  finishedAt: string | null;
 }
 
 export interface TeamTemplateInput {
@@ -5374,6 +5443,11 @@ export interface TeamTemplateInput {
   /** @maxLength 2000 */
   description?: string;
   roles: TeamRole[];
+  /**
+     * Relazioni tra i ruoli; omesso = quelle della versione precedente, tolte quelle dei ruoli spariti
+     * @maxItems 60
+     */
+  links?: TeamRoleLink[];
 }
 
 export interface TeamTemplateDeleteResult {
@@ -5478,6 +5552,11 @@ export interface TeamInstanceCreate {
   ref: TeamWorkRef;
   /** Obbligatori senza modello, ignorati con il modello */
   roles?: TeamInstanceRole[];
+  /**
+     * Relazioni tra i ruoli senza modello; con il modello si copiano quelle della sua versione
+     * @maxItems 60
+     */
+  links?: TeamRoleLink[];
 }
 
 /**
@@ -5501,6 +5580,11 @@ export interface TeamInstanceSave {
   refTitle?: string;
   roles: TeamInstanceRole[];
   localSkills: TeamLocalSkill[];
+  /**
+     * Relazioni tra i ruoli; omesso = quelle attuali, tolte quelle dei ruoli spariti
+     * @maxItems 60
+     */
+  links?: TeamRoleLink[];
   /** Facoltativo e solo uguale allo stato attuale: si attiva con `POST /team-instances/{id}/activate` e una squadra attiva non torna in bozza. */
   status?: TeamInstanceSaveStatus;
   /**
@@ -5543,6 +5627,8 @@ export const TeamUpdateItemType = {
   skill_added: 'skill_added',
   skill_removed: 'skill_removed',
   skill_version: 'skill_version',
+  link_added: 'link_added',
+  link_removed: 'link_removed',
 } as const;
 
 export type TeamUpdateItemField = typeof TeamUpdateItemField[keyof typeof TeamUpdateItemField];
@@ -5575,6 +5661,7 @@ export interface TeamUpdateItem {
   skillCode?: string;
   fromVersion?: number;
   toVersion?: number;
+  link?: TeamRoleLink;
 }
 
 export type TeamSaveAsTemplateMode = typeof TeamSaveAsTemplateMode[keyof typeof TeamSaveAsTemplateMode];
@@ -5925,6 +6012,7 @@ export interface TeamInstance {
   template: TeamInstanceTemplate;
   ref: TeamInstanceRef;
   roles: TeamRoleView[];
+  links: TeamRoleLink[];
   localSkills: TeamInstanceLocalSkillsItem[];
   createdAt: string;
   updatedAt: string;

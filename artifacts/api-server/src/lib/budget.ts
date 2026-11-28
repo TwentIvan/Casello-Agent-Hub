@@ -16,6 +16,7 @@ import {
   runsTable,
   teamTasksTable,
   teamTurnsTable,
+  teamRoleMessagesTable,
   usersTable,
 } from "@workspace/db";
 import type { Character } from "./memory/types";
@@ -94,7 +95,9 @@ const unpricedBp = sql<number>`(count(*) filter (where ${bestPracticeSearchesTab
 const runUnpriced = sql<number>`(count(*) filter (where ${runsTable.costUsd} is null and coalesce(${runsTable.promptTokens}, 0) + coalesce(${runsTable.completionTokens}, 0) > 0))::int`;
 
 /** Esecuzioni con token consumati ma costo null (stessa regola delle run), per compiti, turni delle squadre e sessioni di Alfred. */
-export function unpricedOf(table: typeof teamTasksTable | typeof teamTurnsTable | typeof alfredSessionsTable | typeof releaseTestsTable) {
+export function unpricedOf(
+  table: typeof teamTasksTable | typeof teamTurnsTable | typeof alfredSessionsTable | typeof releaseTestsTable | typeof teamRoleMessagesTable,
+) {
   return sql<number>`(count(*) filter (where ${table.costUsd} is null and coalesce(${table.promptTokens}, 0) + coalesce(${table.completionTokens}, 0) > 0))::int`;
 }
 
@@ -109,7 +112,7 @@ async function spendsBy(key: SpendKey, ids: number[], since: Date): Promise<Map<
   const result = new Map<number, Spend>(ids.map((id) => [id, { spentUsd: 0, unpricedCount: 0 }]));
   if (ids.length === 0) return result;
   const scope = inArray(key, ids);
-  const [runs, analyses, chats, tasks, turns, alfred, teamChats, summaries, characterChats, architecture, bestPractice, releaseTests] = await Promise.all([
+  const [runs, analyses, chats, tasks, turns, consults, alfred, teamChats, summaries, characterChats, architecture, bestPractice, releaseTests] = await Promise.all([
     db
       .select({ key, spent: sumOf(runsTable.costUsd), unpriced: runUnpriced })
       .from(runsTable)
@@ -155,6 +158,14 @@ async function spendsBy(key: SpendKey, ids: number[], since: Date): Promise<Map<
       .innerJoin(aiModelsTable, eq(teamTurnsTable.aiModelId, aiModelsTable.id))
       .innerJoin(aiAccountsTable, eq(aiModelsTable.accountId, aiAccountsTable.id))
       .where(and(scope, gte(teamTurnsTable.createdAt, since)))
+      .groupBy(key),
+    // Consultazioni tra ruoli delle squadre: il modello del ruolo consultato
+    db
+      .select({ key, spent: sumOf(teamRoleMessagesTable.costUsd), unpriced: unpricedOf(teamRoleMessagesTable) })
+      .from(teamRoleMessagesTable)
+      .innerJoin(aiModelsTable, eq(teamRoleMessagesTable.aiModelId, aiModelsTable.id))
+      .innerJoin(aiAccountsTable, eq(aiModelsTable.accountId, aiAccountsTable.id))
+      .where(and(scope, gte(teamRoleMessagesTable.createdAt, since)))
       .groupBy(key),
     // Sessioni di Alfred: costo cumulativo come le conversazioni del piano, contano nel mese dell'ultima attività
     db
@@ -225,7 +236,7 @@ async function spendsBy(key: SpendKey, ids: number[], since: Date): Promise<Map<
       .where(and(scope, gte(releaseTestsTable.createdAt, since)))
       .groupBy(key),
   ]);
-  for (const r of [...runs, ...analyses, ...chats, ...tasks, ...turns, ...alfred, ...teamChats, ...summaries, ...characterChats, ...architecture, ...bestPractice, ...releaseTests]) {
+  for (const r of [...runs, ...analyses, ...chats, ...tasks, ...turns, ...consults, ...alfred, ...teamChats, ...summaries, ...characterChats, ...architecture, ...bestPractice, ...releaseTests]) {
     if (r.key === null) continue;
     const acc = result.get(r.key)!;
     result.set(r.key, { spentUsd: acc.spentUsd + Number(r.spent), unpricedCount: acc.unpricedCount + r.unpriced });

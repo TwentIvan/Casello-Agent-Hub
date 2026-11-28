@@ -1,4 +1,4 @@
-import type { TeamTask, TeamTurn } from "@workspace/api-client-react";
+import type { TeamRoleMessage, TeamTask, TeamTurn } from "@workspace/api-client-react";
 import { reasonText } from "./turn-reasons";
 
 /**
@@ -8,15 +8,20 @@ import { reasonText } from "./turn-reasons";
  */
 export const TEAM_ACTIVITY_LIMITS = { turns: 50, tasks: 200 } as const;
 
-export type ActivityKind = "all" | "turns" | "tasks";
+export type ActivityKind = "all" | "turns" | "tasks" | "colleagues";
 
 export const ACTIVITY_KIND_LABELS: Record<ActivityKind, string> = {
-  all: "Turni e compiti",
+  all: "Tutto",
   turns: "Solo turni del capo",
   tasks: "Solo compiti",
+  colleagues: "Solo colleghi",
 };
 
-export type ActivityEntry = { kind: "turn"; at: string; turn: TeamTurn } | { kind: "task"; at: string; task: TeamTask };
+export type ActivityEntry =
+  | { kind: "turn"; at: string; turn: TeamTurn }
+  | { kind: "task"; at: string; task: TeamTask }
+  /** Consultazione o messaggio tra due ruoli collegati */
+  | { kind: "colleague"; at: string; message: TeamRoleMessage };
 
 /** Minuscole e senza accenti: «attività» si trova anche scrivendo «attivita». */
 export function normalizeSearch(text: string): string {
@@ -33,7 +38,19 @@ export function entrySearchText(e: ActivityEntry, taskTitles: ReadonlyMap<string
   const parts: (string | null | undefined)[] =
     e.kind === "turn"
       ? ["turno del capo", ...e.turn.reasons.map(reasonText), e.turn.error]
-      : [
+      : e.kind === "colleague"
+        ? [
+            "colleghi",
+            e.message.kind === "consult" ? "consultazione" : "messaggio",
+            e.message.fromRole,
+            roleNames.get(e.message.fromRole),
+            e.message.toRole,
+            roleNames.get(e.message.toRole),
+            e.message.text,
+            e.message.answer,
+            e.message.error,
+          ]
+        : [
           "compito",
           e.task.planTaskId,
           taskTitles.get(e.task.planTaskId),
@@ -52,11 +69,14 @@ export function filterActivity(
   turns: readonly TeamTurn[],
   tasks: readonly TeamTask[],
   opts: { kind: ActivityKind; query: string; taskTitles: ReadonlyMap<string, string>; roleNames: ReadonlyMap<string, string> },
+  messages: readonly TeamRoleMessage[] = [],
 ): ActivityEntry[] {
   const terms = searchTerms(opts.query);
+  const show = (k: ActivityKind) => opts.kind === "all" || opts.kind === k;
   const entries: ActivityEntry[] = [
-    ...(opts.kind === "tasks" ? [] : turns.map((turn): ActivityEntry => ({ kind: "turn", at: turn.createdAt, turn }))),
-    ...(opts.kind === "turns" ? [] : tasks.map((task): ActivityEntry => ({ kind: "task", at: task.createdAt, task }))),
+    ...(show("turns") ? turns.map((turn): ActivityEntry => ({ kind: "turn", at: turn.createdAt, turn })) : []),
+    ...(show("tasks") ? tasks.map((task): ActivityEntry => ({ kind: "task", at: task.createdAt, task })) : []),
+    ...(show("colleagues") ? messages.map((message): ActivityEntry => ({ kind: "colleague", at: message.createdAt, message })) : []),
   ];
   const found =
     terms.length === 0

@@ -5,6 +5,7 @@
  * Casello — hub per agentificare applicazioni
  * OpenAPI spec version: 0.1.0
  */
+import type { TeamRoleLink } from './teamRoleLink';
 import type { TeamUpdateItemField } from './teamUpdateItemField';
 import type { TeamUpdateItemType } from './teamUpdateItemType';
 
@@ -25,4 +26,5 @@ export interface TeamUpdateItem {
   skillCode?: string;
   fromVersion?: number;
   toVersion?: number;
+  link?: TeamRoleLink;
 }

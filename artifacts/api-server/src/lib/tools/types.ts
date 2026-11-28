@@ -43,6 +43,8 @@ export interface ToolResult {
   ok: boolean;
   status?: number;
   content: string;
+  /** La durata è attesa (es. consultazione di un collega), non lavoro: non conta nel tempo attivo del ciclo. */
+  waited?: boolean;
 }
 
 /** Transazione di Drizzle (parametro del callback di `db.transaction`). */

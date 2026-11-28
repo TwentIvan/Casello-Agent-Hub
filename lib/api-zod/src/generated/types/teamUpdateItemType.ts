@@ -16,4 +16,6 @@ export const TeamUpdateItemType = {
   skill_added: 'skill_added',
   skill_removed: 'skill_removed',
   skill_version: 'skill_version',
+  link_added: 'link_added',
+  link_removed: 'link_removed',
 } as const;

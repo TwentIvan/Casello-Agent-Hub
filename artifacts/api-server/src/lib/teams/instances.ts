@@ -22,7 +22,8 @@ import { SKILL_CODE, SKILL_MESSAGES, validateSkillContent, type Executor, type S
 import { teamSpend } from "./team-budget";
 import { cycleForTeam } from "../evolution/cycle-team";
 import { EVOLUTION_MESSAGES } from "../evolution/messages";
-import { TEMPLATE_MESSAGES, TemplateError, describeRoles, getTemplateVersion, type LocalSkillInfo, type RoleView } from "./templates";
+import { TEMPLATE_MESSAGES, TemplateError, checkLinks, describeRoles, getTemplateLinks, getTemplateVersion, type LocalSkillInfo, type RoleView } from "./templates";
+import { pruneLinks, readLinks, type RoleLink } from "./links";
 import { enqueueTurnReason } from "./turn-queue";
 
 // Istanze di squadra: copia di un modello (o squadra da zero) legata a un lavoro, con le skill fissate a
@@ -64,6 +65,8 @@ export type InstanceView = {
   template: { id: number; name: string; version: number } | null;
   ref: { appId: number; appName: string; type: string; id: string; title: string };
   roles: RoleView[];
+  /** Relazioni tra i ruoli (chi può contattare chi durante un compito) */
+  links: RoleLink[];
   localSkills: LocalSkillView[];
   createdAt: Date;
   updatedAt: Date;
@@ -81,6 +84,8 @@ export type CreateInstanceInput = {
   name: string;
   ref: { appId: number; type: string; id: string; title?: string };
   roles?: InstanceRole[];
+  /** Solo senza modello: relazioni tra i ruoli (con un modello si copiano dalla sua versione corrente) */
+  links?: RoleLink[];
 };
 
 export type SaveInstanceInput = {
@@ -88,6 +93,8 @@ export type SaveInstanceInput = {
   refTitle?: string;
   roles: InstanceRole[];
   localSkills: LocalSkillInput[];
+  /** Relazioni tra i ruoli: omesso = quelle attuali, potate ai ruoli rimasti */
+  links?: RoleLink[];
   status?: "draft" | "active";
   /** Spazio di lavoro sul nodo (relativo alla radice del nodo): omesso = invariato, null = tolto */
   nodeWorkspace?: string | null;
@@ -117,6 +124,7 @@ async function toView(row: TeamInstanceRow): Promise<InstanceView> {
     template: row.templateId !== null && template && row.templateVersion !== null ? { id: row.templateId, name: template.name, version: row.templateVersion } : null,
     ref: { appId: row.refAppId, appName: app?.name ?? "", type: row.refType, id: row.refId, title: row.refTitle },
     roles: await describeRoles(roles, info),
+    links: readLinks(row.links),
     localSkills: local.map((s) => ({ code: s.code, name: s.name, kind: s.kind, content: s.content, toolHints: s.toolHints })),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
@@ -173,6 +181,7 @@ export async function createInstance(userId: number, input: CreateInstanceInput,
   // Ruoli del modello: le skill deprecate o gli strumenti non più usabili restano validi dove il modello già li ha
   let previous: TemplateRole[] | null = null;
   let templateVersion: number | null = null;
+  let links: RoleLink[] = input.links ?? [];
   if (input.templateId !== undefined) {
     const [template] = await db.select().from(teamTemplatesTable).where(eq(teamTemplatesTable.id, input.templateId)).limit(1);
     if (!template) throw new TemplateError(404, TEMPLATE_MESSAGES.notFound);
@@ -180,11 +189,13 @@ export async function createInstance(userId: number, input: CreateInstanceInput,
     previous = await getTemplateVersion(template.id, template.version);
     roles = await pinSkills(previous);
     templateVersion = template.version;
+    links = await getTemplateLinks(template.id, template.version);
   } else {
     if (!input.roles) throw new TeamRuleError(INSTANCE_MESSAGES.rolesRequired);
     roles = input.roles;
   }
   await validateRoles({ roles, mode: "instance", userId, previous, localSkillCodes: new Map(), refApp: await loadRefApp(input.ref.appId) });
+  checkLinks(roles, links);
 
   const [row] = await executor
     .insert(teamInstancesTable)
@@ -197,6 +208,7 @@ export async function createInstance(userId: number, input: CreateInstanceInput,
       refId: input.ref.id,
       refTitle: input.ref.title ?? `${input.ref.type} · ${input.ref.id}`,
       roles,
+      links,
       createdBy: userId,
     })
     .returning();
@@ -251,9 +263,11 @@ export async function saveInstance(
   }
   const previous = InstanceRoleSchema.array().parse(current.roles);
   await validateRoles({ roles: input.roles, mode: "instance", userId, previous, localSkillCodes, refApp: await loadRefApp(current.refAppId) });
+  const links = input.links ?? pruneLinks(input.roles, readLinks(current.links));
+  checkLinks(input.roles, links);
 
   try {
-    await saveLocked(id, input, executor, guard);
+    await saveLocked(id, { ...input, links }, executor, guard);
   } catch (err) {
     // Due designazioni concorrenti sfuggite al lock dell'App: l'indice unico decide, il messaggio dice chi ha vinto
     if (!isUniqueViolation(err, BUG_TEAM_INDEX)) throw err;
@@ -305,6 +319,7 @@ async function saveLocked(id: number, input: SaveInstanceInput, executor: Execut
         name: input.name,
         refTitle: input.refTitle ?? locked.refTitle,
         roles: input.roles,
+        ...(input.links !== undefined ? { links: input.links } : {}),
         nodeWorkspace: input.nodeWorkspace === undefined ? locked.nodeWorkspace : input.nodeWorkspace,
         bugTeam: input.bugTeam === undefined ? locked.bugTeam : input.bugTeam,
         updatedAt: new Date(),

@@ -8,6 +8,7 @@
 import type { TeamInstanceRole } from './teamInstanceRole';
 import type { TeamInstanceSaveStatus } from './teamInstanceSaveStatus';
 import type { TeamLocalSkill } from './teamLocalSkill';
+import type { TeamRoleLink } from './teamRoleLink';
 
 export interface TeamInstanceSave {
   /**
@@ -19,6 +20,11 @@ export interface TeamInstanceSave {
   refTitle?: string;
   roles: TeamInstanceRole[];
   localSkills: TeamLocalSkill[];
+  /**
+     * Relazioni tra i ruoli; omesso = quelle attuali, tolte quelle dei ruoli spariti
+     * @maxItems 60
+     */
+  links?: TeamRoleLink[];
   /** Facoltativo e solo uguale allo stato attuale: si attiva con `POST /team-instances/{id}/activate` e una squadra attiva non torna in bozza. */
   status?: TeamInstanceSaveStatus;
   /**

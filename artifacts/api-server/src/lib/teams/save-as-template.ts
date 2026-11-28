@@ -1,6 +1,7 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { db, skillsTable, teamInstanceSkillsTable, teamInstancesTable } from "@workspace/db";
 import { InstanceRoleSchema, type InstanceRole, type TemplateRole } from "./manifest";
+import { pruneLinks, readLinks } from "./links";
 import { INSTANCE_MESSAGES, InstanceError } from "./instances";
 import { TEAM_MESSAGES, TeamRuleError, validateRoles } from "./rules";
 import { SKILL_CODE, SKILL_MESSAGES, SkillError, createSkill } from "./skills";
@@ -92,7 +93,8 @@ export async function saveInstanceAsTemplate(userId: number, instanceId: number,
     }
   }
 
-  const templateInput = { name: target?.name ?? name, description: target?.description, roles };
+  // Le relazioni tra i ruoli passano al modello così come sono nella squadra
+  const templateInput = { name: target?.name ?? name, description: target?.description, roles, links: pruneLinks(roles, readLinks(instance.links)) };
   const id = await db.transaction(async (tx) => {
     for (const { localCode, code } of promote) {
       const skill = localByCode.get(localCode)!;

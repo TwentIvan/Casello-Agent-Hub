@@ -40,6 +40,8 @@ import {
   toolSchemaLookup,
   type InternalHandler,
 } from "./role-tools";
+import { readLinks } from "./links";
+import { isRoleLinkTool, linkTargets, linksInstruction, roleLinkTools, runRoleLinkTool, takePendingNotes } from "./role-links-runtime";
 import { TeamRuleError } from "./rules";
 import { teamBudgetBlock } from "./team-budget";
 import { cyclePausedForTeam } from "../evolution/cycle-team";
@@ -234,13 +236,22 @@ function systemPrompt(instance: TeamInstanceRow, role: InstanceRole, skills: Ski
 }
 
 /** PLAN in sola lettura e compito: arrivano come messaggio `user` (dati della squadra), mai nel prompt di sistema. */
-function taskMessage(plan: PlanView, task: TeamTaskRow, title: string): string {
+export function planReadOnlyText(plan: PlanView): string {
+  return planLines(plan).join("\n");
+}
+
+function planLines(plan: PlanView): string[] {
   const lines = ["PLAN della squadra (sola lettura)", `Obiettivo: ${plan.objective || "(non indicato)"}`];
   if (plan.constraints.length > 0) lines.push("Vincoli:", ...plan.constraints.map((c) => `- ${c}`));
   if (plan.tasks.length > 0) {
     lines.push("Compiti:");
     for (const t of plan.tasks) lines.push(`- ${t.id} [${t.status}] ${t.title} (ruolo ${t.roleKey})${t.outcome ? `: ${t.outcome}` : ""}`);
   }
+  return lines;
+}
+
+function taskMessage(plan: PlanView, task: TeamTaskRow, title: string): string {
+  const lines = planLines(plan);
   lines.push("", `Il tuo compito: ${task.planTaskId} · ${title}`, "", task.instructions || "(nessuna istruzione)");
   return lines.join("\n");
 }
@@ -496,11 +507,13 @@ async function executeTask(task: TeamTaskRow, usage: LoopUsage): Promise<TaskRes
   const [plan, skills, roleTools] = await Promise.all([getPlan(instance.id), skillTexts(instance.id, role), loadRoleTools(role.tools)]);
   const planEntry = plan.tasks.find((t) => t.id === task.planTaskId);
   const title = planEntry?.title ?? task.planTaskId;
+  // Messaggi dei colleghi lasciati con scrivi_a_ruolo: consegnati a questo compito, una volta sola
+  const notes = await takePendingNotes(instance.id, role.key, task.id, InstanceRoleSchema.array().parse(instance.roles));
 
   // Ruolo cloud con codice: sessione sul branch del compito, strumenti del codice e limiti propri
   const codeMode = role.runsOn === "cloud" && role.code !== "none" ? role.code : null;
   if (!codeMode) {
-    return runTaskLoop({ task, usage, instance, activatedBy, role, aiModelId, skills, plan, title, roleTools, code: null });
+    return runTaskLoop({ task, usage, instance, activatedBy, role, aiModelId, skills, plan, title, roleTools, notes, code: null });
   }
   const issue = planEntry?.issue ?? null;
   const opened = await openCodeSession(instance, activatedBy, task, codeMode, issue);
@@ -508,7 +521,7 @@ async function executeTask(task: TeamTaskRow, usage: LoopUsage): Promise<TaskRes
   const { session } = opened;
   try {
     const message = await codeTaskMessage(instance.id, task.planTaskId, session, opened.repo, issue);
-    const result = await runTaskLoop({ task, usage, instance, activatedBy, role, aiModelId, skills, plan, title, roleTools, code: { mode: codeMode, session, message } });
+    const result = await runTaskLoop({ task, usage, instance, activatedBy, role, aiModelId, skills, plan, title, roleTools, notes, code: { mode: codeMode, session, message } });
     // Le modifiche non committate si scartano: l'esito lo dice al capo (letto prima di chiudere la sessione)
     return withDiscardedNote(result, session.discardedCount());
   } finally {
@@ -530,12 +543,17 @@ interface TaskLoopInput {
   plan: PlanView;
   title: string;
   roleTools: Awaited<ReturnType<typeof loadRoleTools>>;
+  notes: string | null;
   code: { mode: "read" | "write" | "merge"; session: CodeTaskSession; message: string } | null;
 }
 
 /** Ciclo dell'agente del compito: strumenti del ruolo, `riferisci` e, per i ruoli con codice, gli strumenti della sessione. */
 async function runTaskLoop(input: TaskLoopInput): Promise<TaskResult> {
-  const { task, usage, instance, role, aiModelId, skills, plan, title, roleTools, code } = input;
+  const { task, usage, instance, role, aiModelId, skills, plan, title, roleTools, notes, code } = input;
+  const roles = InstanceRoleSchema.array().parse(instance.roles);
+  const links = readLinks(instance.links);
+  const targets = role.runsOn === "cloud" ? linkTargets(roles, links, role.key) : [];
+  const linkTools = roleLinkTools(targets);
   const codeTools =
     code?.mode === "merge"
       ? [...CODE_READ_TOOLS, ...CODE_WRITE_TOOLS, MERGE_TOOL]
@@ -552,6 +570,23 @@ async function runTaskLoop(input: TaskLoopInput): Promise<TaskResult> {
     if (code?.session.handles(tool.name)) return code.session.run(tool.name, args);
     // Il merge non passa dalla sessione: i controlli sono quelli lato server di mergeTeamPull
     if (code?.mode === "merge" && tool.name === MERGE_TOOL.name) return mergeTeamPull(instance.id, args);
+    if (linkTools.length > 0 && isRoleLinkTool(tool.name)) {
+      return runRoleLinkTool(
+        {
+          instance,
+          taskId: task.id,
+          role,
+          roles,
+          links,
+          planText: planReadOnlyText(plan),
+          skillsFor: (r) => skillTexts(instance.id, r),
+          loadTools: loadRoleTools,
+          signal: stop.signal,
+        },
+        tool.name,
+        args,
+      );
+    }
     if (tool.name !== REPORT_TOOL.name) return { ok: false, content: "strumento non disponibile" };
     const parsed = ReportSchema.safeParse(args);
     if (!parsed.success) return { ok: false, content: "argomenti non validi: servono status (done o blocked) e outcome (max 300 caratteri)" };
@@ -560,7 +595,7 @@ async function runTaskLoop(input: TaskLoopInput): Promise<TaskResult> {
     return { ok: true, content: TASK_MESSAGES.reported };
   };
 
-  const internalTools = [REPORT_TOOL, ...codeTools];
+  const internalTools = [REPORT_TOOL, ...codeTools, ...linkTools];
   const tools = [...roleTools.tools, ...internalTools];
   const deps: LoopDeps = {
     chat: modelChatDeps({
@@ -581,8 +616,9 @@ async function runTaskLoop(input: TaskLoopInput): Promise<TaskResult> {
   const outcome = await runAgentLoop(
     {
       messages: [
-        { role: "system", content: systemPrompt(instance, role, skills, code?.mode ?? null) },
+        { role: "system", content: systemPrompt(instance, role, skills, code?.mode ?? null) + (targets.length > 0 ? `\n\n${linksInstruction(targets)}` : "") },
         { role: "user", content: taskMessage(plan, task, title) },
+        ...(notes ? [{ role: "user" as const, content: notes }] : []),
         ...(code ? [{ role: "user" as const, content: code.message }] : []),
       ],
       queue: [],

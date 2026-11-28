@@ -5008,6 +5008,25 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /team-instances/{id}/role-messages:
+    get:
+      operationId: listTeamRoleMessages
+      tags: [teams]
+      summary: Consultazioni e messaggi tra i ruoli della squadra, dal più recente (ultimi 200)
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Scambi tra ruoli
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TeamRoleMessage"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /team-events:
     get:
       operationId: listUnreadTeamEvents
@@ -13372,7 +13391,7 @@ components:
 
     TeamTemplate:
       type: object
-      required: [id, name, description, version, archived, instanceCount, roles, createdAt, updatedAt]
+      required: [id, name, description, version, archived, instanceCount, roles, links, createdAt, updatedAt]
       properties:
         id:
           type: integer
@@ -13390,11 +13409,70 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/TeamRoleView"
+        links:
+          type: array
+          items:
+            $ref: "#/components/schemas/TeamRoleLink"
         createdAt:
           type: string
           format: date-time
         updatedAt:
           type: string
+          format: date-time
+
+    TeamRoleLink:
+      type: object
+      required: [from, to, mode]
+      description: >-
+        Relazione tra due ruoli (non il capo): il ruolo `from` può contattare il ruolo `to` durante un compito. `full` =
+        consultazioni e messaggi, `notes` = solo messaggi (obbligatorio verso un ruolo sul nodo; un ruolo sul nodo non è mai `from`).
+      properties:
+        from:
+          type: string
+          pattern: "^[a-z0-9_-]{1,40}$"
+        to:
+          type: string
+          pattern: "^[a-z0-9_-]{1,40}$"
+        mode:
+          type: string
+          enum: [full, notes]
+
+    TeamRoleMessage:
+      type: object
+      required: [id, kind, status, fromRole, toRole, fromTaskId, deliveredTaskId, text, answer, error, costUsd, createdAt, finishedAt]
+      description: Consultazione o messaggio tra due ruoli collegati della squadra
+      properties:
+        id:
+          type: integer
+        kind:
+          type: string
+          enum: [consult, note]
+        status:
+          type: string
+          enum: [pending, answered, failed, delivered]
+        fromRole:
+          type: string
+        toRole:
+          type: string
+        fromTaskId:
+          type: ["integer", "null"]
+          description: Esecuzione del compito che ha scritto
+        deliveredTaskId:
+          type: ["integer", "null"]
+          description: Esecuzione del compito che ha ricevuto il messaggio
+        text:
+          type: string
+        answer:
+          type: ["string", "null"]
+        error:
+          type: ["string", "null"]
+        costUsd:
+          type: ["number", "null"]
+        createdAt:
+          type: string
+          format: date-time
+        finishedAt:
+          type: ["string", "null"]
           format: date-time
 
     TeamTemplateInput:
@@ -13412,6 +13490,12 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/TeamRole"
+        links:
+          type: array
+          maxItems: 60
+          description: Relazioni tra i ruoli; omesso = quelle della versione precedente, tolte quelle dei ruoli spariti
+          items:
+            $ref: "#/components/schemas/TeamRoleLink"
 
     TeamTemplateDeleteResult:
       type: object
@@ -13529,6 +13613,12 @@ components:
           description: Obbligatori senza modello, ignorati con il modello
           items:
             $ref: "#/components/schemas/TeamInstanceRole"
+        links:
+          type: array
+          maxItems: 60
+          description: Relazioni tra i ruoli senza modello; con il modello si copiano quelle della sua versione
+          items:
+            $ref: "#/components/schemas/TeamRoleLink"
 
     TeamInstanceSave:
       type: object
@@ -13549,6 +13639,12 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/TeamLocalSkill"
+        links:
+          type: array
+          maxItems: 60
+          description: Relazioni tra i ruoli; omesso = quelle attuali, tolte quelle dei ruoli spariti
+          items:
+            $ref: "#/components/schemas/TeamRoleLink"
         status:
           type: string
           enum: [draft, active]
@@ -13623,7 +13719,7 @@ components:
           description: "Deterministico: tipo:chiave del ruolo[:campo|codice della skill]"
         type:
           type: string
-          enum: [role_added, role_removed, role_changed, skill_added, skill_removed, skill_version]
+          enum: [role_added, role_removed, role_changed, skill_added, skill_removed, skill_version, link_added, link_removed]
         roleKey:
           type: string
         roleName:
@@ -13641,6 +13737,8 @@ components:
           type: integer
         toVersion:
           type: integer
+        link:
+          $ref: "#/components/schemas/TeamRoleLink"
 
     TeamSaveAsTemplate:
       type: object
@@ -14036,7 +14134,7 @@ components:
 
     TeamInstance:
       type: object
-      required: [id, name, status, template, ref, roles, localSkills, createdAt, updatedAt, closedAt, activatedBy, monthlyBudgetUsd, lastTurnAt, nodeWorkspace, bugTeam]
+      required: [id, name, status, template, ref, roles, links, localSkills, createdAt, updatedAt, closedAt, activatedBy, monthlyBudgetUsd, lastTurnAt, nodeWorkspace, bugTeam]
       properties:
         id:
           type: integer
@@ -14075,6 +14173,10 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/TeamRoleView"
+        links:
+          type: array
+          items:
+            $ref: "#/components/schemas/TeamRoleLink"
         localSkills:
           type: array
           items:

@@ -9,6 +9,7 @@ import type { TeamInstanceLocalSkillsItem } from './teamInstanceLocalSkillsItem'
 import type { TeamInstanceRef } from './teamInstanceRef';
 import type { TeamInstanceStatus } from './teamInstanceStatus';
 import type { TeamInstanceTemplate } from './teamInstanceTemplate';
+import type { TeamRoleLink } from './teamRoleLink';
 import type { TeamRoleView } from './teamRoleView';
 
 export interface TeamInstance {
@@ -19,6 +20,7 @@ export interface TeamInstance {
   template: TeamInstanceTemplate;
   ref: TeamInstanceRef;
   roles: TeamRoleView[];
+  links: TeamRoleLink[];
   localSkills: TeamInstanceLocalSkillsItem[];
   createdAt: Date;
   updatedAt: Date;

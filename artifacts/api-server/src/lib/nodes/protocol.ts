@@ -30,6 +30,7 @@ import { compareVersions, isBelowMinVersion, loadNodeManifest, updateFor, type N
 import { ATTACHMENT_MESSAGES, taskAttachmentViews, validateNodeWorkspace } from "../teams/attachments";
 import { InstanceRoleSchema, type InstanceRole } from "../teams/manifest";
 import { getPlan, patchPlan } from "../teams/plan";
+import { takePendingNotes } from "../teams/role-links-runtime";
 import { errName, finishTaskExecution, skillTexts, MAX_TASK_DETAIL, MAX_TASK_OUTCOME } from "../teams/task-runner";
 import { TEAM_BUDGET_REACHED, teamCapBlock } from "../teams/team-budget";
 
@@ -362,6 +363,9 @@ async function buildPackage(candidate: Candidate, task: TeamTaskRow): Promise<Ta
   ]);
   const planTask = plan.tasks.find((t) => t.id === task.planTaskId);
   const gitCtx = role.code === "write" ? await nodeGitContext(instance, task, planTask?.issue ?? null) : null;
+  // Messaggi dei colleghi (scrivi_a_ruolo): presi per ultimi, quando il pacchetto non può più fallire, e messi in coda alle istruzioni
+  const notes = await takePendingNotes(instance.id, role.key, task.id, InstanceRoleSchema.array().parse(instance.roles));
+  const baseInstructions = gitCtx?.instructions ?? task.instructions;
   return {
     taskId: task.id,
     leaseToken: task.leaseToken!,
@@ -372,7 +376,7 @@ async function buildPackage(candidate: Candidate, task: TeamTaskRow): Promise<Ta
     task: {
       planTaskId: task.planTaskId,
       title: planTask?.title ?? task.planTaskId,
-      instructions: gitCtx?.instructions ?? task.instructions,
+      instructions: notes ? `${baseInstructions}\n\n${notes}` : baseInstructions,
     },
     plan: {
       objective: plan.objective,

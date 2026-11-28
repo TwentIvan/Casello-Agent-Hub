@@ -7,6 +7,7 @@ import {
   ApiError,
   type TeamInstance,
   type TeamInstanceSave,
+  type TeamRoleLink,
   getGetTeamInstanceQueryKey,
   getGetDashboardStatsQueryKey,
   getGetTeamInstanceUpdatesQueryKey,
@@ -44,6 +45,8 @@ import {
 } from "@/components/teams/local-skills-editor";
 import { type RoleDraft, draftFromView, toInstanceRole, withKeys } from "@/components/teams/role-draft";
 import { RolesEditor } from "@/components/teams/roles-editor";
+import { RoleLinksEditor } from "@/components/teams/role-links-editor";
+import { type LinkDraft, linksFromApi, linksToApi, pruneDraftLinks } from "@/lib/role-links";
 import { SaveAsTemplateDialog } from "@/components/teams/save-as-template-dialog";
 import { TeamUpdatesCard } from "@/components/teams/team-updates-card";
 import { LuciusButton } from "@/components/characters/lucius-button";
@@ -71,14 +74,18 @@ function toSave(
   localSkills: LocalSkillDraft[],
   nodeWorkspace: string,
   bugTeam: boolean,
+  links: LinkDraft[] | TeamRoleLink[],
+  linksFromServer = false,
 ): TeamInstanceSave {
+  const keyed = withKeys(roles);
   return {
     bugTeam,
     nodeWorkspace: nodeWorkspace.trim() === "" ? null : nodeWorkspace.trim(),
     name: name.trim(),
     refTitle: refTitle.trim(),
-    roles: withKeys(roles).map(toInstanceRole),
+    roles: keyed.map(toInstanceRole),
     localSkills: localSkills.map(toLocalSkill),
+    links: linksFromServer ? (links as TeamRoleLink[]) : linksToApi(keyed, links as LinkDraft[]),
   };
 }
 
@@ -190,7 +197,12 @@ function TeamEditor({
   const [nodeWorkspace, setNodeWorkspace] = useState(team.nodeWorkspace ?? "");
   const [bugTeam, setBugTeam] = useState(team.bugTeam);
   const [folderPickerOpen, setFolderPickerOpen] = useState(false);
-  const [roles, setRoles] = useState<RoleDraft[]>(() => team.roles.map(draftFromView));
+  const [initial] = useState(() => {
+    const drafts = team.roles.map(draftFromView);
+    return { drafts, links: linksFromApi(drafts, team.links) };
+  });
+  const [roles, setRoles] = useState<RoleDraft[]>(initial.drafts);
+  const [links, setLinks] = useState<LinkDraft[]>(initial.links);
   const [localSkills, setLocalSkills] = useState<LocalSkillDraft[]>(() => team.localSkills.map(localSkillDraft));
   const [confirm, setConfirm] = useState<Confirm>(null);
   const [savingAsTemplate, setSavingAsTemplate] = useState(false);
@@ -214,11 +226,11 @@ function TeamEditor({
   const savedJson = useMemo(
     () =>
       JSON.stringify(
-        toSave(team.name, team.ref.title, team.roles.map(draftFromView), team.localSkills.map(localSkillDraft), team.nodeWorkspace ?? "", team.bugTeam),
+        toSave(team.name, team.ref.title, team.roles.map(draftFromView), team.localSkills.map(localSkillDraft), team.nodeWorkspace ?? "", team.bugTeam, team.links, true),
       ),
     [team],
   );
-  const current = toSave(name, refTitle, roles, localSkills, nodeWorkspace, bugTeam);
+  const current = toSave(name, refTitle, roles, localSkills, nodeWorkspace, bugTeam, links);
   const dirty = savedJson !== JSON.stringify(current);
   dirtyRef.current = dirty;
 
@@ -459,6 +471,11 @@ function TeamEditor({
           <section className="space-y-3">
             <h3 className="text-lg font-medium">Ruoli</h3>
             <RolesEditor roles={roles} onChange={setRoles} mode="instance" localSkills={localOptions} readOnly={closed} teamId={team.id} codeEnabled={codeEnabled} />
+          </section>
+
+          <section className="space-y-3">
+            <h3 className="text-lg font-medium">Relazioni</h3>
+            <RoleLinksEditor roles={roles} links={pruneDraftLinks(roles, links)} onChange={setLinks} readOnly={closed} />
           </section>
 
           <section className="space-y-3">

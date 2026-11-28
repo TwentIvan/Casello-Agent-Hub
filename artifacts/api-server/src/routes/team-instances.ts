@@ -45,6 +45,8 @@ import {
   ListTeamTurnsParams,
   ListTeamTurnsResponse,
   ListTeamEventsParams,
+  ListTeamRoleMessagesParams,
+  ListTeamRoleMessagesResponse,
   ListTeamEventsResponse,
   ListUnreadTeamEventsResponse,
   MarkTeamEventsReadBody,
@@ -63,6 +65,7 @@ import { currentUserId } from "../lib/auth";
 import { AttachmentError, MAX_ATTACHMENT_BYTES, rfc5987, deleteAttachment, getAttachment, listAttachments, saveAttachment } from "../lib/teams/attachments";
 import { INSTANCE_MESSAGES, InstanceError, closeInstance, createInstance, getInstance, listInstances, saveInstance, setInstanceBudget } from "../lib/teams/instances";
 import { listEvents, markRead, userEvents } from "../lib/teams/events";
+import { listRoleMessages } from "../lib/teams/role-links-runtime";
 import { activateInstance, sendToLead } from "../lib/teams/turn-runner";
 import { teamMessageRateLimit } from "../middlewares/rate-limit";
 import { toNumberOrNull } from "./serializers";
@@ -384,6 +387,33 @@ router.get("/team-instances/:id/events", async (req, res) => {
   await guarded(res, async () => {
     await getInstance(id);
     res.json(ListTeamEventsResponse.parse(await listEvents(id)));
+  });
+});
+
+router.get("/team-instances/:id/role-messages", async (req, res) => {
+  const { id } = parseRequest(ListTeamRoleMessagesParams, req.params);
+  await guarded(res, async () => {
+    await getInstance(id);
+    const rows = await listRoleMessages(id);
+    res.json(
+      ListTeamRoleMessagesResponse.parse(
+        rows.map((m) => ({
+          id: m.id,
+          kind: m.kind,
+          status: m.status,
+          fromRole: m.fromRole,
+          toRole: m.toRole,
+          fromTaskId: m.fromTaskId,
+          deliveredTaskId: m.deliveredTaskId,
+          text: m.text,
+          answer: m.answer,
+          error: m.error,
+          costUsd: m.costUsd === null ? null : Number(m.costUsd),
+          createdAt: m.createdAt.toISOString(),
+          finishedAt: m.finishedAt ? m.finishedAt.toISOString() : null,
+        })),
+      ),
+    );
   });
 });
 

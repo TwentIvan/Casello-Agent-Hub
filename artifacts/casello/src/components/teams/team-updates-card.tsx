@@ -45,6 +45,10 @@ function describe(item: TeamUpdateItem): string {
       return `${role}: togliere la skill ${item.skillCode}`;
     case "skill_version":
       return `${role}: skill ${item.skillCode} dalla versione ${item.fromVersion} alla ${item.toVersion}`;
+    case "link_added":
+      return `Relazione ${item.link?.from ?? "?"} → ${item.link?.to ?? "?"}${item.link?.mode === "notes" ? " (solo messaggi)" : ""} dal modello`;
+    case "link_removed":
+      return `La relazione ${item.link?.from ?? "?"} → ${item.link?.to ?? "?"} non è più nel modello: toglierla`;
   }
 }
 

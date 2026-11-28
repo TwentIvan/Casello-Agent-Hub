@@ -5,6 +5,7 @@
  * Casello — hub per agentificare applicazioni
  * OpenAPI spec version: 0.1.0
  */
+import type { TeamRoleLink } from './teamRoleLink';
 import type { TeamRoleView } from './teamRoleView';
 
 export interface TeamTemplate {
@@ -15,6 +16,7 @@ export interface TeamTemplate {
   archived: boolean;
   instanceCount: number;
   roles: TeamRoleView[];
+  links: TeamRoleLink[];
   createdAt: Date;
   updatedAt: Date;
 }

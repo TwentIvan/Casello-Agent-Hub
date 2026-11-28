@@ -6,6 +6,7 @@
  * OpenAPI spec version: 0.1.0
  */
 import type { TeamRole } from './teamRole';
+import type { TeamRoleLink } from './teamRoleLink';
 
 export interface TeamTemplateInput {
   /**
@@ -16,4 +17,9 @@ export interface TeamTemplateInput {
   /** @maxLength 2000 */
   description?: string;
   roles: TeamRole[];
+  /**
+     * Relazioni tra i ruoli; omesso = quelle della versione precedente, tolte quelle dei ruoli spariti
+     * @maxItems 60
+     */
+  links?: TeamRoleLink[];
 }

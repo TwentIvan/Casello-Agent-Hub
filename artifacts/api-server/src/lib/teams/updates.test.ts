@@ -222,4 +222,31 @@ describe("applyUpdates", () => {
     expect(applied.roles[0]).toMatchObject({ task: "Nuovo" });
     expect(applied.roles[0]!.skills.map((s) => s.code)).toEqual(["spec.uno"]);
   });
+  it("relazioni: copiate dal modello, proposte come link_added / link_removed, potate con i ruoli e validate", async () => {
+    const rev = (over: Partial<TemplateRole> = {}) => tr({ key: "rev", name: "Revisore", isLead: false, ...over });
+    const template = await createTemplate(userId, { name: "Sviluppo", roles: [tr(), dev(), rev()], links: [{ from: "dev", to: "rev", mode: "full" }] });
+    expect(template.links).toEqual([{ from: "dev", to: "rev", mode: "full" }]);
+    const inst = await createInstance(userId, { templateId: template.id, name: "S", ref: ref() });
+    expect(inst.links).toEqual([{ from: "dev", to: "rev", mode: "full" }]);
+
+    // Un salvataggio del modello senza links tiene quelle della versione precedente
+    const same = await saveTemplate(userId, template.id, { name: "Sviluppo", roles: [tr({ task: "Altro" }), dev(), rev()] });
+    expect(same.links).toEqual([{ from: "dev", to: "rev", mode: "full" }]);
+
+    await saveTemplate(userId, template.id, { name: "Sviluppo", roles: [tr({ task: "Altro" }), dev(), rev()], links: [{ from: "rev", to: "dev", mode: "notes" }] });
+    const items = (await getUpdates(inst.id)).filter((i) => i.type.startsWith("link_"));
+    expect(items.map((i) => i.id)).toEqual(["link:rev:dev", "link:dev:rev:removed"]);
+    const applied = await applyUpdates(userId, inst.id, items.map((i) => i.id));
+    expect(applied.links).toEqual([{ from: "rev", to: "dev", mode: "notes" }]);
+
+    // Ruolo tolto senza mandare links: la relazione sparisce
+    const kept = [pin(tr({ task: "Altro" })), pin(dev())];
+    const pruned = await saveInstance(userId, inst.id, { name: "S", roles: kept, localSkills: [] });
+    expect(pruned.links).toEqual([]);
+
+    // Relazione con il capo rifiutata
+    await expect(
+      saveInstance(userId, inst.id, { name: "S", roles: kept, localSkills: [], links: [{ from: "dev", to: "capo", mode: "full" }] }),
+    ).rejects.toMatchObject({ status: 400 });
+  });
 });

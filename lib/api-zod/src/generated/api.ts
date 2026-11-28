@@ -5464,6 +5464,9 @@ export const ListTeamTemplatesQueryParams = zod.object({
 })
 
 export const listTeamTemplatesResponseRolesItemCodeDefault = `none`;
+export const listTeamTemplatesResponseLinksItemFromRegExp = new RegExp('^[a-z0-9_-]{1,40}$');
+export const listTeamTemplatesResponseLinksItemToRegExp = new RegExp('^[a-z0-9_-]{1,40}$');
+
 
 export const ListTeamTemplatesResponseItem = zod.object({
   "id": zod.number(),
@@ -5500,6 +5503,11 @@ export const ListTeamTemplatesResponseItem = zod.object({
   "local": zod.boolean().optional()
 }))
 }).describe('Ruolo arricchito per la lettura (strumenti, skill e modello con nome)')),
+  "links": zod.array(zod.object({
+  "from": zod.string().regex(listTeamTemplatesResponseLinksItemFromRegExp),
+  "to": zod.string().regex(listTeamTemplatesResponseLinksItemToRegExp),
+  "mode": zod.enum(['full', 'notes'])
+}).describe('Relazione tra due ruoli (non il capo): il ruolo `from` può contattare il ruolo `to` durante un compito. `full` = consultazioni e messaggi, `notes` = solo messaggi (obbligatorio verso un ruolo sul nodo; un ruolo sul nodo non è mai `from`).')),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -5520,6 +5528,10 @@ export const createTeamTemplateBodyRolesItemTaskMax = 8000;
 
 export const createTeamTemplateBodyRolesItemCodeDefault = `none`;
 export const createTeamTemplateBodyRolesItemSkillsItemRegExp = new RegExp('^[a-z0-9][a-z0-9._-]{1,63}$');
+export const createTeamTemplateBodyLinksItemFromRegExp = new RegExp('^[a-z0-9_-]{1,40}$');
+export const createTeamTemplateBodyLinksItemToRegExp = new RegExp('^[a-z0-9_-]{1,40}$');
+export const createTeamTemplateBodyLinksMax = 60;
+
 
 
 export const CreateTeamTemplateBody = zod.object({
@@ -5535,10 +5547,18 @@ export const CreateTeamTemplateBody = zod.object({
   "code": zod.enum(['none', 'read', 'write', 'merge']).default(createTeamTemplateBodyRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento (i ruoli node non usano read né merge; merge comprende write e unisce le PR)'),
   "tools": zod.array(zod.number()),
   "skills": zod.array(zod.string().regex(createTeamTemplateBodyRolesItemSkillsItemRegExp))
-}).describe('Ruolo di un modello di squadra (manifesto in ingresso)'))
+}).describe('Ruolo di un modello di squadra (manifesto in ingresso)')),
+  "links": zod.array(zod.object({
+  "from": zod.string().regex(createTeamTemplateBodyLinksItemFromRegExp),
+  "to": zod.string().regex(createTeamTemplateBodyLinksItemToRegExp),
+  "mode": zod.enum(['full', 'notes'])
+}).describe('Relazione tra due ruoli (non il capo): il ruolo `from` può contattare il ruolo `to` durante un compito. `full` = consultazioni e messaggi, `notes` = solo messaggi (obbligatorio verso un ruolo sul nodo; un ruolo sul nodo non è mai `from`).')).max(createTeamTemplateBodyLinksMax).optional().describe('Relazioni tra i ruoli; omesso = quelle della versione precedente, tolte quelle dei ruoli spariti')
 })
 
 export const createTeamTemplateResponseRolesItemCodeDefault = `none`;
+export const createTeamTemplateResponseLinksItemFromRegExp = new RegExp('^[a-z0-9_-]{1,40}$');
+export const createTeamTemplateResponseLinksItemToRegExp = new RegExp('^[a-z0-9_-]{1,40}$');
+
 
 export const CreateTeamTemplateResponse = zod.object({
   "id": zod.number(),
@@ -5575,6 +5595,11 @@ export const CreateTeamTemplateResponse = zod.object({
   "local": zod.boolean().optional()
 }))
 }).describe('Ruolo arricchito per la lettura (strumenti, skill e modello con nome)')),
+  "links": zod.array(zod.object({
+  "from": zod.string().regex(createTeamTemplateResponseLinksItemFromRegExp),
+  "to": zod.string().regex(createTeamTemplateResponseLinksItemToRegExp),
+  "mode": zod.enum(['full', 'notes'])
+}).describe('Relazione tra due ruoli (non il capo): il ruolo `from` può contattare il ruolo `to` durante un compito. `full` = consultazioni e messaggi, `notes` = solo messaggi (obbligatorio verso un ruolo sul nodo; un ruolo sul nodo non è mai `from`).')),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -5588,6 +5613,9 @@ export const GetTeamTemplateParams = zod.object({
 })
 
 export const getTeamTemplateResponseRolesItemCodeDefault = `none`;
+export const getTeamTemplateResponseLinksItemFromRegExp = new RegExp('^[a-z0-9_-]{1,40}$');
+export const getTeamTemplateResponseLinksItemToRegExp = new RegExp('^[a-z0-9_-]{1,40}$');
+
 
 export const GetTeamTemplateResponse = zod.object({
   "id": zod.number(),
@@ -5624,6 +5652,11 @@ export const GetTeamTemplateResponse = zod.object({
   "local": zod.boolean().optional()
 }))
 }).describe('Ruolo arricchito per la lettura (strumenti, skill e modello con nome)')),
+  "links": zod.array(zod.object({
+  "from": zod.string().regex(getTeamTemplateResponseLinksItemFromRegExp),
+  "to": zod.string().regex(getTeamTemplateResponseLinksItemToRegExp),
+  "mode": zod.enum(['full', 'notes'])
+}).describe('Relazione tra due ruoli (non il capo): il ruolo `from` può contattare il ruolo `to` durante un compito. `full` = consultazioni e messaggi, `notes` = solo messaggi (obbligatorio verso un ruolo sul nodo; un ruolo sul nodo non è mai `from`).')),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -5648,6 +5681,10 @@ export const saveTeamTemplateBodyRolesItemTaskMax = 8000;
 
 export const saveTeamTemplateBodyRolesItemCodeDefault = `none`;
 export const saveTeamTemplateBodyRolesItemSkillsItemRegExp = new RegExp('^[a-z0-9][a-z0-9._-]{1,63}$');
+export const saveTeamTemplateBodyLinksItemFromRegExp = new RegExp('^[a-z0-9_-]{1,40}$');
+export const saveTeamTemplateBodyLinksItemToRegExp = new RegExp('^[a-z0-9_-]{1,40}$');
+export const saveTeamTemplateBodyLinksMax = 60;
+
 
 
 export const SaveTeamTemplateBody = zod.object({
@@ -5663,10 +5700,18 @@ export const SaveTeamTemplateBody = zod.object({
   "code": zod.enum(['none', 'read', 'write', 'merge']).default(saveTeamTemplateBodyRolesItemCodeDefault).describe('Accesso al codice dell\'App di riferimento (i ruoli node non usano read né merge; merge comprende write e unisce le PR)'),
   "tools": zod.array(zod.number()),
   "skills": zod.array(zod.string().regex(saveTeamTemplateBodyRolesItemSkillsItemRegExp))
-}).describe('Ruolo di un modello di squadra (manifesto in ingresso)'))
+}).describe('Ruolo di un modello di squadra (manifesto in ingresso)')),
+  "links": zod.array(zod.object({
+  "from": zod.string().regex(saveTeamTemplateBodyLinksItemFromRegExp),
+  "to": zod.string().regex(saveTeamTemplateBodyLinksItemToRegExp),
+  "mode": zod.enum(['full', 'notes'])
+}).describe('Relazione tra due ruoli (non il capo): il ruolo `from` può contattare il ruolo `to` durante un compito. `full` = consultazioni e messaggi, `notes` = solo messaggi (obbligatorio verso un ruolo sul nodo; un ruolo sul nodo non è mai `from`).')).max(saveTeamTemplateBodyLinksMax).optional().describe('Relazioni tra i ruoli; omesso = quelle della versione precedente, tolte quelle dei ruoli spariti')
 })
 
 export const saveTeamTemplateResponseRolesItemCodeDefault = `none`;
+export const saveTeamTemplateResponseLinksItemFromRegExp = new RegExp('^[a-z0-9_-]{1,40}$');
+export const saveTeamTemplateResponseLinksItemToRegExp = new RegExp('^[a-z0-9_-]{1,40}$');
+
 
 export const SaveTeamTemplateResponse = zod.object({
   "id": zod.number(),
@@ -5703,6 +5748,11 @@ export const SaveTeamTemplateResponse = zod.object({
   "local": zod.boolean().optional()
 }))
 }).describe('Ruolo arricchito per la lettura (strumenti, skill e modello con nome)')),
+  "links": zod.array(zod.object({
+  "from": zod.string().regex(saveTeamTemplateResponseLinksItemFromRegExp),
+  "to": zod.string().regex(saveTeamTemplateResponseLinksItemToRegExp),
+  "mode": zod.enum(['full', 'notes'])
+}).describe('Relazione tra due ruoli (non il capo): il ruolo `from` può contattare il ruolo `to` durante un compito. `full` = consultazioni e messaggi, `notes` = solo messaggi (obbligatorio verso un ruolo sul nodo; un ruolo sul nodo non è mai `from`).')),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -5776,6 +5826,9 @@ export const ListTeamInstancesQueryParams = zod.object({
 })
 
 export const listTeamInstancesResponseRolesItemCodeDefault = `none`;
+export const listTeamInstancesResponseLinksItemFromRegExp = new RegExp('^[a-z0-9_-]{1,40}$');
+export const listTeamInstancesResponseLinksItemToRegExp = new RegExp('^[a-z0-9_-]{1,40}$');
+
 
 export const ListTeamInstancesResponseItem = zod.object({
   "id": zod.number(),
@@ -5821,6 +5874,11 @@ export const ListTeamInstancesResponseItem = zod.object({
   "local": zod.boolean().optional()
 }))
 }).describe('Ruolo arricchito per la lettura (strumenti, skill e modello con nome)')),
+  "links": zod.array(zod.object({
+  "from": zod.string().regex(listTeamInstancesResponseLinksItemFromRegExp),
+  "to": zod.string().regex(listTeamInstancesResponseLinksItemToRegExp),
+  "mode": zod.enum(['full', 'notes'])
+}).describe('Relazione tra due ruoli (non il capo): il ruolo `from` può contattare il ruolo `to` durante un compito. `full` = consultazioni e messaggi, `notes` = solo messaggi (obbligatorio verso un ruolo sul nodo; un ruolo sul nodo non è mai `from`).')),
   "localSkills": zod.array(zod.object({
   "code": zod.string(),
   "name": zod.string(),
@@ -5860,6 +5918,10 @@ export const createTeamInstanceBodyRolesItemCodeDefault = `none`;
 export const createTeamInstanceBodyRolesItemSkillsItemCodeRegExp = new RegExp('^[a-z0-9][a-z0-9._-]{1,63}$');
 
 export const createTeamInstanceBodyRolesItemLocalSkillsItemRegExp = new RegExp('^[a-z0-9][a-z0-9._-]{1,63}$');
+export const createTeamInstanceBodyLinksItemFromRegExp = new RegExp('^[a-z0-9_-]{1,40}$');
+export const createTeamInstanceBodyLinksItemToRegExp = new RegExp('^[a-z0-9_-]{1,40}$');
+export const createTeamInstanceBodyLinksMax = 60;
+
 
 
 export const CreateTeamInstanceBody = zod.object({
@@ -5885,10 +5947,18 @@ export const CreateTeamInstanceBody = zod.object({
   "version": zod.number().min(1)
 })),
   "localSkills": zod.array(zod.string().regex(createTeamInstanceBodyRolesItemLocalSkillsItemRegExp)).describe('Codici delle skill specializzate della squadra usate dal ruolo')
-}).describe('Ruolo di una squadra (manifesto in ingresso, skill fissate a una versione)')).optional().describe('Obbligatori senza modello, ignorati con il modello')
+}).describe('Ruolo di una squadra (manifesto in ingresso, skill fissate a una versione)')).optional().describe('Obbligatori senza modello, ignorati con il modello'),
+  "links": zod.array(zod.object({
+  "from": zod.string().regex(createTeamInstanceBodyLinksItemFromRegExp),
+  "to": zod.string().regex(createTeamInstanceBodyLinksItemToRegExp),
+  "mode": zod.enum(['full', 'notes'])
+}).describe('Relazione tra due ruoli (non il capo): il ruolo `from` può contattare il ruolo `to` durante un compito. `full` = consultazioni e messaggi, `notes` = solo messaggi (obbligatorio verso un ruolo sul nodo; un ruolo sul nodo non è mai `from`).')).max(createTeamInstanceBodyLinksMax).optional().describe('Relazioni tra i ruoli senza modello; con il modello si copiano quelle della sua versione')
 })
 
 export const createTeamInstanceResponseRolesItemCodeDefault = `none`;
+export const createTeamInstanceResponseLinksItemFromRegExp = new RegExp('^[a-z0-9_-]{1,40}$');
+export const createTeamInstanceResponseLinksItemToRegExp = new RegExp('^[a-z0-9_-]{1,40}$');
+
 
 export const CreateTeamInstanceResponse = zod.object({
   "id": zod.number(),
@@ -5934,6 +6004,11 @@ export const CreateTeamInstanceResponse = zod.object({
   "local": zod.boolean().optional()
 }))
 }).describe('Ruolo arricchito per la lettura (strumenti, skill e modello con nome)')),
+  "links": zod.array(zod.object({
+  "from": zod.string().regex(createTeamInstanceResponseLinksItemFromRegExp),
+  "to": zod.string().regex(createTeamInstanceResponseLinksItemToRegExp),
+  "mode": zod.enum(['full', 'notes'])
+}).describe('Relazione tra due ruoli (non il capo): il ruolo `from` può contattare il ruolo `to` durante un compito. `full` = consultazioni e messaggi, `notes` = solo messaggi (obbligatorio verso un ruolo sul nodo; un ruolo sul nodo non è mai `from`).')),
   "localSkills": zod.array(zod.object({
   "code": zod.string(),
   "name": zod.string(),
@@ -5960,6 +6035,9 @@ export const GetTeamInstanceParams = zod.object({
 })
 
 export const getTeamInstanceResponseRolesItemCodeDefault = `none`;
+export const getTeamInstanceResponseLinksItemFromRegExp = new RegExp('^[a-z0-9_-]{1,40}$');
+export const getTeamInstanceResponseLinksItemToRegExp = new RegExp('^[a-z0-9_-]{1,40}$');
+
 
 export const GetTeamInstanceResponse = zod.object({
   "id": zod.number(),
@@ -6005,6 +6083,11 @@ export const GetTeamInstanceResponse = zod.object({
   "local": zod.boolean().optional()
 }))
 }).describe('Ruolo arricchito per la lettura (strumenti, skill e modello con nome)')),
+  "links": zod.array(zod.object({
+  "from": zod.string().regex(getTeamInstanceResponseLinksItemFromRegExp),
+  "to": zod.string().regex(getTeamInstanceResponseLinksItemToRegExp),
+  "mode": zod.enum(['full', 'notes'])
+}).describe('Relazione tra due ruoli (non il capo): il ruolo `from` può contattare il ruolo `to` durante un compito. `full` = consultazioni e messaggi, `notes` = solo messaggi (obbligatorio verso un ruolo sul nodo; un ruolo sul nodo non è mai `from`).')),
   "localSkills": zod.array(zod.object({
   "code": zod.string(),
   "name": zod.string(),
@@ -6047,6 +6130,10 @@ export const saveTeamInstanceBodyRolesItemLocalSkillsItemRegExp = new RegExp('^[
 export const saveTeamInstanceBodyLocalSkillsItemCodeRegExp = new RegExp('^[a-z0-9][a-z0-9._-]{1,63}$');
 export const saveTeamInstanceBodyLocalSkillsItemNameMax = 120;
 
+export const saveTeamInstanceBodyLinksItemFromRegExp = new RegExp('^[a-z0-9_-]{1,40}$');
+export const saveTeamInstanceBodyLinksItemToRegExp = new RegExp('^[a-z0-9_-]{1,40}$');
+export const saveTeamInstanceBodyLinksMax = 60;
+
 export const saveTeamInstanceBodyNodeWorkspaceMax = 300;
 
 
@@ -6076,12 +6163,20 @@ export const SaveTeamInstanceBody = zod.object({
   "content": zod.string(),
   "toolHints": zod.array(zod.string()).optional()
 }).describe('Skill specializzata di una sola squadra')),
+  "links": zod.array(zod.object({
+  "from": zod.string().regex(saveTeamInstanceBodyLinksItemFromRegExp),
+  "to": zod.string().regex(saveTeamInstanceBodyLinksItemToRegExp),
+  "mode": zod.enum(['full', 'notes'])
+}).describe('Relazione tra due ruoli (non il capo): il ruolo `from` può contattare il ruolo `to` durante un compito. `full` = consultazioni e messaggi, `notes` = solo messaggi (obbligatorio verso un ruolo sul nodo; un ruolo sul nodo non è mai `from`).')).max(saveTeamInstanceBodyLinksMax).optional().describe('Relazioni tra i ruoli; omesso = quelle attuali, tolte quelle dei ruoli spariti'),
   "status": zod.enum(['draft', 'active']).optional().describe('Facoltativo e solo uguale allo stato attuale: si attiva con `POST \/team-instances\/{id}\/activate` e una squadra attiva non torna in bozza.'),
   "nodeWorkspace": zod.string().max(saveTeamInstanceBodyNodeWorkspaceMax).nullish().describe('Spazio di lavoro sul nodo: percorso relativo, solo lettere, cifre, `._ -` e `\/`, senza `\/` iniziale né `..` (altrimenti 400 «spazio di lavoro non valido»). Omesso = invariato, null = tolto.'),
   "bugTeam": zod.boolean().optional().describe('Squadra per i bug dell\'App di riferimento: omesso = invariato. Un\'altra squadra non chiusa già designata per la stessa App → 409 «l\'App ha già una squadra per i bug: <nome>».')
 })
 
 export const saveTeamInstanceResponseRolesItemCodeDefault = `none`;
+export const saveTeamInstanceResponseLinksItemFromRegExp = new RegExp('^[a-z0-9_-]{1,40}$');
+export const saveTeamInstanceResponseLinksItemToRegExp = new RegExp('^[a-z0-9_-]{1,40}$');
+
 
 export const SaveTeamInstanceResponse = zod.object({
   "id": zod.number(),
@@ -6127,6 +6222,11 @@ export const SaveTeamInstanceResponse = zod.object({
   "local": zod.boolean().optional()
 }))
 }).describe('Ruolo arricchito per la lettura (strumenti, skill e modello con nome)')),
+  "links": zod.array(zod.object({
+  "from": zod.string().regex(saveTeamInstanceResponseLinksItemFromRegExp),
+  "to": zod.string().regex(saveTeamInstanceResponseLinksItemToRegExp),
+  "mode": zod.enum(['full', 'notes'])
+}).describe('Relazione tra due ruoli (non il capo): il ruolo `from` può contattare il ruolo `to` durante un compito. `full` = consultazioni e messaggi, `notes` = solo messaggi (obbligatorio verso un ruolo sul nodo; un ruolo sul nodo non è mai `from`).')),
   "localSkills": zod.array(zod.object({
   "code": zod.string(),
   "name": zod.string(),
@@ -6217,6 +6317,9 @@ export const CloseTeamInstanceParams = zod.object({
 })
 
 export const closeTeamInstanceResponseRolesItemCodeDefault = `none`;
+export const closeTeamInstanceResponseLinksItemFromRegExp = new RegExp('^[a-z0-9_-]{1,40}$');
+export const closeTeamInstanceResponseLinksItemToRegExp = new RegExp('^[a-z0-9_-]{1,40}$');
+
 
 export const CloseTeamInstanceResponse = zod.object({
   "id": zod.number(),
@@ -6262,6 +6365,11 @@ export const CloseTeamInstanceResponse = zod.object({
   "local": zod.boolean().optional()
 }))
 }).describe('Ruolo arricchito per la lettura (strumenti, skill e modello con nome)')),
+  "links": zod.array(zod.object({
+  "from": zod.string().regex(closeTeamInstanceResponseLinksItemFromRegExp),
+  "to": zod.string().regex(closeTeamInstanceResponseLinksItemToRegExp),
+  "mode": zod.enum(['full', 'notes'])
+}).describe('Relazione tra due ruoli (non il capo): il ruolo `from` può contattare il ruolo `to` durante un compito. `full` = consultazioni e messaggi, `notes` = solo messaggi (obbligatorio verso un ruolo sul nodo; un ruolo sul nodo non è mai `from`).')),
   "localSkills": zod.array(zod.object({
   "code": zod.string(),
   "name": zod.string(),
@@ -6341,10 +6449,14 @@ export const GetTeamInstanceUpdatesParams = zod.object({
   "id": zod.coerce.number()
 })
 
+export const getTeamInstanceUpdatesResponseItemsItemLinkFromRegExp = new RegExp('^[a-z0-9_-]{1,40}$');
+export const getTeamInstanceUpdatesResponseItemsItemLinkToRegExp = new RegExp('^[a-z0-9_-]{1,40}$');
+
+
 export const GetTeamInstanceUpdatesResponse = zod.object({
   "items": zod.array(zod.object({
   "id": zod.string().describe('Deterministico: tipo:chiave del ruolo[:campo|codice della skill]'),
-  "type": zod.enum(['role_added', 'role_removed', 'role_changed', 'skill_added', 'skill_removed', 'skill_version']),
+  "type": zod.enum(['role_added', 'role_removed', 'role_changed', 'skill_added', 'skill_removed', 'skill_version', 'link_added', 'link_removed']),
   "roleKey": zod.string(),
   "roleName": zod.string(),
   "field": zod.enum(['name', 'task', 'isLead', 'runsOn', 'aiModelId', 'tools', 'code']).optional(),
@@ -6352,7 +6464,12 @@ export const GetTeamInstanceUpdatesResponse = zod.object({
   "to": zod.unknown().optional().describe('Valore proposto dal modello (role_changed) o ruolo da aggiungere (role_added)'),
   "skillCode": zod.string().optional(),
   "fromVersion": zod.number().optional(),
-  "toVersion": zod.number().optional()
+  "toVersion": zod.number().optional(),
+  "link": zod.object({
+  "from": zod.string().regex(getTeamInstanceUpdatesResponseItemsItemLinkFromRegExp),
+  "to": zod.string().regex(getTeamInstanceUpdatesResponseItemsItemLinkToRegExp),
+  "mode": zod.enum(['full', 'notes'])
+}).optional().describe('Relazione tra due ruoli (non il capo): il ruolo `from` può contattare il ruolo `to` durante un compito. `full` = consultazioni e messaggi, `notes` = solo messaggi (obbligatorio verso un ruolo sul nodo; un ruolo sul nodo non è mai `from`).')
 }).describe('Aggiornamento proposto a una squadra'))
 })
 
@@ -6376,6 +6493,9 @@ export const ApplyTeamInstanceUpdatesBody = zod.object({
 })
 
 export const applyTeamInstanceUpdatesResponseRolesItemCodeDefault = `none`;
+export const applyTeamInstanceUpdatesResponseLinksItemFromRegExp = new RegExp('^[a-z0-9_-]{1,40}$');
+export const applyTeamInstanceUpdatesResponseLinksItemToRegExp = new RegExp('^[a-z0-9_-]{1,40}$');
+
 
 export const ApplyTeamInstanceUpdatesResponse = zod.object({
   "id": zod.number(),
@@ -6421,6 +6541,11 @@ export const ApplyTeamInstanceUpdatesResponse = zod.object({
   "local": zod.boolean().optional()
 }))
 }).describe('Ruolo arricchito per la lettura (strumenti, skill e modello con nome)')),
+  "links": zod.array(zod.object({
+  "from": zod.string().regex(applyTeamInstanceUpdatesResponseLinksItemFromRegExp),
+  "to": zod.string().regex(applyTeamInstanceUpdatesResponseLinksItemToRegExp),
+  "mode": zod.enum(['full', 'notes'])
+}).describe('Relazione tra due ruoli (non il capo): il ruolo `from` può contattare il ruolo `to` durante un compito. `full` = consultazioni e messaggi, `notes` = solo messaggi (obbligatorio verso un ruolo sul nodo; un ruolo sul nodo non è mai `from`).')),
   "localSkills": zod.array(zod.object({
   "code": zod.string(),
   "name": zod.string(),
@@ -6463,6 +6588,9 @@ export const SaveTeamInstanceAsTemplateBody = zod.object({
 })
 
 export const saveTeamInstanceAsTemplateResponseRolesItemCodeDefault = `none`;
+export const saveTeamInstanceAsTemplateResponseLinksItemFromRegExp = new RegExp('^[a-z0-9_-]{1,40}$');
+export const saveTeamInstanceAsTemplateResponseLinksItemToRegExp = new RegExp('^[a-z0-9_-]{1,40}$');
+
 
 export const SaveTeamInstanceAsTemplateResponse = zod.object({
   "id": zod.number(),
@@ -6499,6 +6627,11 @@ export const SaveTeamInstanceAsTemplateResponse = zod.object({
   "local": zod.boolean().optional()
 }))
 }).describe('Ruolo arricchito per la lettura (strumenti, skill e modello con nome)')),
+  "links": zod.array(zod.object({
+  "from": zod.string().regex(saveTeamInstanceAsTemplateResponseLinksItemFromRegExp),
+  "to": zod.string().regex(saveTeamInstanceAsTemplateResponseLinksItemToRegExp),
+  "mode": zod.enum(['full', 'notes'])
+}).describe('Relazione tra due ruoli (non il capo): il ruolo `from` può contattare il ruolo `to` durante un compito. `full` = consultazioni e messaggi, `notes` = solo messaggi (obbligatorio verso un ruolo sul nodo; un ruolo sul nodo non è mai `from`).')),
   "createdAt": zod.coerce.date(),
   "updatedAt": zod.coerce.date()
 })
@@ -6821,6 +6954,9 @@ export const ActivateTeamInstanceParams = zod.object({
 })
 
 export const activateTeamInstanceResponseRolesItemCodeDefault = `none`;
+export const activateTeamInstanceResponseLinksItemFromRegExp = new RegExp('^[a-z0-9_-]{1,40}$');
+export const activateTeamInstanceResponseLinksItemToRegExp = new RegExp('^[a-z0-9_-]{1,40}$');
+
 
 export const ActivateTeamInstanceResponse = zod.object({
   "id": zod.number(),
@@ -6866,6 +7002,11 @@ export const ActivateTeamInstanceResponse = zod.object({
   "local": zod.boolean().optional()
 }))
 }).describe('Ruolo arricchito per la lettura (strumenti, skill e modello con nome)')),
+  "links": zod.array(zod.object({
+  "from": zod.string().regex(activateTeamInstanceResponseLinksItemFromRegExp),
+  "to": zod.string().regex(activateTeamInstanceResponseLinksItemToRegExp),
+  "mode": zod.enum(['full', 'notes'])
+}).describe('Relazione tra due ruoli (non il capo): il ruolo `from` può contattare il ruolo `to` durante un compito. `full` = consultazioni e messaggi, `notes` = solo messaggi (obbligatorio verso un ruolo sul nodo; un ruolo sul nodo non è mai `from`).')),
   "localSkills": zod.array(zod.object({
   "code": zod.string(),
   "name": zod.string(),
@@ -6923,6 +7064,9 @@ export const SetTeamBudgetBody = zod.object({
 })
 
 export const setTeamBudgetResponseRolesItemCodeDefault = `none`;
+export const setTeamBudgetResponseLinksItemFromRegExp = new RegExp('^[a-z0-9_-]{1,40}$');
+export const setTeamBudgetResponseLinksItemToRegExp = new RegExp('^[a-z0-9_-]{1,40}$');
+
 
 export const SetTeamBudgetResponse = zod.object({
   "id": zod.number(),
@@ -6968,6 +7112,11 @@ export const SetTeamBudgetResponse = zod.object({
   "local": zod.boolean().optional()
 }))
 }).describe('Ruolo arricchito per la lettura (strumenti, skill e modello con nome)')),
+  "links": zod.array(zod.object({
+  "from": zod.string().regex(setTeamBudgetResponseLinksItemFromRegExp),
+  "to": zod.string().regex(setTeamBudgetResponseLinksItemToRegExp),
+  "mode": zod.enum(['full', 'notes'])
+}).describe('Relazione tra due ruoli (non il capo): il ruolo `from` può contattare il ruolo `to` durante un compito. `full` = consultazioni e messaggi, `notes` = solo messaggi (obbligatorio verso un ruolo sul nodo; un ruolo sul nodo non è mai `from`).')),
   "localSkills": zod.array(zod.object({
   "code": zod.string(),
   "name": zod.string(),
@@ -7148,6 +7297,31 @@ export const ListTeamEventsResponseItem = zod.object({
   "createdAt": zod.coerce.date()
 })
 export const ListTeamEventsResponse = zod.array(ListTeamEventsResponseItem)
+
+
+/**
+ * @summary Consultazioni e messaggi tra i ruoli della squadra, dal più recente (ultimi 200)
+ */
+export const ListTeamRoleMessagesParams = zod.object({
+  "id": zod.coerce.number()
+})
+
+export const ListTeamRoleMessagesResponseItem = zod.object({
+  "id": zod.number(),
+  "kind": zod.enum(['consult', 'note']),
+  "status": zod.enum(['pending', 'answered', 'failed', 'delivered']),
+  "fromRole": zod.string(),
+  "toRole": zod.string(),
+  "fromTaskId": zod.number().nullable().describe('Esecuzione del compito che ha scritto'),
+  "deliveredTaskId": zod.number().nullable().describe('Esecuzione del compito che ha ricevuto il messaggio'),
+  "text": zod.string(),
+  "answer": zod.string().nullable(),
+  "error": zod.string().nullable(),
+  "costUsd": zod.number().nullable(),
+  "createdAt": zod.coerce.date(),
+  "finishedAt": zod.coerce.date().nullable()
+}).describe('Consultazione o messaggio tra due ruoli collegati della squadra')
+export const ListTeamRoleMessagesResponse = zod.array(ListTeamRoleMessagesResponseItem)
 
 
 /**

@@ -7,6 +7,7 @@ import {
   ApiError,
   type TeamTemplate,
   type TeamTemplateInput,
+  type TeamRoleLink,
   getGetTeamTemplateQueryKey,
   getListTeamTemplatesQueryKey,
   useCreateTeamTemplate,
@@ -26,11 +27,19 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { NewTeamDialog } from "@/components/teams/new-team-dialog";
 import { type RoleDraft, draftFromView, newRole, toTemplateRole, withKeys } from "@/components/teams/role-draft";
 import { RolesEditor } from "@/components/teams/roles-editor";
+import { RoleLinksEditor } from "@/components/teams/role-links-editor";
+import { type LinkDraft, linksFromApi, linksToApi, pruneDraftLinks } from "@/lib/role-links";
 import { useToast } from "@/hooks/use-toast";
 import { apiErrorMessage } from "@/lib/api-errors";
 
-function toInput(name: string, description: string, roles: RoleDraft[]): TeamTemplateInput {
-  return { name: name.trim(), description, roles: withKeys(roles).map(toTemplateRole) };
+function toInput(name: string, description: string, roles: RoleDraft[], links: LinkDraft[] | TeamRoleLink[], fromApi = false): TeamTemplateInput {
+  const keyed = withKeys(roles);
+  return {
+    name: name.trim(),
+    description,
+    roles: keyed.map(toTemplateRole),
+    links: fromApi ? (links as TeamRoleLink[]) : linksToApi(keyed, links as LinkDraft[]),
+  };
 }
 
 /** Editor del modello: nuovo (senza `template`) o versione successiva di uno esistente. */
@@ -40,16 +49,21 @@ function TemplateEditor({ template, dirtyRef }: { template?: TeamTemplate; dirty
   const { toast } = useToast();
   const [name, setName] = useState(template?.name ?? "");
   const [description, setDescription] = useState(template?.description ?? "");
-  const [roles, setRoles] = useState<RoleDraft[]>(() => (template ? template.roles.map(draftFromView) : [newRole([])]));
+  const [initial] = useState(() => {
+    const drafts = template ? template.roles.map(draftFromView) : [newRole([])];
+    return { drafts, links: template ? linksFromApi(drafts, template.links) : [] };
+  });
+  const [roles, setRoles] = useState<RoleDraft[]>(initial.drafts);
+  const [links, setLinks] = useState<LinkDraft[]>(initial.links);
   const [deleting, setDeleting] = useState(false);
   const [creatingTeam, setCreatingTeam] = useState(false);
   const readOnly = template?.archived ?? false;
 
   const savedInput = useMemo(
-    () => (template ? JSON.stringify(toInput(template.name, template.description, template.roles.map(draftFromView))) : null),
+    () => (template ? JSON.stringify(toInput(template.name, template.description, template.roles.map(draftFromView), template.links, true)) : null),
     [template],
   );
-  const dirty = savedInput !== JSON.stringify(toInput(name, description, roles));
+  const dirty = savedInput !== JSON.stringify(toInput(name, description, roles, links));
   if (dirtyRef) dirtyRef.current = dirty;
 
   const onSaved = (saved: TeamTemplate, created: boolean) => {
@@ -83,7 +97,7 @@ function TemplateEditor({ template, dirtyRef }: { template?: TeamTemplate; dirty
   });
 
   const submit = () => {
-    const data = toInput(name, description, roles);
+    const data = toInput(name, description, roles, links);
     if (template) save.mutate({ id: template.id, data });
     else create.mutate({ data });
   };
@@ -159,6 +173,11 @@ function TemplateEditor({ template, dirtyRef }: { template?: TeamTemplate; dirty
       <section className="space-y-3">
         <h3 className="text-lg font-medium">Ruoli</h3>
         <RolesEditor roles={roles} onChange={setRoles} mode="template" readOnly={readOnly} />
+      </section>
+
+      <section className="space-y-3">
+        <h3 className="text-lg font-medium">Relazioni</h3>
+        <RoleLinksEditor roles={roles} links={pruneDraftLinks(roles, links)} onChange={setLinks} readOnly={readOnly} />
       </section>
 
       {template && (

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { TeamTask, TeamTurn } from "@workspace/api-client-react";
+import type { TeamRoleMessage, TeamTask, TeamTurn } from "@workspace/api-client-react";
 import { TEAM_ACTIVITY_LIMITS, activityLimitNotice, filterActivity, normalizeSearch, searchTerms } from "./team-activity";
 
 const turn = (over: Partial<TeamTurn>): TeamTurn =>
@@ -23,7 +23,7 @@ const titles = new Map([
   ["t2", "Ricerca nell'attività"],
 ]);
 const roles = new Map([["dev", "Sviluppatore"]]);
-const opts = (kind: "all" | "turns" | "tasks", query: string) => ({ kind, query, taskTitles: titles, roleNames: roles });
+const opts = (kind: "all" | "turns" | "tasks" | "colleagues", query: string) => ({ kind, query, taskTitles: titles, roleNames: roles });
 
 describe("attività della squadra", () => {
   it("normalizza la ricerca", () => {
@@ -38,6 +38,28 @@ describe("attività della squadra", () => {
     expect(filterActivity(turns, tasks, opts("all", "")).map((e) => e.kind)).toEqual(["task", "turn"]);
     expect(filterActivity(turns, tasks, opts("turns", "")).map((e) => e.kind)).toEqual(["turn"]);
     expect(filterActivity(turns, tasks, opts("tasks", "")).map((e) => e.kind)).toEqual(["task"]);
+  });
+
+  it("scambi tra colleghi: tipo «Solo colleghi» e ricerca su ruoli, domanda e risposta", () => {
+    const msg = {
+      id: 3,
+      kind: "consult",
+      status: "answered",
+      fromRole: "dev",
+      toRole: "rev",
+      fromTaskId: 2,
+      deliveredTaskId: null,
+      text: "Dove va il test?",
+      answer: "In orders.test.ts",
+      error: null,
+      costUsd: 0.01,
+      createdAt: "2026-11-25T13:00:00Z",
+      finishedAt: null,
+    } as TeamRoleMessage;
+    const tasks = [task({ id: 2 })];
+    expect(filterActivity([], tasks, opts("all", ""), [msg]).map((e) => e.kind)).toEqual(["colleague", "task"]);
+    expect(filterActivity([], tasks, opts("colleagues", ""), [msg]).map((e) => e.kind)).toEqual(["colleague"]);
+    expect(filterActivity([], tasks, opts("all", "sviluppatore orders"), [msg]).map((e) => e.kind)).toEqual(["colleague"]);
   });
 
   it("cerca in titolo, ruolo, esito, resoconto, motivi ed errori", () => {

@@ -3,7 +3,8 @@ import { db, skillsTable, teamInstanceSkillsTable, teamInstancesTable, teamTempl
 import { InstanceRoleSchema, type InstanceRole, type TemplateRole } from "./manifest";
 import { TEAM_MESSAGES, TeamRuleError, validateRoles } from "./rules";
 import type { Executor } from "./skills";
-import { getTemplateVersion } from "./templates";
+import { checkLinks, getTemplateLinks, getTemplateVersion } from "./templates";
+import { linkId, pruneLinks, readLinks, type RoleLink } from "./links";
 import { INSTANCE_MESSAGES, InstanceError, getInstance, loadRefApp, type InstanceView } from "./instances";
 
 // Aggiornamenti proposti a un'istanza (spec §4): differenze tra la versione del modello copiata e quella
@@ -17,7 +18,15 @@ export const UPDATE_MESSAGES = {
 export const ROLE_FIELDS = ["name", "task", "isLead", "runsOn", "aiModelId", "tools", "code"] as const;
 export type RoleField = (typeof ROLE_FIELDS)[number];
 
-export type UpdateType = "role_added" | "role_removed" | "role_changed" | "skill_added" | "skill_removed" | "skill_version";
+export type UpdateType =
+  | "role_added"
+  | "role_removed"
+  | "role_changed"
+  | "skill_added"
+  | "skill_removed"
+  | "skill_version"
+  | "link_added"
+  | "link_removed";
 
 export type UpdateItem = {
   id: string;
@@ -30,6 +39,8 @@ export type UpdateItem = {
   skillCode?: string;
   fromVersion?: number;
   toVersion?: number;
+  /** Solo `link_added` / `link_removed`: la relazione (con la modalità proposta per `link_added`) */
+  link?: RoleLink;
 };
 
 export interface ComputeUpdatesInput {
@@ -40,6 +51,39 @@ export interface ComputeUpdatesInput {
   instance: InstanceRole[];
   /** Versione corrente di ogni skill del catalogo, per codice. */
   skillVersions: Map<string, number>;
+  /** Relazioni della versione copiata, della versione corrente e dell'istanza (assenti = nessuna). */
+  baseLinks?: RoleLink[];
+  currentLinks?: RoleLink[];
+  instanceLinks?: RoleLink[];
+}
+
+const pairOf = (l: Pick<RoleLink, "from" | "to">): string => `${l.from}\u0000${l.to}`;
+
+/**
+ * Voci delle relazioni, con la stessa regola dei ruoli: compaiono solo dove la versione corrente differisce da quella copiata
+ * e l'istanza non ha già il valore proposto (una relazione cambiata di modalità è un `link_added` con la modalità nuova).
+ */
+function linkUpdates(input: ComputeUpdatesInput): UpdateItem[] {
+  if (!input.base || !input.current) return [];
+  const base = new Map((input.baseLinks ?? []).map((l) => [pairOf(l), l]));
+  const current = new Map((input.currentLinks ?? []).map((l) => [pairOf(l), l]));
+  const mine = new Map((input.instanceLinks ?? []).map((l) => [pairOf(l), l]));
+  const roleName = new Map(input.instance.map((r) => [r.key, r.name]));
+  const items: UpdateItem[] = [];
+  for (const [pair, link] of current) {
+    const before = base.get(pair);
+    const own = mine.get(pair);
+    if (before && before.mode === link.mode) continue;
+    if (own && own.mode === link.mode) continue;
+    // Una relazione tra ruoli che l'istanza non ha (ancora): arriverà con l'aggiornamento del ruolo, poi si ripropone
+    if (!roleName.has(link.from) || !roleName.has(link.to)) continue;
+    items.push({ id: linkId(link), type: "link_added", roleKey: link.from, roleName: roleName.get(link.from)!, link });
+  }
+  for (const [pair, link] of base) {
+    if (current.has(pair) || !mine.has(pair)) continue;
+    items.push({ id: `${linkId(link)}:removed`, type: "link_removed", roleKey: link.from, roleName: roleName.get(link.from) ?? link.from, link });
+  }
+  return items;
 }
 
 function sameField(field: RoleField, a: unknown, b: unknown): boolean {
@@ -117,7 +161,19 @@ export function computeUpdates(input: ComputeUpdatesInput): UpdateItem[] {
       });
     }
   }
+  items.push(...linkUpdates(input));
   return items;
+}
+
+/** Applica alle relazioni dell'istanza le voci scelte (già verificate tra quelle attuali). */
+function applyLinkItems(links: RoleLink[], items: UpdateItem[]): RoleLink[] {
+  const result = new Map(links.map((l) => [pairOf(l), l]));
+  for (const item of items) {
+    if (!item.link) continue;
+    if (item.type === "link_added") result.set(pairOf(item.link), item.link);
+    if (item.type === "link_removed") result.delete(pairOf(item.link));
+  }
+  return [...result.values()];
 }
 
 function latestVersion(skillVersions: Map<string, number>, code: string): number {
@@ -179,6 +235,9 @@ type UpdateContext = {
   current: TemplateRole[] | null;
   currentVersion: number | null;
   skillVersions: Map<string, number>;
+  links: RoleLink[];
+  baseLinks: RoleLink[];
+  currentLinks: RoleLink[];
 };
 
 async function loadContext(instanceId: number): Promise<UpdateContext> {
@@ -190,12 +249,16 @@ async function loadContext(instanceId: number): Promise<UpdateContext> {
   let base: TemplateRole[] | null = null;
   let current: TemplateRole[] | null = null;
   let currentVersion: number | null = null;
+  let baseLinks: RoleLink[] = [];
+  let currentLinks: RoleLink[] = [];
   if (row.templateId !== null && row.templateVersion !== null) {
     const [template] = await db.select().from(teamTemplatesTable).where(eq(teamTemplatesTable.id, row.templateId)).limit(1);
     if (template) {
       base = await getTemplateVersion(template.id, row.templateVersion);
       current = await getTemplateVersion(template.id, template.version);
       currentVersion = template.version;
+      baseLinks = await getTemplateLinks(template.id, row.templateVersion);
+      currentLinks = await getTemplateLinks(template.id, template.version);
     }
   }
 
@@ -206,12 +269,12 @@ async function loadContext(instanceId: number): Promise<UpdateContext> {
       ? await db.select({ code: skillsTable.code, currentVersion: skillsTable.currentVersion }).from(skillsTable).where(inArray(skillsTable.code, codes))
       : [];
   const skillVersions = new Map(skills.map((s) => [s.code, s.currentVersion]));
-  return { row, roles, base, current, currentVersion, skillVersions };
+  return { row, roles, base, current, currentVersion, skillVersions, links: readLinks(row.links), baseLinks, currentLinks };
 }
 
 export async function getUpdates(instanceId: number): Promise<UpdateItem[]> {
-  const { roles, base, current, skillVersions } = await loadContext(instanceId);
-  return computeUpdates({ base, current, instance: roles, skillVersions });
+  const { roles, base, current, skillVersions, links, baseLinks, currentLinks } = await loadContext(instanceId);
+  return computeUpdates({ base, current, instance: roles, skillVersions, baseLinks, currentLinks, instanceLinks: links });
 }
 
 /**
@@ -220,24 +283,24 @@ export async function getUpdates(instanceId: number): Promise<UpdateItem[]> {
  * Se dopo l'applicazione non restano voci del modello, l'istanza passa alla versione corrente del modello.
  */
 export async function applyUpdates(userId: number, instanceId: number, ids: string[], executor: Executor = db): Promise<InstanceView> {
-  const { row, roles, base, current, currentVersion, skillVersions } = await loadContext(instanceId);
-  const items = computeUpdates({ base, current, instance: roles, skillVersions });
+  const { row, roles, base, current, currentVersion, skillVersions, links, baseLinks, currentLinks } = await loadContext(instanceId);
+  const items = computeUpdates({ base, current, instance: roles, skillVersions, baseLinks, currentLinks, instanceLinks: links });
   const byId = new Map(items.map((item) => [item.id, item]));
   if (ids.some((id) => !byId.has(id))) throw new InstanceError(409, UPDATE_MESSAGES.changed);
   const chosen = new Set(ids);
-  const next = applyItems(
-    roles,
-    items.filter((item) => chosen.has(item.id)),
-    skillVersions,
-  );
+  const picked = items.filter((item) => chosen.has(item.id));
+  const next = applyItems(roles, picked, skillVersions);
+  // Le relazioni dei ruoli tolti spariscono con loro
+  const nextLinks = pruneLinks(next, applyLinkItems(links, picked));
 
   const local = await db
     .select({ code: teamInstanceSkillsTable.code, kind: teamInstanceSkillsTable.kind })
     .from(teamInstanceSkillsTable)
     .where(eq(teamInstanceSkillsTable.instanceId, instanceId));
   await validateRoles({ roles: next, mode: "instance", userId, previous: roles, localSkillCodes: new Map(local.map((s) => [s.code, s.kind])), refApp: await loadRefApp(row.refAppId) });
+  checkLinks(next, nextLinks);
 
-  const remaining = computeUpdates({ base, current, instance: next, skillVersions });
+  const remaining = computeUpdates({ base, current, instance: next, skillVersions, baseLinks, currentLinks, instanceLinks: nextLinks });
   const templateVersion =
     currentVersion !== null && !remaining.some((item) => item.type !== "skill_version") ? currentVersion : row.templateVersion;
 
@@ -245,12 +308,16 @@ export async function applyUpdates(userId: number, instanceId: number, ids: stri
     const [locked] = await tx.select().from(teamInstancesTable).where(eq(teamInstancesTable.id, instanceId)).limit(1).for("update");
     if (!locked) throw new InstanceError(404, INSTANCE_MESSAGES.notFound);
     if (locked.status === "closed") throw new InstanceError(409, INSTANCE_MESSAGES.closed);
-    if (locked.templateVersion !== row.templateVersion || JSON.stringify(locked.roles) !== JSON.stringify(row.roles)) {
+    if (
+      locked.templateVersion !== row.templateVersion ||
+      JSON.stringify(locked.roles) !== JSON.stringify(row.roles) ||
+      JSON.stringify(locked.links) !== JSON.stringify(row.links)
+    ) {
       throw new InstanceError(409, UPDATE_MESSAGES.changed);
     }
     await tx
       .update(teamInstancesTable)
-      .set({ roles: next, templateVersion, updatedAt: new Date() })
+      .set({ roles: next, links: nextLinks, templateVersion, updatedAt: new Date() })
       .where(eq(teamInstancesTable.id, instanceId));
   });
   return getInstance(instanceId);

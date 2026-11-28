@@ -9,11 +9,15 @@ import {
   getListTeamTurnsQueryKey,
   useGetTeamTask,
   useListTeamTasks,
+  useListTeamRoleMessages,
+  getListTeamRoleMessagesQueryKey,
+  type TeamRoleMessage,
   useListTeamTurns,
 } from "@workspace/api-client-react";
 import { StepList } from "@/components/runs/run-steps";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Led } from "@/components/brand/led";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { apiErrorMessage } from "@/lib/api-errors";
@@ -48,6 +52,7 @@ export function useTeamWork(teamId: number) {
   const poll = wasLive || inGrace ? TEAM_POLL_MS : false;
   const turns = useListTeamTurns(teamId, { query: { queryKey: getListTeamTurnsQueryKey(teamId), refetchInterval: poll } });
   const tasks = useListTeamTasks(teamId, { query: { queryKey: getListTeamTasksQueryKey(teamId), refetchInterval: poll } });
+  const roleMessages = useListTeamRoleMessages(teamId, { query: { queryKey: getListTeamRoleMessagesQueryKey(teamId), refetchInterval: poll } });
   const live = (turns.data ?? []).some(isTurnLive) || (tasks.data ?? []).some(isTaskLive);
 
   // Fine del lavoro: parte il periodo di grazia
@@ -69,7 +74,7 @@ export function useTeamWork(teamId: number) {
   }, [graceUntil]);
 
   const kick = useCallback(() => setGraceUntil(Date.now() + TEAM_GRACE_MS), []);
-  return { turns, tasks, live, polling: live || inGrace, kick };
+  return { turns, tasks, roleMessages, live, polling: live || inGrace, kick };
 }
 
 export type TeamWorkState = ReturnType<typeof useTeamWork>;
@@ -183,6 +188,39 @@ function TaskEntry({ team, task, title }: { team: TeamInstance; task: TeamTask; 
 }
 
 /** «Attività»: turni del capo e compiti dei ruoli, dal più recente, con ricerca, filtro per tipo e passi espandibili. */
+const MESSAGE_STATUS: Record<TeamRoleMessage["status"], { led: "idle" | "work" | "ok" | "ko"; label: string }> = {
+  pending: { led: "work", label: "in attesa del prossimo compito" },
+  answered: { led: "ok", label: "risposta data" },
+  delivered: { led: "ok", label: "consegnato" },
+  failed: { led: "ko", label: "non riuscita" },
+};
+
+function ColleagueEntry({ message, roleNames }: { message: TeamRoleMessage; roleNames: ReadonlyMap<string, string> }) {
+  const status = MESSAGE_STATUS[message.status];
+  const from = roleNames.get(message.fromRole) ?? message.fromRole;
+  const to = roleNames.get(message.toRole) ?? message.toRole;
+  return (
+    <li className="space-y-1 py-3">
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <Led state={status.led} label={status.label} />
+        <span className="font-medium">{message.kind === "consult" ? "Consultazione" : "Messaggio"}</span>
+        <span className="min-w-0 break-words">
+          {from} → {to}
+        </span>
+        <span className="text-xs text-muted-foreground">
+          {formatTime(message.createdAt)} · {status.label}
+          {message.costUsd !== null && ` · ${message.costUsd.toFixed(4)} USD`}
+        </span>
+      </div>
+      <p className="whitespace-pre-wrap break-words text-sm">{message.text}</p>
+      {message.answer && (
+        <p className="whitespace-pre-wrap break-words border-l-2 border-border pl-3 text-sm text-muted-foreground">{message.answer}</p>
+      )}
+      {message.error && <p className="text-sm text-destructive">{message.error}</p>}
+    </li>
+  );
+}
+
 export function TeamActivity({
   team,
   work,
@@ -193,15 +231,15 @@ export function TeamActivity({
   /** Titoli dei compiti del PLAN per id. */
   taskTitles: ReadonlyMap<string, string>;
 }) {
-  const { turns, tasks } = work;
+  const { turns, tasks, roleMessages } = work;
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<ActivityKind>("all");
   const roleNames = useMemo(() => new Map(team.roles.map((r) => [r.key, r.name])), [team.roles]);
   const entries = useMemo(
-    () => filterActivity(turns.data ?? [], tasks.data ?? [], { kind, query, taskTitles, roleNames }),
-    [turns.data, tasks.data, kind, query, taskTitles, roleNames],
+    () => filterActivity(turns.data ?? [], tasks.data ?? [], { kind, query, taskTitles, roleNames }, roleMessages.data ?? []),
+    [turns.data, tasks.data, roleMessages.data, kind, query, taskTitles, roleNames],
   );
-  const total = (turns.data?.length ?? 0) + (tasks.data?.length ?? 0);
+  const total = (turns.data?.length ?? 0) + (tasks.data?.length ?? 0) + (roleMessages.data?.length ?? 0);
   const filtered = kind !== "all" || query.trim() !== "";
   const limitNotice = activityLimitNotice(turns.data?.length ?? 0, tasks.data?.length ?? 0);
   const error = turns.error ?? tasks.error;
@@ -212,7 +250,7 @@ export function TeamActivity({
       <CardHeader>
         <CardTitle className="text-base">Attività</CardTitle>
         <CardDescription>
-          Turni del capo e compiti dei ruoli, dal più recente.
+          Turni del capo, compiti dei ruoli e scambi tra colleghi, dal più recente.
           {work.polling && " Aggiornamento automatico in corso."}
         </CardDescription>
       </CardHeader>
@@ -265,6 +303,8 @@ export function TeamActivity({
                 {entries.map((e) =>
                   e.kind === "turn" ? (
                     <TurnEntry key={`turn-${e.turn.id}`} turn={e.turn} />
+                  ) : e.kind === "colleague" ? (
+                    <ColleagueEntry key={`colleague-${e.message.id}`} message={e.message} roleNames={roleNames} />
                   ) : (
                     <TaskEntry key={`task-${e.task.id}`} team={team} task={e.task} title={taskTitles.get(e.task.planTaskId) ?? null} />
                   ),

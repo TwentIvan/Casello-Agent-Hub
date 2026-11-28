@@ -53,6 +53,9 @@ export const INTERNAL_TOOL_NAMES = [
   "browser",
   "salva_ricetta",
   "consegna_collaudo",
+  // Comunicazione diretta tra ruoli collegati (teams/role-links-runtime.ts)
+  "consulta_ruolo",
+  "scrivi_a_ruolo",
 ] as const;
 
 export type InternalToolName = (typeof INTERNAL_TOOL_NAMES)[number];

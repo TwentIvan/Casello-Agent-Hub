@@ -31,6 +31,7 @@ import {
   type PlanView,
 } from "./plan";
 import { internalTool, type InternalHandler } from "./role-tools";
+import { roleMessagesOfTasks } from "./role-links-runtime";
 import { TeamRuleError } from "./rules";
 import type { Executor } from "./skills";
 import { TASK_MESSAGES, errName, startTask } from "./task-runner";
@@ -705,6 +706,14 @@ async function readOutcome(ctx: LeadContext, args: Record<string, unknown>): Pro
     .orderBy(desc(teamTasksTable.id))
     .limit(1);
   if (!row) return fail(LEAD_MESSAGES.noExecution(parsed.data.taskId));
+  // Consultazioni e messaggi ai colleghi dell'esecuzione (dati, troncati)
+  const colleagues = (await roleMessagesOfTasks([row.id])).map((m) => ({
+    kind: m.kind === "consult" ? "consultazione" : "messaggio",
+    to: m.toRole,
+    status: m.status,
+    text: m.text.slice(0, 500),
+    answer: m.answer === null ? null : m.answer.slice(0, 1_000),
+  }));
   return done(
     JSON.stringify({
       taskId: row.planTaskId,
@@ -713,6 +722,7 @@ async function readOutcome(ctx: LeadContext, args: Record<string, unknown>): Pro
       outcome: row.outcome,
       detail: row.detail === null ? null : row.detail.slice(0, MAX_RESULT_DETAIL),
       error: row.error,
+      ...(colleagues.length > 0 ? { colleagues } : {}),
     }),
   );
 }

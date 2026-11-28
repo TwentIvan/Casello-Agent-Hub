@@ -1,6 +1,9 @@
 import { pgTable, serial, integer, text, timestamp, boolean, jsonb, unique, uniqueIndex } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
+/** Relazione tra due ruoli: `from` può contattare `to` (`full` consultazioni e messaggi, `notes` solo messaggi). */
+export type RoleLinkData = { from: string; to: string; mode: "full" | "notes" };
+
 // Modelli di squadra; il nome è unico tra i non archiviati
 export const teamTemplatesTable = pgTable(
   "team_templates",
@@ -30,6 +33,8 @@ export const teamTemplateVersionsTable = pgTable(
       .references(() => teamTemplatesTable.id, { onDelete: "cascade" }),
     version: integer("version").notNull(),
     manifest: jsonb("manifest").notNull(),
+    // Relazioni tra i ruoli della versione (fuori dal manifesto, che resta l'elenco dei ruoli)
+    links: jsonb("links").$type<RoleLinkData[]>().notNull().default([]),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (table) => [unique("team_template_versions_template_version_unique").on(table.templateId, table.version)],
